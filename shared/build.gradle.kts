@@ -5,11 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralwatch.shared"
+    namespace = "me.pluralware.shared"
     compileSdk = 35
 
     defaultConfig {
-        minSdk = 30 // Wear OS 3 = API 30.
+        // Lowest of the consuming apps (mobile is API 26). Watch app pins its own
+        // minSdk = 30 for Wear OS 3.
+        minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
     }
 
@@ -24,21 +26,23 @@ android {
 }
 
 dependencies {
-    // Plural.kt wrapper (the whole point of this module for now).
-    api(libs.pluralkot)
+    // Coroutines — the PluralKitClient interface exposes suspend functions, so we re-export
+    // coroutines-core via `api` to spare every consumer module the explicit import.
+    api(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
 
-    // Coroutines — Plural.kt exposes suspend functions; we re-export so callers don't need to import separately.
-    api(libs.kotlinx-coroutines-core)
-    implementation(libs.kotlinx-coroutines-android)
-
-    // For our own DTOs / future hand-rolled client.
-    implementation(libs.kotlinx-serialization-json)
+    // Hand-rolled PluralKit v2 HTTP client.
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.kotlinx.serialization.converter)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.kotlinx.serialization.json)
 
     // Encrypted token storage. API-side abstraction lives here; both apps consume it.
-    implementation(libs.androidx-security-crypto)
+    implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
-    testImplementation(libs.kotlinx-coroutines-test)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralwatch.mobile"
+    namespace = "me.pluralware.mobile"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "me.pluralwatch.mobile"
+        applicationId = "me.pluralware.mobile"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

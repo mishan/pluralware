@@ -1,5 +1,5 @@
 [versions]
-agp = "8.7.3"
+agp = "8.13.2"
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.28"
 
@@ -24,9 +24,10 @@ wearWatchface = "1.2.1"
 # Token storage on the watch.
 securityCrypto = "1.1.0-alpha06"
 
-# Plural.kt and its transitive runtime needs.
-pluralkot = "1.0.0"
-ktor = "2.3.13"
+# PluralKit HTTP client stack — Retrofit over OkHttp with kotlinx-serialization for JSON.
+# converter-kotlinx-serialization ships in the retrofit BOM since 2.10; we just align versions.
+retrofit = "2.11.0"
+okhttp = "4.12.0"
 kotlinxSerialization = "1.7.3"
 kotlinxCoroutines = "1.9.0"
 
@@ -51,6 +52,7 @@ androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 
 # Wear OS Compose.
@@ -70,10 +72,16 @@ play-services-wearable = { group = "com.google.android.gms", name = "play-servic
 # Encrypted token storage (used on both watch and phone).
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
-# Plural.kt — the PluralKit wrapper. Note: archived upstream, MIT-licensed.
-pluralkot = { group = "com.kotlindiscord.pluralkot", name = "PluralKot", version.ref = "pluralkot" }
+# PluralKit HTTP client — Retrofit/OkHttp/kotlinx-serialization.
+# We hand-roll the client because Plural.kt was archived in 2024 and its Maven server
+# (maven.proxyfox.dev) was taken down. Five MVP endpoints is small enough that owning
+# the surface beats inheriting an abandoned, JVM-only, Ktor-2-bound dependency.
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+retrofit-kotlinx-serialization-converter = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 
-# Kotlinx — both for our own code and to satisfy Plural.kt's transitive needs.
+# Kotlinx.
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutines" }

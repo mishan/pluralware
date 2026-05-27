@@ -17,12 +17,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Plural.kt is hosted here, not on Maven Central.
-        maven("https://maven.kotlindiscord.com/repository/maven-public/")
     }
 }
 
-rootProject.name = "PluralWatch"
+rootProject.name = "PluralWare"
 
 include(":shared")
 include(":wear")

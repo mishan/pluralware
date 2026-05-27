@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralwatch.wear"
+    namespace = "me.pluralware.wear"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "me.pluralwatch"
+        applicationId = "me.pluralware"
         minSdk = 30 // Wear OS 3 (API 30) per project decision.
         targetSdk = 34
         versionCode = 1
@@ -54,6 +54,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material.icons.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // Wear Compose.
