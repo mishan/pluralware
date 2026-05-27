@@ -41,6 +41,12 @@ dependencies {
     // Encrypted token storage. API-side abstraction lives here; both apps consume it.
     implementation(libs.androidx.security.crypto)
 
+    // Wearable Data Layer — used by TokenHandoff to ferry the token phone→watch.
+    // Each consuming app also declares this so it can use the API directly
+    // (mobile pushes; wear's listener service extends WearableListenerService).
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)

@@ -2,12 +2,11 @@ package me.pluralware.wear.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -89,6 +88,7 @@ private fun HistoryList(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SwitchRow(switch: Switch, onClick: () -> Unit) {
     Chip(
@@ -107,23 +107,14 @@ private fun SwitchRow(switch: Switch, onClick: () -> Unit) {
                             color = MaterialTheme.colors.onSurfaceVariant,
                         )
                     } else {
-                        // Members as a wrap of small badges. For 5–7 member systems on a
-                        // watch screen this comfortably fits 2–3 per switch.
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start,
+                        // Wrap badges across as many lines as needed — long names
+                        // and >2 fronters would otherwise clip on small round watches.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            switch.members.take(3).forEachIndexed { i, m ->
-                                if (i > 0) Spacer(Modifier.width(8.dp))
+                            switch.members.forEach { m ->
                                 MemberBadge(member = m)
-                            }
-                            if (switch.members.size > 3) {
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "+${switch.members.size - 3}",
-                                    style = MaterialTheme.typography.caption2,
-                                    color = MaterialTheme.colors.onSurfaceVariant,
-                                )
                             }
                         }
                     }

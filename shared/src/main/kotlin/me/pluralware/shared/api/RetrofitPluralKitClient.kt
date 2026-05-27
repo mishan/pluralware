@@ -46,7 +46,7 @@ class RetrofitPluralKitClient internal constructor(
         val members = api.getOwnMembers().map { it.toDomain() }
         // Opportunistically warm the resolver cache — same network round-trip,
         // saves a future fetch when getRecentSwitches() needs the lookup.
-        cacheMutex.withLock { memberCache = members.associateBy { it.uuid } }
+        cacheMutex.withLock { memberCache = buildMemberLookup(members) }
         return members
     }
 
@@ -86,7 +86,10 @@ class RetrofitPluralKitClient internal constructor(
         // so any newly-added members from the response are visible to history.
         cacheMutex.withLock {
             val merged = (memberCache ?: emptyMap()).toMutableMap()
-            switch.members.forEach { merged[it.uuid] = it }
+            switch.members.forEach { m ->
+                merged[m.uuid] = m
+                merged[m.id] = m
+            }
             memberCache = merged
         }
         return switch
@@ -102,9 +105,24 @@ class RetrofitPluralKitClient internal constructor(
     }
 
     private suspend fun refreshMemberLookup(): Map<String, Member> {
-        val fresh = api.getOwnMembers().map { it.toDomain() }.associateBy { it.uuid }
+        val fresh = buildMemberLookup(api.getOwnMembers().map { it.toDomain() })
         cacheMutex.withLock { memberCache = fresh }
         return fresh
+    }
+
+    /**
+     * The history endpoint returns member references by short ID (e.g. "abcde"),
+     * but other endpoints (and our own picker state) use UUIDs. We key the lookup
+     * by both so resolution works regardless of which form the API returned —
+     * short IDs and UUIDs don't collide on length, so the combined map is safe.
+     */
+    private fun buildMemberLookup(members: List<Member>): Map<String, Member> {
+        val lookup = HashMap<String, Member>(members.size * 2)
+        members.forEach { m ->
+            lookup[m.uuid] = m
+            lookup[m.id] = m
+        }
+        return lookup
     }
 
     // --- DTO → domain mappers ---

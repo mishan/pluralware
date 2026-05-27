@@ -30,7 +30,10 @@ class PickerViewModel(
     private val _doneEvents = MutableSharedFlow<Unit>()
     val doneEvents: SharedFlow<Unit> = _doneEvents.asSharedFlow()
 
-    init { loadMembers() }
+    init {
+        loadMembers()
+        loadInitialSelection()
+    }
 
     fun loadMembers() {
         _state.update { it.copy(members = UiState.Loading) }
@@ -43,6 +46,28 @@ class PickerViewModel(
                         is PkResult.Failure -> UiState.Error(r.error.message ?: "Couldn't load members")
                     },
                 )
+            }
+        }
+    }
+
+    /**
+     * Fetch the current fronters once and apply them as the initial selection,
+     * so the picker opens with today's fronters already ticked.
+     *
+     * If the fetch fails we leave [PickerState.seeded] = false; submit() will
+     * then fall back to hitting the API instead of short-circuiting on a stale
+     * comparison.
+     */
+    private fun loadInitialSelection() {
+        viewModelScope.launch {
+            val result = repository.refreshFronters()
+            if (result !is PkResult.Success) return@launch
+            val fronterUuids = result.value?.members?.map { it.uuid }?.toSet().orEmpty()
+            _state.update { current ->
+                if (current.seeded) return@update current
+                // Don't clobber user toggles that landed before the fetch did.
+                val selection = if (current.selectedUuids.isEmpty()) fronterUuids else current.selectedUuids
+                current.copy(selectedUuids = selection, seeded = true)
             }
         }
     }
@@ -64,11 +89,26 @@ class PickerViewModel(
 
     private fun submit(uuids: List<String>) {
         if (_state.value.submitting) return
+        val requested = uuids.toSet()
+        val currentFronterUuids = repository.currentFronters.value
+            ?.members?.map { it.uuid }?.toSet().orEmpty()
+        // PluralKit returns HTTP 400 if you POST a switch with the same fronters
+        // already on top. Treat the user's intent as already satisfied and just
+        // flash the confirmation. Gated on `seeded` so we don't short-circuit on
+        // a stale (never-loaded) current-fronters value.
+        if (_state.value.seeded && requested == currentFronterUuids) {
+            viewModelScope.launch {
+                _state.update { it.copy(confirmed = true) }
+                delay(confirmationLingerMillis)
+                _doneEvents.emit(Unit)
+            }
+            return
+        }
         _state.update { it.copy(submitting = true) }
         viewModelScope.launch {
             when (val r = repository.registerSwitch(uuids)) {
                 is PkResult.Success -> {
-                    _state.update { it.copy(submitting = false, confirmed = r.value) }
+                    _state.update { it.copy(submitting = false, confirmed = true) }
                     delay(confirmationLingerMillis)
                     _doneEvents.emit(Unit)
                 }

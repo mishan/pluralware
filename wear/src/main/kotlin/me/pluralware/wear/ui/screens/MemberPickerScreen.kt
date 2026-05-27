@@ -62,7 +62,7 @@ fun MemberPickerScreen(
 
         // Confirmation overlay — fades in for ~700ms after a successful switch.
         AnimatedVisibility(
-            visible = state.confirmed != null,
+            visible = state.confirmed,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {

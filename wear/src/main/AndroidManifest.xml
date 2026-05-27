@@ -29,5 +29,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            Receives the PluralKit token pushed by the phone over the Wearable
+            Data Layer. Filtered by path so unrelated DataItem traffic doesn't
+            wake the service. `exported="true"` is required for the Wear
+            framework to bind to it.
+        -->
+        <service
+            android:name=".TokenListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/token" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

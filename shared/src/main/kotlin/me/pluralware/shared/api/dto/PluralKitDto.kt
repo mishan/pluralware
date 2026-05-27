@@ -54,7 +54,7 @@ internal data class SwitchFullDto(
 )
 
 /**
- * Switch with member references only (UUIDs).
+ * Switch with member references only (short IDs).
  * Returned by `GET /systems/{ref}/switches` (the history endpoint).
  * The client resolves these against the member list before handing back a
  * domain [me.pluralware.shared.model.Switch].

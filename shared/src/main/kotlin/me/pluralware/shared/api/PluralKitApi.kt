@@ -41,8 +41,8 @@ internal interface PluralKitApi {
 
     /**
      * Recent switches. The API caps `limit` at 100; the client clamps before calling.
-     * Members are returned as ID strings (UUIDs) — resolved against the member
-     * list in [RetrofitPluralKitClient].
+     * Members are returned as short ID strings (not UUIDs) — resolved against the
+     * member list in [RetrofitPluralKitClient].
      */
     @GET("systems/@me/switches")
     suspend fun getRecentSwitches(@Query("limit") limit: Int): List<SwitchRefsDto>

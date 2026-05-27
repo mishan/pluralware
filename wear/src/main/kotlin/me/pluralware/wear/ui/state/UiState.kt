@@ -1,7 +1,6 @@
 package me.pluralware.wear.ui.state
 
 import me.pluralware.shared.model.Member
-import me.pluralware.shared.model.Switch
 
 /** Generic three-state container used by simple screens. */
 sealed interface UiState<out T> {
@@ -15,6 +14,8 @@ data class PickerState(
     val members: UiState<List<Member>> = UiState.Loading,
     val selectedUuids: Set<String> = emptySet(),
     val submitting: Boolean = false,
+    /** True once we've fetched current fronters and applied them as the initial selection. */
+    val seeded: Boolean = false,
     /** Set briefly after a successful switch so the screen can flash confirmation before navigating away. */
-    val confirmed: Switch? = null,
+    val confirmed: Boolean = false,
 )

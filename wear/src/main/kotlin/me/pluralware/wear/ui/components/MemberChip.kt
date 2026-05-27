@@ -123,6 +123,7 @@ fun MemberBadge(member: Member, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.caption1,
             color = MaterialTheme.colors.onSurface,
             maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }
