@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -19,6 +22,7 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.wear.ui.components.CompactPillButton
@@ -26,7 +30,10 @@ import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
 import me.pluralware.wear.ui.components.MemberChip
+import me.pluralware.wear.ui.elapsedSince
 import me.pluralware.wear.ui.relativeTo
+import me.pluralware.wear.ui.state.FronterStreak
+import me.pluralware.wear.ui.state.FrontersState
 import me.pluralware.wear.ui.state.UiState
 import me.pluralware.wear.ui.viewmodel.FrontersViewModel
 
@@ -43,7 +50,7 @@ fun FrontersScreen(
         UiState.Loading -> LoadingScreen()
         is UiState.Error -> ErrorScreen(message = s.message, onRetry = vm::load)
         is UiState.Content -> FrontersContent(
-            switch = s.value,
+            state = s.value,
             onChangeFronter = onChangeFronter,
             onOpenHistory = onOpenHistory,
         )
@@ -52,10 +59,11 @@ fun FrontersScreen(
 
 @Composable
 private fun FrontersContent(
-    switch: Switch?,
+    state: FrontersState,
     onChangeFronter: () -> Unit,
     onOpenHistory: () -> Unit,
 ) {
+    val switch = state.switch
     // No registered switches at all on this system — special-case onboarding feel.
     if (switch == null) {
         EmptyScreen(
@@ -96,8 +104,10 @@ private fun FrontersContent(
                 )
             }
         } else {
-            items(switch.members) { member ->
-                MemberChip(member = member, onClick = onChangeFronter)
+            items(switch.members, key = { it.uuid }) { member ->
+                val streak = state.streaks[member.uuid]
+                    ?: FronterStreak(since = switch.timestamp, truncated = false)
+                CyclingFronterChip(member = member, streak = streak)
             }
             item {
                 Text(
@@ -117,4 +127,35 @@ private fun FrontersContent(
             CompactPillButton(label = "Recent switches", onClick = onOpenHistory)
         }
     }
+}
+
+/**
+ * Tappable fronter chip that cycles its secondary line between the member's
+ * pronouns (default) and "Fronting for Xh".
+ *
+ * On the home screen we used to navigate to the picker on chip tap, but the
+ * "Change fronter" pill below already does that — the chip is more useful
+ * as an info surface. Cycle resets when the member or their streak changes.
+ *
+ * [streak] is this member's continuous-fronting streak across switches —
+ * not the start of the current switch. A co-fronter who was already in the
+ * previous switch shows their longer streak rather than being reset by a
+ * new fronter joining. When [FronterStreak.truncated] is true (their streak
+ * predates our history window), the duration is prefixed with ">".
+ */
+@Composable
+private fun CyclingFronterChip(member: Member, streak: FronterStreak) {
+    val durationPrefix = if (streak.truncated) ">" else ""
+    // null in slot 0 = let MemberChip use its default (pronouns) fallback so
+    // members without pronouns show name-only on the default view.
+    val slots: List<String?> = listOf(
+        null,
+        "Fronting for $durationPrefix${streak.since.elapsedSince()}",
+    )
+    var index by remember(member.uuid, streak) { mutableIntStateOf(0) }
+    MemberChip(
+        member = member,
+        secondaryLabel = slots[index],
+        onClick = { index = (index + 1) % slots.size },
+    )
 }

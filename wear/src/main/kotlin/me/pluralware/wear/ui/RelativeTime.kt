@@ -26,3 +26,18 @@ fun Instant.relativeTo(now: Instant = Instant.now()): String {
         else -> "${d.toDays() / 7}w ago"
     }
 }
+
+/**
+ * Bare duration string (no "ago" suffix) — for sentences like "Fronting for 3h".
+ * Same buckets as [relativeTo] so units are familiar across screens.
+ */
+fun Instant.elapsedSince(now: Instant = Instant.now()): String {
+    val d = Duration.between(this, now)
+    return when {
+        d.isNegative || d.toMinutes() < 1 -> "<1m"
+        d.toHours() < 1 -> "${d.toMinutes()}m"
+        d.toDays() < 1 -> "${d.toHours()}h"
+        d.toDays() < 7 -> "${d.toDays()}d"
+        else -> "${d.toDays() / 7}w"
+    }
+}

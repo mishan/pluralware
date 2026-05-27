@@ -38,7 +38,10 @@ class PickerViewModel(
     fun loadMembers() {
         _state.update { it.copy(members = UiState.Loading) }
         viewModelScope.launch {
-            val r = repository.refreshMembers()
+            // force=true on every picker open: this screen is the user's
+            // chance to react to members they just added in PluralKit, so a
+            // cached list defeats the purpose of opening it.
+            val r = repository.refreshMembers(force = true)
             _state.update {
                 it.copy(
                     members = when (r) {

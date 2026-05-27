@@ -43,6 +43,12 @@ fun MemberChip(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     showCheckmark: Boolean = false,
+    /**
+     * Overrides the default secondary line (pronouns). Pass non-null to surface
+     * something else — used by the home screen to cycle in "Fronting for X" on
+     * tap. Null falls back to [Member.pronouns].
+     */
+    secondaryLabel: String? = null,
 ) {
     Chip(
         onClick = onClick,
@@ -58,7 +64,11 @@ fun MemberChip(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ColorStripe(color = member.indicatorColor())
                 Spacer(Modifier.width(10.dp))
-                Column(member = member, modifier = Modifier.weight(1f))
+                Column(
+                    member = member,
+                    secondaryLabel = secondaryLabel ?: member.pronouns,
+                    modifier = Modifier.weight(1f),
+                )
                 if (showCheckmark && selected) {
                     Icon(
                         imageVector = Icons.Default.Check,
@@ -84,7 +94,7 @@ private fun ColorStripe(color: Color) {
 }
 
 @Composable
-private fun Column(member: Member, modifier: Modifier) {
+private fun Column(member: Member, secondaryLabel: String?, modifier: Modifier) {
     androidx.compose.foundation.layout.Column(modifier = modifier) {
         Text(
             text = member.displayLabel,
@@ -92,10 +102,9 @@ private fun Column(member: Member, modifier: Modifier) {
             color = MaterialTheme.colors.onSurface,
             maxLines = 1,
         )
-        val pronouns = member.pronouns
-        if (!pronouns.isNullOrBlank()) {
+        if (!secondaryLabel.isNullOrBlank()) {
             Text(
-                text = pronouns,
+                text = secondaryLabel,
                 style = MaterialTheme.typography.caption2,
                 color = MaterialTheme.colors.onSurfaceVariant,
                 maxLines = 1,
