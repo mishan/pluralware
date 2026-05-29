@@ -8,15 +8,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import me.pluralware.mobile.ui.TokenEntryScreen
 import me.pluralware.mobile.ui.TokenEntryViewModel
 import me.pluralware.shared.repository.EncryptedTokenStore
+import me.pluralware.shared.settings.LocalSettingsStore
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val tokenStore = EncryptedTokenStore.get(applicationContext)
+        val settingsStore = LocalSettingsStore.get(applicationContext)
         setContent {
             MaterialTheme {
                 val vm: TokenEntryViewModel = viewModel(
-                    factory = TokenEntryViewModel.Factory(tokenStore, applicationContext),
+                    factory = TokenEntryViewModel.Factory(tokenStore, settingsStore, applicationContext),
                 )
                 TokenEntryScreen(viewModel = vm)
             }

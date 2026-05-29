@@ -5,6 +5,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.ui.screens.FrontersScreen
 import me.pluralware.wear.ui.screens.HistoryScreen
 import me.pluralware.wear.ui.screens.MemberPickerScreen
@@ -17,7 +18,10 @@ object Routes {
 }
 
 @Composable
-fun PluralWareApp(repository: PluralKitRepository) {
+fun PluralWareApp(
+    repository: PluralKitRepository,
+    settingsStore: SettingsStore,
+) {
     PluralWareTheme {
         val navController = rememberSwipeDismissableNavController()
         SwipeDismissableNavHost(
@@ -27,6 +31,7 @@ fun PluralWareApp(repository: PluralKitRepository) {
             composable(Routes.FRONTERS) {
                 FrontersScreen(
                     repository = repository,
+                    settingsStore = settingsStore,
                     onChangeFronter = { navController.navigate(Routes.PICK_MEMBERS) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
                 )
