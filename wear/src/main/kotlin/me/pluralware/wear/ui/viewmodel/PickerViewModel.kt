@@ -65,16 +65,22 @@ class PickerViewModel(
         viewModelScope.launch {
             val result = repository.refreshFronters()
             if (result !is PkResult.Success) return@launch
-            val fronterUuids = result.value?.members?.map { it.uuid }?.toSet().orEmpty()
+            // Preserve PluralKit's order — index 0 is the existing proxy fronter.
+            val fronterUuids = result.value?.members?.map { it.uuid }.orEmpty()
             _state.update { current ->
                 if (current.seeded) return@update current
                 // Don't clobber user toggles that landed before the fetch did.
-                val selection = if (current.selectedUuids.isEmpty()) fronterUuids else current.selectedUuids
+                val selection = current.selectedUuids.ifEmpty { fronterUuids }
                 current.copy(selectedUuids = selection, seeded = true)
             }
         }
     }
 
+    /**
+     * Toggle a member in/out of the selection. Adding appends to the end so the
+     * first member tapped stays the primary (proxy) fronter; removing preserves
+     * the order of the remaining members.
+     */
     fun toggle(memberUuid: String) {
         _state.update { current ->
             val next = if (memberUuid in current.selectedUuids) {
@@ -86,20 +92,22 @@ class PickerViewModel(
         }
     }
 
-    fun submitSelection() = submit(_state.value.selectedUuids.toList())
+    fun deselectAll() {
+        _state.update { it.copy(selectedUuids = emptyList()) }
+    }
 
-    fun submitSwitchOut() = submit(emptyList())
+    fun submitSelection() = submit(_state.value.selectedUuids)
 
     private fun submit(uuids: List<String>) {
         if (_state.value.submitting) return
-        val requested = uuids.toSet()
         val currentFronterUuids = repository.currentFronters.value
-            ?.members?.map { it.uuid }?.toSet().orEmpty()
-        // PluralKit returns HTTP 400 if you POST a switch with the same fronters
-        // already on top. Treat the user's intent as already satisfied and just
-        // flash the confirmation. Gated on `seeded` so we don't short-circuit on
-        // a stale (never-loaded) current-fronters value.
-        if (_state.value.seeded && requested == currentFronterUuids) {
+            ?.members?.map { it.uuid }.orEmpty()
+        // PluralKit returns HTTP 400 if you POST a switch identical to the current
+        // fronters. Treat the user's intent as already satisfied and just flash the
+        // confirmation. The comparison is order-sensitive: re-ordering the same
+        // members (e.g. to change the proxy fronter) is a real change, not a no-op.
+        // Gated on `seeded` so we don't short-circuit on a stale current-fronters value.
+        if (_state.value.seeded && uuids == currentFronterUuids) {
             viewModelScope.launch {
                 _state.update { it.copy(confirmed = true) }
                 delay(confirmationLingerMillis)

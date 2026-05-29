@@ -20,12 +20,12 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyListAnchorType
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import me.pluralware.shared.model.Member
-import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PluralKitRepository
-import me.pluralware.wear.ui.components.CompactPillButton
 import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
@@ -121,10 +121,30 @@ private fun FrontersContent(
         item { Spacer(Modifier.height(4.dp)) }
 
         item {
-            CompactPillButton(label = "Change fronter", onClick = onChangeFronter)
+            Chip(
+                onClick = onChangeFronter,
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(
+                        text = "Change fronter",
+                        style = MaterialTheme.typography.button,
+                    )
+                },
+                colors = ChipDefaults.primaryChipColors(),
+            )
         }
         item {
-            CompactPillButton(label = "Recent switches", onClick = onOpenHistory)
+            Chip(
+                onClick = onOpenHistory,
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(
+                        text = "Recent switches",
+                        style = MaterialTheme.typography.button,
+                    )
+                },
+                colors = ChipDefaults.secondaryChipColors(),
+            )
         }
     }
 }
