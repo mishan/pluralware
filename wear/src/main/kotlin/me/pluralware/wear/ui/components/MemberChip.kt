@@ -47,11 +47,6 @@ fun MemberChip(
      */
     selectionNumber: Int? = null,
     /**
-     * Marks this member as the primary (proxy) fronter — PluralKit proxies as
-     * whoever is first in the set. Renders a small "proxy" tag.
-     */
-    isProxy: Boolean = false,
-    /**
      * Overrides the default secondary line (pronouns). Pass non-null to surface
      * something else — used by the home screen to cycle in "Fronting for X" on
      * tap. Null falls back to [Member.pronouns].
@@ -77,26 +72,11 @@ fun MemberChip(
                     secondaryLabel = secondaryLabel ?: member.pronouns,
                     modifier = Modifier.weight(1f),
                 )
-                if (isProxy) {
-                    ProxyTag()
-                    Spacer(Modifier.width(6.dp))
-                }
                 if (selectionNumber != null) {
                     PositionBadge(number = selectionNumber)
                 }
             }
         },
-    )
-}
-
-/** Small caption tag marking the primary/proxy fronter. */
-@Composable
-private fun ProxyTag() {
-    Text(
-        text = "proxy",
-        style = MaterialTheme.typography.caption2,
-        color = MaterialTheme.colors.primary,
-        maxLines = 1,
     )
 }
 

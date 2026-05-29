@@ -80,8 +80,7 @@ private fun PickerContent(
 ) {
     val members = (state.members as UiState.Content).value
     val listState = rememberScalingLazyListState()
-    val selectionCount = state.selectedUuids.size
-    val anySelected = selectionCount > 0
+    val anySelected = state.selectedUuids.isNotEmpty()
 
     ScalingLazyColumn(
         modifier = Modifier
@@ -107,10 +106,8 @@ private fun PickerContent(
             MemberChip(
                 member = member,
                 selected = isSelected,
+                // 1-based position so the user sets and sees the front order.
                 selectionNumber = if (isSelected) position + 1 else null,
-                // "proxy" only carries meaning with co-fronting; a lone fronter
-                // is trivially the proxy, so don't clutter the chip with the tag.
-                isProxy = position == 0 && selectionCount > 1,
                 onClick = { onToggle(member.uuid) },
             )
         }

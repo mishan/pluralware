@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyListAnchorType
-import androidx.wear.compose.foundation.lazy.itemsIndexed
+import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
@@ -103,16 +103,10 @@ private fun FrontersContent(
                 )
             }
         } else {
-            itemsIndexed(switch.members, key = { _, m -> m.uuid }) { index, member ->
+            items(switch.members, key = { it.uuid }) { member ->
                 val streak = state.streaks[member.uuid]
                     ?: FronterStreak(since = switch.timestamp, truncated = false)
-                CyclingFronterChip(
-                    member = member,
-                    streak = streak,
-                    // First in the set is PluralKit's proxy fronter; only worth
-                    // calling out when more than one member is fronting.
-                    isProxy = index == 0 && switch.members.size > 1,
-                )
+                CyclingFronterChip(member = member, streak = streak)
             }
             item {
                 Text(
@@ -149,7 +143,7 @@ private fun FrontersContent(
  * predates our history window), the duration is prefixed with ">".
  */
 @Composable
-private fun CyclingFronterChip(member: Member, streak: FronterStreak, isProxy: Boolean) {
+private fun CyclingFronterChip(member: Member, streak: FronterStreak) {
     val durationPrefix = if (streak.truncated) ">" else ""
     // null in slot 0 = let MemberChip use its default (pronouns) fallback so
     // members without pronouns show name-only on the default view.
@@ -161,7 +155,6 @@ private fun CyclingFronterChip(member: Member, streak: FronterStreak, isProxy: B
     MemberChip(
         member = member,
         secondaryLabel = slots[index],
-        isProxy = isProxy,
         onClick = { index = (index + 1) % slots.size },
     )
 }
