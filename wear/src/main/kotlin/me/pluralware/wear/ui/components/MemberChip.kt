@@ -12,17 +12,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import me.pluralware.shared.model.Member
@@ -42,7 +40,17 @@ fun MemberChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    showCheckmark: Boolean = false,
+    /**
+     * 1-based position in the front order. When non-null a numbered badge is
+     * shown on the trailing edge — used by the picker so the user can see the
+     * order they're setting. Null hides the badge.
+     */
+    selectionNumber: Int? = null,
+    /**
+     * Marks this member as the primary (proxy) fronter — PluralKit proxies as
+     * whoever is first in the set. Renders a small "proxy" tag.
+     */
+    isProxy: Boolean = false,
     /**
      * Overrides the default secondary line (pronouns). Pass non-null to surface
      * something else — used by the home screen to cycle in "Fronting for X" on
@@ -69,17 +77,47 @@ fun MemberChip(
                     secondaryLabel = secondaryLabel ?: member.pronouns,
                     modifier = Modifier.weight(1f),
                 )
-                if (showCheckmark && selected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Selected",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colors.primary,
-                    )
+                if (isProxy) {
+                    ProxyTag()
+                    Spacer(Modifier.width(6.dp))
+                }
+                if (selectionNumber != null) {
+                    PositionBadge(number = selectionNumber)
                 }
             }
         },
     )
+}
+
+/** Small caption tag marking the primary/proxy fronter. */
+@Composable
+private fun ProxyTag() {
+    Text(
+        text = "proxy",
+        style = MaterialTheme.typography.caption2,
+        color = MaterialTheme.colors.primary,
+        maxLines = 1,
+    )
+}
+
+/** Circular 1-based position badge shown on selected picker chips. */
+@Composable
+private fun PositionBadge(number: Int) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colors.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = number.toString(),
+            style = MaterialTheme.typography.caption2,
+            color = MaterialTheme.colors.onPrimary,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable

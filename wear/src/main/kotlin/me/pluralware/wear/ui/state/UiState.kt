@@ -40,7 +40,12 @@ data class FronterStreak(
 /** Member-picker has a richer state: content + the user's working selection. */
 data class PickerState(
     val members: UiState<List<Member>> = UiState.Loading,
-    val selectedUuids: Set<String> = emptySet(),
+    /**
+     * Selected members in front order. Order is significant: index 0 is the
+     * primary fronter PluralKit uses for proxying. An empty list means a
+     * switch-out (nobody fronting).
+     */
+    val selectedUuids: List<String> = emptyList(),
     val submitting: Boolean = false,
     /** True once we've fetched current fronters and applied them as the initial selection. */
     val seeded: Boolean = false,

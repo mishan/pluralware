@@ -18,12 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyListAnchorType
-import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import me.pluralware.shared.model.Member
-import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.wear.ui.components.CompactPillButton
 import me.pluralware.wear.ui.components.EmptyScreen
@@ -104,10 +103,16 @@ private fun FrontersContent(
                 )
             }
         } else {
-            items(switch.members, key = { it.uuid }) { member ->
+            itemsIndexed(switch.members, key = { _, m -> m.uuid }) { index, member ->
                 val streak = state.streaks[member.uuid]
                     ?: FronterStreak(since = switch.timestamp, truncated = false)
-                CyclingFronterChip(member = member, streak = streak)
+                CyclingFronterChip(
+                    member = member,
+                    streak = streak,
+                    // First in the set is PluralKit's proxy fronter; only worth
+                    // calling out when more than one member is fronting.
+                    isProxy = index == 0 && switch.members.size > 1,
+                )
             }
             item {
                 Text(
@@ -144,7 +149,7 @@ private fun FrontersContent(
  * predates our history window), the duration is prefixed with ">".
  */
 @Composable
-private fun CyclingFronterChip(member: Member, streak: FronterStreak) {
+private fun CyclingFronterChip(member: Member, streak: FronterStreak, isProxy: Boolean) {
     val durationPrefix = if (streak.truncated) ">" else ""
     // null in slot 0 = let MemberChip use its default (pronouns) fallback so
     // members without pronouns show name-only on the default view.
@@ -156,6 +161,7 @@ private fun CyclingFronterChip(member: Member, streak: FronterStreak) {
     MemberChip(
         member = member,
         secondaryLabel = slots[index],
+        isProxy = isProxy,
         onClick = { index = (index + 1) % slots.size },
     )
 }

@@ -56,7 +56,7 @@ fun MemberPickerScreen(
                 state = state,
                 onToggle = vm::toggle,
                 onConfirm = vm::submitSelection,
-                onSwitchOut = vm::submitSwitchOut,
+                onDeselectAll = vm::deselectAll,
             )
         }
 
@@ -76,11 +76,12 @@ private fun PickerContent(
     state: PickerState,
     onToggle: (String) -> Unit,
     onConfirm: () -> Unit,
-    onSwitchOut: () -> Unit,
+    onDeselectAll: () -> Unit,
 ) {
     val members = (state.members as UiState.Content).value
     val listState = rememberScalingLazyListState()
-    val anySelected = state.selectedUuids.isNotEmpty()
+    val selectionCount = state.selectedUuids.size
+    val anySelected = selectionCount > 0
 
     ScalingLazyColumn(
         modifier = Modifier
@@ -101,30 +102,35 @@ private fun PickerContent(
         }
 
         items(members, key = { it.uuid }) { member ->
-            val isSelected = member.uuid in state.selectedUuids
+            val position = state.selectedUuids.indexOf(member.uuid)
+            val isSelected = position >= 0
             MemberChip(
                 member = member,
                 selected = isSelected,
-                showCheckmark = true,
+                selectionNumber = if (isSelected) position + 1 else null,
+                // "proxy" only carries meaning with co-fronting; a lone fronter
+                // is trivially the proxy, so don't clutter the chip with the tag.
+                isProxy = position == 0 && selectionCount > 1,
                 onClick = { onToggle(member.uuid) },
             )
         }
 
         item { Spacer(Modifier.height(4.dp)) }
 
-        // Primary action — disabled-looking when nothing's selected, but always tappable
-        // (still a valid path: confirm with nothing selected = no-op for UX clarity).
+        // Primary action. Confirming with nothing selected registers a switch-out
+        // (nobody fronting) — that's how you switch out now that the dedicated
+        // button is gone, so it stays enabled even when the selection is empty.
         item {
             Chip(
                 onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = anySelected && !state.submitting,
+                enabled = !state.submitting,
                 label = {
                     Text(
                         text = when {
                             state.submitting -> "Saving…"
                             anySelected -> "Confirm switch"
-                            else -> "Select members"
+                            else -> "Switch out"
                         },
                         style = MaterialTheme.typography.button,
                     )
@@ -135,12 +141,12 @@ private fun PickerContent(
 
         item {
             Chip(
-                onClick = onSwitchOut,
+                onClick = onDeselectAll,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !state.submitting,
+                enabled = anySelected && !state.submitting,
                 label = {
                     Text(
-                        text = "Switch out",
+                        text = "Deselect all",
                         style = MaterialTheme.typography.button,
                     )
                 },
