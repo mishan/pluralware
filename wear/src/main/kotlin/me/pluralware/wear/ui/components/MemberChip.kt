@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,8 +65,11 @@ fun MemberChip(
             },
         ),
         label = {
+            // Cache the parsed/alpha-applied stripe colour per member so
+            // scroll-driven recompositions don't re-parse the hex each frame.
+            val stripeColor = remember(member.color) { member.indicatorColor() }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ColorStripe(color = member.indicatorColor())
+                ColorStripe(color = stripeColor)
                 Spacer(Modifier.width(10.dp))
                 Column(
                     member = member,
@@ -134,6 +138,7 @@ private fun Column(member: Member, secondaryLabel: String?, modifier: Modifier) 
 /** Compact static badge form — used in the recent switches summary, not a button. */
 @Composable
 fun MemberBadge(member: Member, modifier: Modifier = Modifier) {
+    val dotColor = remember(member.color) { member.indicatorColor() }
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -142,7 +147,7 @@ fun MemberBadge(member: Member, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(member.indicatorColor()),
+                .background(dotColor),
         )
         Spacer(Modifier.width(6.dp))
         Text(

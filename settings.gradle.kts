@@ -25,3 +25,4 @@ rootProject.name = "PluralWare"
 include(":shared")
 include(":wear")
 include(":mobile")
+include(":baselineprofile")
