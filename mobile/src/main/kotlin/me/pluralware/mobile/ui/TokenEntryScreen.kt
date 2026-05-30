@@ -54,45 +54,50 @@ fun TokenEntryScreen(viewModel: TokenEntryViewModel) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                text = "Connect your PluralKit account so your watch can read and update your fronters.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
 
-            HowToFindTokenCard()
+            // Once a token is connected the input is hidden — the user disconnects
+            // (below) to enter a different one.
+            if (state.status !is ConnectionStatus.Connected) {
+                Text(
+                    text = "Connect your PluralKit account so your watch can read and update your fronters.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-            OutlinedTextField(
-                value = state.input,
-                onValueChange = viewModel::onInputChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("PluralKit token") },
-                placeholder = { Text("Paste the output of `pk;token`") },
-                singleLine = true,
-                enabled = state.status !is ConnectionStatus.Validating,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                ),
-                isError = state.status is ConnectionStatus.Error,
-            )
+                HowToFindTokenCard()
 
-            Button(
-                onClick = viewModel::connect,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = state.input.isNotBlank() &&
-                    state.status !is ConnectionStatus.Validating,
-            ) {
-                if (state.status is ConnectionStatus.Validating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text("  Connecting…")
-                } else {
-                    Text("Connect & send to watch")
+                OutlinedTextField(
+                    value = state.input,
+                    onValueChange = viewModel::onInputChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("PluralKit token") },
+                    placeholder = { Text("Paste the output of `pk;token`") },
+                    singleLine = true,
+                    enabled = state.status !is ConnectionStatus.Validating,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.None,
+                        autoCorrectEnabled = false,
+                    ),
+                    isError = state.status is ConnectionStatus.Error,
+                )
+
+                Button(
+                    onClick = viewModel::connect,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.input.isNotBlank() &&
+                        state.status !is ConnectionStatus.Validating,
+                ) {
+                    if (state.status is ConnectionStatus.Validating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("  Connecting…")
+                    } else {
+                        Text("Connect & send to watch")
+                    }
                 }
             }
 
@@ -251,6 +256,11 @@ private fun ConnectedCard(
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             PushStateText(state.push)
+            Text(
+                text = "To use a different PluralKit token, disconnect first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
