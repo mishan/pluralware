@@ -118,6 +118,13 @@ private fun FrontersContent(
     }
 
     val listState = rememberScalingLazyListState()
+    // Returning from the picker pops back to this destination, so the list
+    // state is preserved — including scroll position. After a new switch
+    // (either one we just registered, or one another client pushed), snap
+    // back to the top so the fresh fronter is the first thing you see.
+    LaunchedEffect(switch.uuid) {
+        listState.animateScrollToItem(0)
+    }
     ScalingLazyColumn(
         modifier = Modifier
             .fillMaxWidth()
