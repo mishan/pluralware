@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        Watch-only profile. The producer never ships to a device that isn't
+        running Wear OS, but Wear hardware has the type.watch feature, so we
+        declare it here to keep the manifest honest.
+    -->
+    <uses-feature android:name="android.hardware.type.watch" />
+</manifest>

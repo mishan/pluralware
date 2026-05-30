@@ -20,8 +20,11 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.repository.EncryptedTokenStore
+import me.pluralware.shared.repository.InMemoryTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.ui.PluralWareApp
@@ -30,7 +33,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val tokenStore = EncryptedTokenStore.get(applicationContext)
+        // Benchmark variant skips encrypted storage and pre-seeds a token so
+        // the baseline-profile producer can drive the real screens without a
+        // paired phone. Production builds always take the encrypted path.
+        val tokenStore: TokenStore = if (BuildConfig.BENCHMARK) {
+            InMemoryTokenStore(initial = PluralKitToken("benchmark"))
+        } else {
+            EncryptedTokenStore.get(applicationContext)
+        }
         val settingsStore = LocalSettingsStore.get(applicationContext)
         setContent {
             val token by tokenStore.tokenFlow.collectAsState()
@@ -47,12 +57,17 @@ private fun ConnectedApp(token: PluralKitToken, settingsStore: SettingsStore) {
     // Re-key on the raw token: a token replacement recreates the repository so
     // we don't accidentally serve cached member data for the wrong system.
     val repository = remember(token.raw) {
-        PluralKitRepository(
+        val client = if (BuildConfig.BENCHMARK) {
+            // Zero-latency mock keeps the macrobenchmark deterministic and
+            // independent of network conditions.
+            MockPluralKitClient(artificialLatencyMillis = 0L)
+        } else {
             PluralKitClientFactory.create(
                 token = token,
                 enableLogging = BuildConfig.DEBUG,
             )
-        )
+        }
+        PluralKitRepository(client)
     }
     PluralWareApp(repository = repository, settingsStore = settingsStore)
 }

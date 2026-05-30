@@ -34,9 +34,16 @@ kotlinxCoroutines = "1.9.0"
 # Testing.
 junit = "4.13.2"
 androidxTestExt = "1.2.1"
+androidxTestRunner = "1.6.2"
 espresso = "3.6.1"
 mockk = "1.13.13"
 turbine = "1.2.0"
+
+# Baseline profile generation + consumption (Macrobenchmark / Profile Installer).
+androidxBaselineprofile = "1.3.4"
+androidxBenchmark = "1.3.4"
+androidxProfileinstaller = "1.4.1"
+androidxUiautomator = "2.3.0"
 
 [libraries]
 # AndroidX core.
@@ -96,10 +103,20 @@ mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 
+# Baseline profile generation: producer side (in :baselineprofile).
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "androidxBenchmark" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "androidxUiautomator" }
+# Baseline profile consumption: lives in :wear so the AOT-compiled profile
+# actually gets installed and used by ART at app start.
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "androidxProfileinstaller" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "androidxBaselineprofile" }

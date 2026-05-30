@@ -1,7 +1,15 @@
+import com.android.build.api.variant.BuildConfigField
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    // Consumer side of baseline profile generation. Together with the
+    // `baselineProfile` dependency below, this plugin (a) wires the
+    // :baselineprofile producer into our release variant and (b) auto-creates
+    // helper variants like `nonMinifiedRelease` that the producer actually
+    // runs against.
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
@@ -14,6 +22,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        // BENCHMARK is off in production builds. The baselineprofile plugin
+        // generates a `nonMinifiedRelease` variant that the profile producer
+        // runs against; we flip BENCHMARK on for just that variant below so
+        // the producer drives the real screens (MockPluralKitClient +
+        // pre-seeded InMemoryTokenStore) without a paired phone.
+        buildConfigField("boolean", "BENCHMARK", "false")
     }
 
     buildTypes {
@@ -41,6 +55,23 @@ android {
     }
 
     kotlinOptions { jvmTarget = "17" }
+}
+
+androidComponents {
+    // The producer (:baselineprofile) runs against `nonMinifiedRelease`, a
+    // release-without-R8 variant the baselineprofile plugin auto-creates.
+    // Flip BENCHMARK on there so MainActivity short-circuits to mock data and
+    // the macrobenchmark can actually exercise the scroll paths.
+    onVariants(selector().withBuildType("nonMinifiedRelease")) { variant ->
+        variant.buildConfigFields?.put(
+            "BENCHMARK",
+            BuildConfigField(
+                "boolean",
+                "true",
+                "Enabled in the baseline-profile producer variant.",
+            ),
+        )
+    }
 }
 
 dependencies {
@@ -71,6 +102,13 @@ dependencies {
 
     // Encrypted token storage.
     implementation(libs.androidx.security.crypto)
+
+    // Installs the AOT-compiled baseline profile recorded by :baselineprofile.
+    // Required for ART to apply the profile on first launch.
+    implementation(libs.androidx.profileinstaller)
+
+    // Producer hookup: tells the consumer plugin where the profile comes from.
+    "baselineProfile"(project(":baselineprofile"))
 
     // (Tiles and complications added when we get to that phase.)
 
