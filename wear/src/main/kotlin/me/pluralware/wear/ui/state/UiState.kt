@@ -18,6 +18,8 @@ sealed interface UiState<out T> {
 data class FrontersState(
     val switch: Switch?,
     val streaks: Map<String, FronterStreak> = emptyMap(),
+    /** True while a background/manual refresh is in flight over existing content. */
+    val refreshing: Boolean = false,
 )
 
 /**

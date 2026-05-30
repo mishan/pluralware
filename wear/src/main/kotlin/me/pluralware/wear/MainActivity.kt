@@ -22,6 +22,8 @@ import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.settings.LocalSettingsStore
+import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -29,18 +31,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val tokenStore = EncryptedTokenStore.get(applicationContext)
+        val settingsStore = LocalSettingsStore.get(applicationContext)
         setContent {
             val token by tokenStore.tokenFlow.collectAsState()
             when (val t = token) {
                 null -> WaitingForPairingScreen()
-                else -> ConnectedApp(t)
+                else -> ConnectedApp(t, settingsStore)
             }
         }
     }
 }
 
 @Composable
-private fun ConnectedApp(token: PluralKitToken) {
+private fun ConnectedApp(token: PluralKitToken, settingsStore: SettingsStore) {
     // Re-key on the raw token: a token replacement recreates the repository so
     // we don't accidentally serve cached member data for the wrong system.
     val repository = remember(token.raw) {
@@ -51,7 +54,7 @@ private fun ConnectedApp(token: PluralKitToken) {
             )
         )
     }
-    PluralWareApp(repository = repository)
+    PluralWareApp(repository = repository, settingsStore = settingsStore)
 }
 
 @Composable

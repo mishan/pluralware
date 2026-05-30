@@ -5,14 +5,18 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.ui.state.FronterStreak
 import me.pluralware.wear.ui.state.FrontersState
 import me.pluralware.wear.ui.state.UiState
@@ -22,10 +26,24 @@ private const val HISTORY_LIMIT = 100
 
 class FrontersViewModel(
     private val repository: PluralKitRepository,
+    settingsStore: SettingsStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<UiState<FrontersState>>(UiState.Loading)
     val state: StateFlow<UiState<FrontersState>> = _state.asStateFlow()
+
+    /** Poll interval in seconds (0 = off), driven by the synced settings. */
+    val refreshIntervalSeconds: StateFlow<Int> = settingsStore.settingsFlow
+        .map { it.refreshInterval.seconds }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            settingsStore.settingsFlow.value.refreshInterval.seconds,
+        )
+
+    // Guards against overlapping fetches: a slow refresh shouldn't stack with
+    // the poll loop or the resume refresh.
+    private var fetching = false
 
     init {
         load()
@@ -39,47 +57,77 @@ class FrontersViewModel(
                 val current = _state.value
                 if (current is UiState.Content &&
                     incoming?.uuid != current.value.switch?.uuid) {
-                    load()
+                    refresh()
                 }
             }
             .launchIn(viewModelScope)
     }
 
-    fun load() {
-        _state.value = UiState.Loading
+    /** Full load — shows the loading spinner. Used for first load and error retry. */
+    fun load() = fetch(soft = false)
+
+    /**
+     * Soft refresh — keeps showing current content (with a small spinner)
+     * instead of flashing the full-screen loader. Used by resume, polling, and
+     * the manual refresh button. On failure with existing content we keep the
+     * stale data rather than replacing it with an error screen.
+     */
+    fun refresh() = fetch(soft = true)
+
+    private fun fetch(soft: Boolean) {
+        if (fetching) return
+        val current = _state.value
+        when {
+            soft && current is UiState.Content ->
+                _state.value = UiState.Content(current.value.copy(refreshing = true))
+            !soft -> _state.value = UiState.Loading
+            // soft && not content: leave Loading/Error as-is; we replace on success.
+        }
+        fetching = true
         viewModelScope.launch {
-            val frontersResult = repository.refreshFronters()
-            if (frontersResult is PkResult.Failure) {
-                _state.value = UiState.Error(
-                    message = frontersResult.error.message ?: "Couldn't load fronters",
+            try {
+                val frontersResult = repository.refreshFronters()
+                if (frontersResult is PkResult.Failure) {
+                    val cur = _state.value
+                    _state.value = if (cur is UiState.Content) {
+                        // Keep stale content visible; just stop the spinner.
+                        UiState.Content(cur.value.copy(refreshing = false))
+                    } else {
+                        UiState.Error(frontersResult.error.message ?: "Couldn't load fronters")
+                    }
+                    return@launch
+                }
+                val switch = (frontersResult as PkResult.Success).value
+                // History failure is non-fatal — we still have a current switch to
+                // show. Streaks just fall back to the current switch timestamp.
+                val history = (repository.recentSwitches(limit = HISTORY_LIMIT) as? PkResult.Success)
+                    ?.value
+                    .orEmpty()
+                // If we got back the full HISTORY_LIMIT, assume there could be more
+                // switches beyond our window; a member fronting at the boundary
+                // gets the ">" uncertainty marker. If we got fewer, we have the
+                // whole history and the boundary is real.
+                val historyCapped = history.size >= HISTORY_LIMIT
+                _state.value = UiState.Content(
+                    FrontersState(
+                        switch = switch,
+                        streaks = computeStreaks(switch, history, historyCapped),
+                        refreshing = false,
+                    )
                 )
-                return@launch
+            } finally {
+                fetching = false
             }
-            val switch = (frontersResult as PkResult.Success).value
-            // History failure is non-fatal — we still have a current switch to
-            // show. Streaks just fall back to the current switch timestamp,
-            // which is what the chip used to display anyway.
-            val history = (repository.recentSwitches(limit = HISTORY_LIMIT) as? PkResult.Success)
-                ?.value
-                .orEmpty()
-            // If we got back the full HISTORY_LIMIT, assume there could be more
-            // switches beyond our window; a member fronting at the boundary
-            // gets the ">" uncertainty marker. If we got fewer, we have the
-            // whole history and the boundary is real.
-            val historyCapped = history.size >= HISTORY_LIMIT
-            _state.value = UiState.Content(
-                FrontersState(
-                    switch = switch,
-                    streaks = computeStreaks(switch, history, historyCapped),
-                )
-            )
         }
     }
 
     @Suppress("UNCHECKED_CAST")
-    class Factory(private val repository: PluralKitRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: PluralKitRepository,
+        private val settingsStore: SettingsStore,
+    ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            FrontersViewModel(repository) as T
+            FrontersViewModel(repository, settingsStore) as T
     }
 }
 

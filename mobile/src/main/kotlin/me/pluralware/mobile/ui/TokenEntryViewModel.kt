@@ -16,9 +16,13 @@ import kotlinx.coroutines.launch
 import me.pluralware.mobile.BuildConfig
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.repository.TokenStore
+import me.pluralware.shared.settings.AppSettings
+import me.pluralware.shared.settings.RefreshInterval
+import me.pluralware.shared.settings.SettingsStore
 
 /**
  * Coordinates the three steps of pairing:
@@ -34,11 +38,23 @@ import me.pluralware.shared.repository.TokenStore
  */
 class TokenEntryViewModel(
     private val tokenStore: TokenStore,
+    private val settingsStore: SettingsStore,
     private val appContext: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(TokenEntryState())
     val state: StateFlow<TokenEntryState> = _state.asStateFlow()
+
+    /** Current app settings; the watch-refresh selector binds to this. */
+    val settings: StateFlow<AppSettings> = settingsStore.settingsFlow
+
+    /** Persist the chosen refresh interval and push it to the watch (best-effort). */
+    fun setRefreshInterval(interval: RefreshInterval) {
+        viewModelScope.launch {
+            settingsStore.setRefreshInterval(interval)
+            runCatching { SettingsHandoff.push(appContext, settingsStore.getSettings()) }
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -97,6 +113,10 @@ class TokenEntryViewModel(
             }
 
             tokenStore.setToken(token)
+            // Send current settings alongside the token so a freshly-paired
+            // watch starts in sync. Best-effort — a missing watch shouldn't
+            // block connecting.
+            runCatching { SettingsHandoff.push(appContext, settingsStore.getSettings()) }
             _state.update {
                 it.copy(
                     input = "",
@@ -159,9 +179,10 @@ class TokenEntryViewModel(
 
     class Factory(
         private val tokenStore: TokenStore,
+        private val settingsStore: SettingsStore,
         private val appContext: Context,
     ) : ViewModelProvider.Factory by viewModelFactory({
-        initializer { TokenEntryViewModel(tokenStore, appContext) }
+        initializer { TokenEntryViewModel(tokenStore, settingsStore, appContext) }
     })
 }
 

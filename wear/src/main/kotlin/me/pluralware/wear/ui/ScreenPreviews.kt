@@ -6,6 +6,7 @@ import androidx.wear.tooling.preview.devices.WearDevices
 import androidx.compose.ui.tooling.preview.Preview
 import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.settings.InMemorySettingsStore
 import me.pluralware.wear.ui.screens.FrontersScreen
 import me.pluralware.wear.ui.screens.HistoryScreen
 import me.pluralware.wear.ui.screens.MemberPickerScreen
@@ -24,7 +25,12 @@ private fun previewRepository(): PluralKitRepository = remember {
 @Composable
 private fun FrontersScreenPreview() {
     PluralWareTheme {
-        FrontersScreen(repository = previewRepository(), onChangeFronter = {}, onOpenHistory = {})
+        FrontersScreen(
+            repository = previewRepository(),
+            settingsStore = remember { InMemorySettingsStore() },
+            onChangeFronter = {},
+            onOpenHistory = {},
+        )
     }
 }
 
@@ -32,7 +38,12 @@ private fun FrontersScreenPreview() {
 @Composable
 private fun FrontersScreenSmallPreview() {
     PluralWareTheme {
-        FrontersScreen(repository = previewRepository(), onChangeFronter = {}, onOpenHistory = {})
+        FrontersScreen(
+            repository = previewRepository(),
+            settingsStore = remember { InMemorySettingsStore() },
+            onChangeFronter = {},
+            onOpenHistory = {},
+        )
     }
 }
 
