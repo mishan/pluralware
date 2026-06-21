@@ -21,6 +21,12 @@ class PickerViewModel(
     private val repository: PluralKitRepository,
     /** Briefly shown after a successful switch before nav-back. Tuned for "felt" but not annoying. */
     private val confirmationLingerMillis: Long = 700L,
+    /**
+     * Fired after a switch is actually registered (not on the no-op short-circuit),
+     * so the app layer can push a fronter-complication refresh. No-op by default
+     * to keep previews/tests Context-free.
+     */
+    private val onSwitchRegistered: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PickerState())
@@ -119,6 +125,8 @@ class PickerViewModel(
         viewModelScope.launch {
             when (val r = repository.registerSwitch(uuids)) {
                 is PkResult.Success -> {
+                    // Fronters changed — refresh any hosted complication.
+                    onSwitchRegistered()
                     _state.update { it.copy(submitting = false, confirmed = true) }
                     delay(confirmationLingerMillis)
                     _doneEvents.emit(Unit)
@@ -138,8 +146,11 @@ class PickerViewModel(
     }
 
     @Suppress("UNCHECKED_CAST")
-    class Factory(private val repository: PluralKitRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: PluralKitRepository,
+        private val onSwitchRegistered: () -> Unit = {},
+    ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            PickerViewModel(repository) as T
+            PickerViewModel(repository, onSwitchRegistered = onSwitchRegistered) as T
     }
 }

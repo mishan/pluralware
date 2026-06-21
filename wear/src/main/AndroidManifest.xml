@@ -51,5 +51,71 @@
                     android:pathPrefix="/pluralware/settings" />
             </intent-filter>
         </service>
+
+        <!--
+            LONG_TEXT complication showing the current fronter(s). The
+            BIND_COMPLICATION_PROVIDER permission + UPDATE_REQUEST filter are
+            what register it in the system complication picker. UPDATE_PERIOD is
+            0 (no polling): we push updates via ComplicationDataSourceUpdateRequester
+            after a switch is registered.
+        -->
+        <service
+            android:name=".complication.FronterComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_complication"
+            android:label="Fronter"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="LONG_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+        <!--
+            Launcher complication: a static one-tap shortcut into the app
+            (SHORT_TEXT "PW" / glyph). No token or network, so it works in any
+            slot regardless of pairing state.
+        -->
+        <service
+            android:name=".complication.LauncherComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_complication"
+            android:label="Open PluralWare"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+        <!--
+            Fronter tile. BIND_TILE_PROVIDER + the BIND_TILE_PROVIDER action
+            register it in the tile carousel picker. Refreshed on a coarse
+            freshness interval and pushed via TileService.getUpdater after a switch.
+        -->
+        <service
+            android:name=".tile.FronterTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_complication"
+            android:label="Fronter"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <!-- Placeholder preview; replace with a real tile preview image before publishing. -->
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_complication" />
+        </service>
     </application>
 </manifest>

@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.MaterialTheme
@@ -27,6 +28,8 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
+import me.pluralware.wear.complication.requestFronterComplicationUpdate
+import me.pluralware.wear.tile.requestFronterTileUpdate
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -69,7 +72,16 @@ private fun ConnectedApp(token: PluralKitToken, settingsStore: SettingsStore) {
         }
         PluralKitRepository(client)
     }
-    PluralWareApp(repository = repository, settingsStore = settingsStore)
+    val appContext = LocalContext.current.applicationContext
+    PluralWareApp(
+        repository = repository,
+        settingsStore = settingsStore,
+        // Push a complication + tile refresh whenever the user registers a switch.
+        onSwitchRegistered = {
+            requestFronterComplicationUpdate(appContext)
+            requestFronterTileUpdate(appContext)
+        },
+    )
 }
 
 @Composable

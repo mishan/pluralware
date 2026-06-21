@@ -20,6 +20,8 @@ playServicesWearable = "19.0.0"
 wearTiles = "1.4.1"
 wearProtolayout = "1.2.1"
 wearWatchface = "1.2.1"
+# Bridges suspend functions to the ListenableFutures that TileService returns.
+concurrentFutures = "1.2.0"
 
 # Token storage on the watch.
 securityCrypto = "1.1.0-alpha06"
@@ -75,6 +77,7 @@ androidx-wear-tiles-material = { group = "androidx.wear.tiles", name = "tiles-ma
 androidx-wear-protolayout = { group = "androidx.wear.protolayout", name = "protolayout", version.ref = "wearProtolayout" }
 androidx-wear-protolayout-material = { group = "androidx.wear.protolayout", name = "protolayout-material", version.ref = "wearProtolayout" }
 androidx-wear-watchface-complications-data-source = { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "wearWatchface" }
+androidx-concurrent-futures-ktx = { group = "androidx.concurrent", name = "concurrent-futures-ktx", version.ref = "concurrentFutures" }
 play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
 
 # Encrypted token storage (used on both watch and phone).
