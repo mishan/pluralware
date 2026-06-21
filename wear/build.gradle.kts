@@ -100,6 +100,17 @@ dependencies {
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
 
+    // Complication data source + update requester (LONG_TEXT fronter complication).
+    implementation(libs.androidx.wear.watchface.complications.data.source)
+
+    // Tiles (fronter tile) — ProtoLayout layout + Material components.
+    implementation(libs.androidx.wear.tiles)
+    implementation(libs.androidx.wear.tiles.material)
+    implementation(libs.androidx.wear.protolayout)
+    implementation(libs.androidx.wear.protolayout.material)
+    // SuspendToFutureAdapter: lets the TileService answer requests from a coroutine.
+    implementation(libs.androidx.concurrent.futures.ktx)
+
     // Encrypted token storage.
     implementation(libs.androidx.security.crypto)
 
@@ -110,7 +121,7 @@ dependencies {
     // Producer hookup: tells the consumer plugin where the profile comes from.
     "baselineProfile"(project(":baselineprofile"))
 
-    // (Tiles and complications added when we get to that phase.)
+    // (Tiles added when we get to that phase.)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

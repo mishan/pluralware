@@ -17,6 +17,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -33,6 +34,8 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
+import me.pluralware.wear.complication.requestFronterComplicationUpdate
+import me.pluralware.wear.tile.requestFronterTileUpdate
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -97,8 +100,18 @@ private fun ConnectedApp(
 ) {
     // The screens' ViewModels (through the nav graph's back-stack entries)
     // live in the session's store, not the activity's.
+    val appContext = LocalContext.current.applicationContext
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
-        PluralWareApp(repository = session.repository, settingsStore = settingsStore, onSignOut = onSignOut)
+        PluralWareApp(
+            repository = session.repository,
+            settingsStore = settingsStore,
+            onSignOut = onSignOut,
+            // Push a complication + tile refresh whenever the user registers a switch.
+            onSwitchRegistered = {
+                requestFronterComplicationUpdate(appContext)
+                requestFronterTileUpdate(appContext)
+            },
+        )
     }
 }
 

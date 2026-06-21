@@ -22,6 +22,7 @@ fun PluralWareApp(
     repository: PluralKitRepository,
     settingsStore: SettingsStore,
     onSignOut: () -> Unit,
+    onSwitchRegistered: () -> Unit = {},
 ) {
     PluralWareTheme {
         val navController = rememberSwipeDismissableNavController()
@@ -43,6 +44,7 @@ fun PluralWareApp(
                     repository = repository,
                     onDone = { navController.popBackStack() },
                     onSignOut = onSignOut,
+                    onSwitchRegistered = onSwitchRegistered,
                 )
             }
             composable(Routes.HISTORY) {
