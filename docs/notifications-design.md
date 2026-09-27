@@ -1,68 +1,206 @@
 # Switch Notifications for Friends — Design
 
 Status: proposal. Scope: let a PluralWare user share "who's fronting" with chosen friends as push
-notifications, delivered by [ntfy](https://ntfy.sh). Friends need only the stock ntfy app, not
-PluralWare. Phase A publishes from PluralWare itself; phase C, later and optional, adds a relay so
+notifications. There are two delivery modes:
+
+- **Private** (the default): each notification is end-to-end encrypted with standard Web Push
+  encryption, so only the friend's device can read it. The friend receives it in PluralWare's phone
+  app (via UnifiedPush) or in a small web app.
+- **Simple**: plain messages on an [ntfy](https://ntfy.sh) topic, readable in the stock ntfy app
+  by the friend and by whoever runs the server. Meant for a server you run yourself, or for friends
+  who won't install anything.
+
+Phase A sends from PluralWare itself. Phase C, later and optional, adds a relay the user hosts, so
 switches made in Discord or elsewhere notify too. No code written yet.
 
 ## 1. What it is
 
-Today a friend learns about a switch from PluralKit's Discord bot or by asking. This adds a
-**Share with friends** feature:
+Today a friend learns about a switch from PluralKit's Discord bot or by asking. This adds
+**Share with friends**:
 
-1. The user runs, or picks, an ntfy server: self-hosted, or a public one such as ntfy.sh.
-2. On the phone app they add a friend and choose which members may be named to them. PluralWare
-   creates a private topic for that friend and shows a QR code or link.
-3. The friend scans it in the ntfy app. From then on, each switch the user makes in PluralWare
-   sends that friend a notification like **"Alex and Bea are fronting"**.
+1. On the phone app the user chooses which members may be named, and invites a friend.
+2. The friend accepts on their device. In Private mode that's PluralWare's phone app or the web
+   receiver; in Simple mode it's the ntfy app.
+3. From then on, each switch the user makes in PluralWare sends that friend a notification like
+   **"Alex and Bea are fronting"**.
 
-The friend's watch gets it too, because Wear OS mirrors phone notifications.
+On Android, the friend's watch gets it too, because Wear OS mirrors phone notifications.
 
-## 2. Why ntfy
+## 2. Building blocks
 
-- **Friends install nothing of ours.** ntfy has Android, iOS and web clients, and subscribing is a
-  URL. It's the same app whether the server is ntfy.sh or the user's own.
-- **Self-hostable.** One binary, a small config file, per-user access control. A user who wants
-  their fronting data on hardware they control can have that. The public ntfy.sh works for people
-  who don't want to run anything.
-- **Publishing is one HTTP request.** It fits the "no backend of our own" stance the rest of the
-  app takes.
+| Piece | Role here |
+|---|---|
+| **Web Push** (RFC 8030 delivery, RFC 8291 payload encryption, RFC 8292 VAPID sender identity) | The one protocol PluralWare sends in Private mode. The *receiver* generates the encryption keys; everything between sender and receiver relays ciphertext. |
+| **UnifiedPush** | Android push without Google. Its Android spec requires RFC 8291-encrypted messages, so it *is* Web Push on the wire. A distributor app on the friend's phone holds the connection and hands ciphertext to our app, whose connector library decrypts it. |
+| **ntfy** | Two jobs. In Private mode, the ntfy app is a UnifiedPush distributor and an ntfy server (the user's own, or ntfy.sh) carries ciphertext. In Simple mode it carries plain messages to the stock ntfy app. |
+| **Browser push services** | Google, Mozilla and Apple run these for their browsers. They carry ciphertext to the web receiver. |
+
+**ntfy has no end-to-end encryption of its own**, self-hosted or not: the request (ntfy issue #69)
+has been open since 2021. Its server can read every message it carries, and caches messages for a
+while (12 hours by default) unless a message is sent with `X-Cache: no`. That is why Private mode
+encrypts before ntfy is involved, and why Simple mode is labeled as readable by the server.
 
 Alternatives considered:
 
 | Option | Why not (for now) |
 |---|---|
+| Our own encryption over ntfy topics | The stock ntfy app would show ciphertext, so friends need our receiver anyway, and then the standard encryption is the better choice. |
+| Firebase Cloud Messaging directly | Needs a Google project and a backend we run. UnifiedPush can still fall back to FCM on phones without a distributor, carrying the same ciphertext (section 5). |
 | Discord webhook | That's the status quo this is meant to complement; it also requires Discord. |
-| Firebase Cloud Messaging | Needs a Google project and a backend we run, and friends would need PluralWare installed. |
-| UnifiedPush | ntfy *is* a UnifiedPush distributor. It becomes relevant if PluralWare ever grows a friend-side app (section 11). |
-| PluralKit dispatch → ntfy directly | Doesn't work: see section 7. |
+| PluralKit dispatch → ntfy directly | Doesn't work: see section 9. |
 
-## 3. Phases
+## 3. Modes, phases and rollout
 
-| Phase | Publishes from | Catches | Infrastructure |
+The two modes are orthogonal to the two phases, which decide *who sends*:
+
+| Phase | Sends from | Catches | Infrastructure |
 |---|---|---|---|
-| **A** | The watch, right after it registers a switch | Switches made in PluralWare | An ntfy server (any) |
-| **C** (optional, later) | A small relay receiving PluralKit's dispatch webhook | Every switch, from any client, within seconds | An ntfy server plus a relay the user hosts |
+| **A** | The watch, right after it registers a switch | Switches made in PluralWare | None for Private (public push services, or the friend's ntfy server); an ntfy server for Simple |
+| **C** (optional, later) | A small relay receiving PluralKit's dispatch webhook | Every switch, from any client, within seconds | The relay, which the user hosts |
 
 There is no phase B. The option between these two, a background job on the phone polling
-PluralKit, was considered and dropped: Android's minimum periodic-job interval and Doze put its delays at 15 minutes or more, and it
-costs battery for a worse version of what C does.
+PluralKit, was dropped: Android's minimum periodic-job interval and Doze put its delays at 15
+minutes or more, and it costs battery for a worse version of what C does.
 
-A and C must not both publish, or friends get every switch twice: turning on the relay turns off
-publishing from the watch (section 8).
+Rollout, each step usable on its own:
 
-## 4. Server modes
+1. **Shared core and Simple mode.** Member choices, message text and the send path on the watch,
+   delivered as plain ntfy messages. The smallest useful slice, and enough for personal use on a
+   self-hosted server.
+2. **Private mode, Android receiver.** Web Push encryption and VAPID signing on the sending side;
+   a "Following" section in PluralWare's phone app, registered through UnifiedPush.
+3. **Private mode, web receiver.** A static web app for iPhone, desktop, and Android friends who'd
+   rather not install PluralWare.
+4. **Phase C relay**, if friends miss switches made off the watch.
 
-The app supports two kinds of ntfy server, chosen at setup:
+## 4. Private mode
+
+### 4.1 Keys and the follow-code handshake
+
+In Web Push the **receiver** generates the encryption keys: a P-256 key pair (`p256dh`) and a
+16-byte `auth` secret. The receiver also gets a push **endpoint**, a URL at its push service. The
+sender needs all three for each friend, so the handshake runs in the opposite direction from Simple
+mode:
+
+1. **Invite.** The user's phone makes an invite link:
+   `https://<receiver host>/follow#<base64url JSON>`. The JSON holds a display label for the system
+   and the system's VAPID public key (section 4.3), plus the relay URL and a one-time token if the
+   relay is on. It rides in the URL **fragment**, which browsers don't send to the server hosting the
+   page. The user sends the link however they like.
+2. **Subscribe.** The friend opens it:
+   - In a browser, the web receiver subscribes through the Push API, passing the VAPID public key.
+   - With PluralWare installed, the page offers "Open in PluralWare". The app registers through
+     UnifiedPush with the same key.
+3. **Follow code.** The receiver shows a **follow code**, a QR code plus copyable text encoding
+   `{ endpoint, p256dh, auth, friend's label }`, and the friend gets it back to the user. Scanning
+   in person is the easy path; pasting it through a private chat works too.
+   - With the relay on, the receiver instead posts the code straight to the relay using the invite's
+     one-time token, so the friend taps once and is done.
+4. **Add.** The user's phone stores the friend and syncs them to the watch (section 8).
+
+A follow code contains the friend's `auth` secret, so it's treated as a credential: it goes only
+through the invite's own channel, is stored encrypted, and is never logged.
+
+### 4.2 Sending
+
+For each friend: build the payload, encrypt it to their keys (RFC 8291, `aes128gcm`), sign a VAPID
+JWT (RFC 8292), and `POST` to their endpoint:
+
+```
+POST <endpoint>
+Content-Encoding: aes128gcm
+Authorization: vapid t=<JWT>, k=<VAPID public key>
+TTL: 43200
+Urgency: normal
+
+<ciphertext>
+```
+
+The plaintext is small JSON:
+
+```json
+{ "v": 1, "system": "<label>", "text": "Alex and Bea are fronting", "switchedAt": "2026-09-27T14:02:00Z" }
+```
+
+- **Padded** to a fixed size bucket (512 bytes, or the next bucket up for unusually long names)
+  before encryption, so the ciphertext's length doesn't give away how many names are in it.
+- **TTL of 12 hours.** A friend whose device is offline still gets the latest switch when it
+  reconnects. The receiver shows `switchedAt` ("since 2:02 PM") and **replaces** the previous
+  notification for that system, so a backlog collapses to the current state instead of a stack of
+  stale ones.
+- **Gone subscriptions clean themselves up.** A `404` or `410` from an endpoint means the friend
+  unsubscribed or reinstalled; the sender drops that friend's subscription and shows it on the
+  sharing screen.
+
+The crypto is standard P-256 ECDH, HKDF, AES-128-GCM and ES256 signing, all in the platform's JCA.
+Tink's `apps-webpush` module implements the RFC 8291 half and is worth evaluating before writing
+our own; Tink already arrives transitively through `security-crypto`.
+
+### 4.3 The VAPID key
+
+Push subscriptions are **bound to the VAPID public key** they were created with, and a push signed
+with any other key is rejected. So every sender for a system must share one VAPID key: the watch in
+phase A, the phone if it ever sends, and the relay in phase C.
+
+That rules out a non-extractable Keystore key made on the watch. Instead the phone generates one
+P-256 key per system when sharing is first turned on. It keeps the key in its encrypted store,
+syncs it to the watch like the ntfy token (section 8), and uploads it to the relay if C is enabled.
+
+What the key can do if it leaks: someone who also has the subscriptions can push notifications to
+those friends that pass the sender check. It can't decrypt anything, since the payload keys belong
+to the receivers. "Reset sharing" generates a new key, after which friends must follow again.
+
+### 4.4 The Android receiver (in PluralWare)
+
+A **Following** section in the phone app lists the systems this person follows and each one's
+latest fronter line.
+
+- It registers through the UnifiedPush connector library (`org.unifiedpush.android:connector`,
+  one new dependency). The connector decrypts messages, and our code only posts the notification,
+  using one notification per followed system, replaced on each switch.
+- The friend chooses a distributor: typically the ntfy app pointed at any ntfy server, the
+  PluralWare user's own included. Every ntfy server along the way sees only ciphertext.
+- With no distributor installed, the connector can fall back to an embedded FCM distributor. That
+  routes through Google, still as ciphertext. The follow screen says which route is in use.
+
+### 4.5 The web receiver
+
+A static web app with no backend: an HTML page, a web app manifest and a service worker. It can be
+hosted on GitHub Pages from this repo, or self-hosted by anyone who'd rather not trust ours.
+
+- It subscribes with `PushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`. The
+  browser decrypts incoming pushes, and the service worker calls `showNotification` with the system
+  label as `tag`, so each switch replaces the last.
+- Followed systems live in IndexedDB. Unfollowing unsubscribes, which the sender then sees as a
+  `410`.
+- **iPhone and iPad** support Web Push from iOS 16.4, but only for a web app added to the Home
+  Screen. The page detects this and walks the friend through adding it first.
+- Its trust boundary is whoever serves the page, since the page runs with the friend's keys. That's
+  why it's small, dependency-free and self-hostable.
+
+### 4.6 What the carriers still see
+
+Encryption hides content, not traffic. The push service (or ntfy server) in the path still sees:
+
+- that some sender pushes to this endpoint, and when;
+- the padded message size.
+
+Timing correlates with switches. A friend who needs to hide even the fact of following someone
+would want a distributor on a server they trust. Simple mode doesn't improve any of this.
+
+## 5. Simple mode
+
+Plain ntfy messages to one topic per friend, readable by the stock ntfy app, by the friend, and by
+whoever runs the server. It's the right choice on a server the user runs themselves, and a
+deliberate, labeled compromise anywhere else.
+
+### 5.1 Servers
 
 **Open server (e.g. ntfy.sh without an account).** Anyone who knows a topic name can read and
-publish to it, so the **topic name is the secret**. PluralWare generates long random names
-(section 5). The ntfy operator can read every message.
+publish to it, so the **topic name is the secret**.
 
 **Server with accounts (self-hosted, recommended).** The server denies anonymous access. The user
-creates one write-only publisher account for PluralWare and one read-only account per friend.
-Topic names are still random, as defense in depth, but no longer the only protection. A sketch of
-the admin side:
+creates one write-only publisher account for PluralWare and one read-only account per friend:
 
 ```yaml
 # server.yml
@@ -83,131 +221,130 @@ ntfy access sam pw_k3v9q2r7x1m8b4n6c0t5 read-only
 ```
 
 PluralWare can't create accounts on the user's server, since that needs admin access. So in this
-mode, adding a friend in the app yields a topic name plus the `ntfy access` line to run. Automating
-that would need the relay (section 7) or ntfy's admin API, and isn't in phase A.
+mode, adding a friend in the app yields a topic name plus the `ntfy access` line to run.
 
-## 5. Topics, one per friend
+### 5.2 Topics, one per friend
 
 Each friend gets their own topic: `pw_` followed by 20 random characters from `[a-z0-9]`, from a
-`SecureRandom`. That is about 100 bits, well past guessable. The prefix lets one `pw_*` rule cover
-publishing.
+`SecureRandom`. That is about 100 bits, well past guessable, and the prefix lets one `pw_*` rule
+cover publishing. One topic per friend means:
 
-Per-friend topics cost one publish per friend per switch, which is cheap for a handful of friends.
-They buy:
-
-- **Revocation of one friend** without touching anyone else: delete their topic from the app (and,
-  with accounts, their user). With one shared topic, removing someone means rotating it and
-  re-sharing with everyone who remains.
-- **Per-friend member lists** later (section 6) at no extra design cost.
-- A leaked topic exposes only what that one friend was allowed to see.
+- one friend can be revoked without re-sharing with anyone else;
+- per-friend member lists become possible later;
+- a leaked topic exposes only that one friend's feed.
 
 The friend subscribes with the topic URL, `https://<server>/<topic>`: opened in a browser it's the
-ntfy web app, and in the ntfy mobile apps it goes into the "subscribe to topic" dialog (server plus
-topic, and in accounts mode the friend's username and password). The phone shows it as a QR code
-and a share sheet.
+ntfy web app, and in the ntfy mobile apps it goes into the "subscribe to topic" dialog (with the
+friend's username and password on a server with accounts). The phone shows it as a QR code and a
+share sheet.
 
-## 6. What gets shared
+### 5.3 Sending
 
-Fronting is sensitive, so everything defaults to off and is opt-in per member.
-
-- **Sharing is off** until the user adds a friend.
-- **Members are hidden unless chosen.** The user picks which members may be named. In a switch,
-  members not chosen collapse into "someone":
-  - **Alex and Bea are fronting**
-  - **Alex and someone else are fronting**
-  - **Someone is fronting**, when no named member is in front
-  - **Switched out**
-- **PluralKit's own privacy is respected.** Members whose PluralKit visibility is private start
-  unselected and are labeled as private in the picker. If the system's front privacy is private, the
-  sharing screen says so before the first friend is added. This means widening `MemberDto` and
-  `SystemDto` with privacy fields, which CLAUDE.md asks to do deliberately; they drive only this
-  screen.
-- **Names are display labels** (`Member.displayLabel`), the same as everywhere else in the app.
-
-v1 uses one member list for all friends. A per-friend list ("my partner sees everyone, my
-coworker sees two members") is a natural follow-up, and per-friend topics already allow it.
-
-The message carries a title ("PluralWare" or the system name, the user's choice) and the text above.
-It carries no member IDs, no PluralKit IDs, and no timestamps beyond the one ntfy adds.
-
-## 7. Why PluralKit can't post to ntfy directly
-
-PluralKit can send each system's events (dispatch) to a webhook URL, which looks like it would give
-real-time coverage for free by pointing it at an ntfy topic. It doesn't work, for three reasons:
-
-- **Validation.** Every dispatch carries a `signing_token`. PluralKit periodically sends
-  deliberately invalid `PING` events and expects a **401**; an endpoint that doesn't validate is
-  removed. ntfy answers 200 to everything, so PluralKit would drop it.
-- **IDs, not names.** A `CREATE_SWITCH` event carries the switch object, whose members are
-  PluralKit IDs. Friends would get `["abcde", "fghij"]`.
-- **It would leak the signing token.** The raw payload, token included, would be published to the
-  topic.
-
-Hence the relay in phase C: something that validates, translates and filters before ntfy sees
-anything.
-
-## 8. Phase A in detail
-
-**Where publishing happens.** Switches are registered on the watch: the picker and History's
-switch-back, both through `PluralKitRepository.registerSwitch`. The watch has its own network
-connection, so it publishes directly. The phone registers no switches today; if it ever does, it
-publishes the same way.
-
-**Which switches.** Only switches this device just registered, never ones it merely observed on a
-refresh. A switch made in Discord that the watch notices hours later on opening would otherwise go
-out as if it had just happened, and the same switch could go out from two devices.
-
-**When.** After a successful `registerSwitch`, fire and forget:
-
-- one attempt per friend, plus a single retry on a network error;
-- never blocks or fails the switch UI;
-- nothing queued across restarts, because a notification about a switch from an hour ago is worse
-  than none.
-
-The switch itself needs the network, so a publish right after it usually succeeds.
-
-**Request.** ntfy's JSON publishing: `POST https://<server>/` with `Content-Type: application/json`,
-and in accounts mode `Authorization: Bearer tk_…`:
+ntfy's JSON publishing: `POST https://<server>/`, with `Content-Type: application/json` and, on a
+server with accounts, `Authorization: Bearer tk_…`:
 
 ```json
 { "topic": "pw_k3v9q2r7x1m8b4n6c0t5", "title": "PluralWare", "message": "Alex and Bea are fronting" }
 ```
 
-This uses the same OkHttp stack as the PluralKit client, with its own base URL and no PluralKit
-token anywhere near it.
+## 6. What gets shared
 
-**Configuration lives on the phone and syncs to the watch.** Setup needs a real screen: server URL,
-optional access token, friends, member choices, QR codes. The phone keeps the configuration and
-pushes it to the watch over the Data Layer, like settings (`SettingsHandoff`), on its own path
-(`/pluralware/sharing`). The ntfy access token is a credential, so on the watch it goes into the
-encrypted store beside the PluralKit token, not into plain preferences. Signing out clears it with
-everything else.
+Fronting is sensitive, so everything defaults to off, and naming is opt-in per member. This holds
+in both modes.
 
-**Turning on the relay (phase C) turns this off**, as a single "Published by: this watch / relay"
+- **Sharing is off** until the user adds a friend.
+- **Members are hidden unless chosen.** In a switch, members not chosen collapse into "someone":
+  - **Alex and Bea are fronting**
+  - **Alex and someone else are fronting**
+  - **Someone is fronting**, when no named member is in front
+  - **Switched out**
+- **PluralKit's own privacy is respected.** Members whose PluralKit visibility is private start
+  unselected and are labeled private in the picker. If the system's front privacy is private, the
+  sharing screen says so before the first friend is added. This means widening `MemberDto` and
+  `SystemDto` with privacy fields, which CLAUDE.md asks to do deliberately; they drive only this
+  screen.
+- **Names are display labels** (`Member.displayLabel`), the same as everywhere else in the app.
+- **Nothing else goes out:** no member IDs, no PluralKit IDs.
+
+v1 has one member list for all friends. Per-friend lists ("my partner sees everyone, my coworker
+sees two members") are a natural follow-up; both modes already address each friend separately.
+
+## 7. Sending from the watch (phase A)
+
+**Where.** Switches are registered on the watch: the picker and History's switch-back, both through
+`PluralKitRepository.registerSwitch`. The watch has its own network connection, so it sends
+directly. The phone registers no switches today; if it ever does, it sends the same way.
+
+**Which switches.** Only switches this device just registered, never ones it merely observed on a
+refresh. A switch made in Discord that the watch notices hours later would otherwise go out as if it
+had just happened, and the same switch could go out from two devices.
+
+**When.** After a successful `registerSwitch`, fire and forget:
+
+- one attempt per friend, plus a single retry on a network error;
+- never blocks or fails the switch UI;
+- nothing queued across restarts. Private mode's TTL (section 4.2) is what covers friends who are
+  offline, on the carrier's side rather than ours.
+
+**Turning on the relay (phase C) turns this off**, as a single "Sent by: this watch / relay"
 setting, so friends never get duplicates.
 
-## 9. Phase C: the relay
+## 8. Configuration and sync
+
+Setup needs a real screen: mode, server, friends, member choices, invites, QR codes. So the
+configuration lives on the phone and syncs to the watch over the Data Layer, like settings
+(`SettingsHandoff`), on its own path (`/pluralware/sharing`).
+
+Its secrets go into the encrypted stores on both devices, beside the PluralKit token, and never into
+plain preferences:
+
+- the VAPID private key;
+- the friends' follow codes (they include `auth` secrets);
+- the ntfy access token.
+
+Signing out clears them with everything else, and "Reset sharing" clears them deliberately.
+
+## 9. Why PluralKit can't post to ntfy directly
+
+PluralKit can send each system's events (dispatch) to a webhook URL, which looks like real-time
+coverage for free by pointing it at an ntfy topic. It doesn't work, for three reasons:
+
+- **Validation.** Every dispatch carries a `signing_token`. PluralKit periodically sends
+  deliberately invalid `PING` events and expects a **401**; an endpoint that doesn't validate is
+  removed. ntfy answers 200 to everything, so PluralKit would drop it.
+- **IDs, not names.** A `CREATE_SWITCH` event carries the switch object, whose members are
+  PluralKit IDs.
+- **It would leak the signing token.** The raw payload, token included, would be published to the
+  topic.
+
+It also couldn't do Private mode at all, which needs per-friend encryption. Hence the relay.
+
+## 10. Phase C: the relay
 
 A small service the user hosts: a Cloudflare Worker, or a container next to their ntfy. It is the
-only piece that receives PluralKit's dispatch.
+only piece that receives PluralKit's dispatch, and it sends in whichever mode each friend uses.
 
 1. **Receive and validate.** `POST /pk/<random path>`. Compare `signing_token` in constant time;
    answer 401 on a mismatch (this is what keeps PluralKit's `PING` check happy) and 200 otherwise.
-2. **Filter.** Act on `CREATE_SWITCH` only; ignore the rest. Skip switches whose timestamp is more
-   than a few minutes old: PluralKit lets switches be backdated, and imports create old ones in
-   bulk.
+2. **Filter.** Act on `CREATE_SWITCH` only. Skip switches whose timestamp is more than a few
+   minutes old: PluralKit lets switches be backdated, and imports create old ones in bulk.
 3. **Translate.** Turn member IDs into display labels using a **name map the phone uploads**:
-   `{ pluralkitId → label }` for shared members only. The relay never holds a PluralKit token. It
-   can't read the system and can't act on it; it can only format what it's sent.
-4. **Publish** to each friend's topic exactly as in phase A.
+   `{ pluralkitId → label }`, for shared members only. The relay never holds a PluralKit token, so
+   it can't read the system or act on it.
+4. **Send** to each friend exactly as in section 4.2 or 5.3.
 
-Configuration comes from the phone app over `PUT /config`, authenticated with a relay secret
-generated at setup. It contains the name map, friend topics, ntfy URL, ntfy token and the signing
-token. The phone re-uploads whenever the member choices or display names change.
+Configuration comes from the phone over `PUT /config`, authenticated with a relay secret generated
+at setup. It holds the name map, the friends (follow codes or topics), the VAPID key, the ntfy URL
+and token, and the signing token. The phone re-uploads whenever member choices or display names
+change. The relay also accepts follow codes posted by receivers with a valid one-time invite token
+(section 4.1).
+
+The relay formats the text, so it necessarily sees names and fronters in plaintext. It is the
+user's own server, the same trust as a self-hosted ntfy in Simple mode.
 
 User setup:
 
-1. Deploy the relay (a template repo plus one-click Worker deploy would keep this short).
+1. Deploy the relay (a template repo plus a one-click Worker deploy would keep this short).
 2. In PluralWare, enter the relay URL; the app generates and shows the webhook URL.
 3. In Discord, run PluralKit's webhook command with that URL. PluralKit replies with the signing
    token, which the user pastes into the app.
@@ -219,43 +356,46 @@ Caveats to state in the setup screen:
 - If the relay goes down long enough, PluralKit removes the webhook, and the user has to re-run the
   command.
 
-## 10. Threat model
+## 11. Threat model
 
-| If this leaks or is compromised | Exposure | Mitigation |
+| If this leaks or is compromised | Private mode | Simple mode |
 |---|---|---|
-| A friend's topic name | That friend's feed of shared-member switches | Accounts mode on the server; per-friend topics limit the blast; revoke by deleting the topic |
-| The ntfy server (operator or breach) | Every shared message, in plaintext | Self-host; share only chosen members; nothing beyond display labels is sent |
-| The publisher token (from the watch) | Posting fake switches to friends; **no** reading | `write-only` on `pw_*`; revoke with `ntfy token remove` |
-| The relay | Fake notifications to friends; the name map | It holds no PluralKit token; the signing token only authenticates PluralKit to it |
+| The carrier (push service, or an ntfy server) | Timing and padded size only (section 4.6) | Every message, in plaintext |
+| A friend's follow code, or their topic name | Forged pushes to that friend. Browser push services also demand the VAPID key; a carrier that doesn't check VAPID doesn't. No reading: that needs the friend's private key, which never leaves their device | That friend's feed; revoke by deleting the topic |
+| The VAPID key | Nothing on its own; with friends' follow codes too, forged pushes to them. No reading. "Reset sharing" rotates it | n/a |
+| The ntfy publisher token | n/a | Fake messages to friends; `write-only` means no reading. `ntfy token remove` |
+| The web receiver's host | Could serve a page that leaks the friend's feed. Keep it small and self-hostable | n/a |
+| The relay | Plaintext of what it formats, the name map, and the ability to send; no PluralKit token | Same |
 
-ntfy has no end-to-end encryption (confirm against current ntfy before building). PluralWare could encrypt messages itself, but
-then a stock ntfy client shows ciphertext, and friends would need PluralWare to read them. That
-belongs with a friend-side app (section 11), not this.
-
-## 11. Open questions and future options
+## 12. Open questions and future options
 
 - **Default title:** "PluralWare", the system name, or a user-chosen label? The system name
   identifies the system to anyone who reads the notification over a friend's shoulder.
-- **Quiet hours / rate limit:** a system that switches often could flood a friend. Coalescing
-  switches within a minute or so is cheap to add in both A and C.
+- **Rate limit:** a system that switches often could flood a friend. Coalescing switches within a
+  minute or so is cheap in both phases, and Private mode's replace-by-tag already hides the backlog.
 - **Per-friend member lists** (section 6).
-- **A friend-side PluralWare** ("see who's fronting for systems that share with me") could use
-  UnifiedPush with encrypted payloads. That's a larger product decision; ntfy topics keep that door
-  open without committing to it.
-- **Self-hosting guide:** a short `docs/self-hosting-ntfy.md` with the server config, the publisher
-  account and a per-friend example, linked from the sharing screen.
+- **Richer following:** the Android receiver could grow into a small "friends' fronters" view, and
+  even a watch complication for a followed system.
+- **Self-hosting guide:** `docs/self-hosting.md`, covering ntfy for Simple mode and as a UnifiedPush
+  server, the relay, and serving the web receiver.
 
-## 12. Phase A file-by-file change list
+## 13. File-by-file change list
+
+Rollout steps 1 and 2 (section 3):
 
 | File | Change |
 |---|---|
-| `shared/.../notify/NtfyPublisher.kt` | New. JSON publish over OkHttp, optional bearer token, single retry. |
-| `shared/.../notify/SwitchAnnouncement.kt` | New. Pure `Switch` + shared-member set → message text ("someone" collapsing), unit-tested. |
-| `shared/.../notify/SharingConfig.kt` | New. Server, token, friends and topics, shared member IDs; `SecureRandom` topic generation. |
-| `shared/.../handoff/SharingHandoff.kt` | New. Phone → watch sync of the config on `/pluralware/sharing`. |
+| `shared/.../notify/SwitchAnnouncement.kt` | New. Pure `Switch` + shared-member set → text ("someone" collapsing) and the Private payload JSON with padding. Unit-tested. |
+| `shared/.../notify/NtfySender.kt` | New. Simple mode: JSON publish with an optional bearer token, single retry. |
+| `shared/.../notify/WebPushSender.kt` | New. Private mode: RFC 8291 encryption, VAPID JWT, the POST, and 404/410 handling. Tested against RFC 8291's published example. |
+| `shared/.../notify/SharingConfig.kt` | New. Mode, friends (follow codes or topics), shared member IDs, VAPID key; topic generation. |
+| `shared/.../handoff/SharingHandoff.kt` | New. Phone → watch sync on `/pluralware/sharing`. |
 | `shared/.../api/dto/PluralKitDto.kt`, `model/Models.kt` | Widen with member visibility and system front privacy (section 6). |
-| `mobile/.../ui/SharingScreen.kt` (+ ViewModel) | New. Server setup, friends, member picker, QR and share sheet. |
-| `wear/.../WatchDataListenerService.kt` | Handle `/pluralware/sharing`; ntfy token into the encrypted store. |
-| `wear/...` switch path | After a successful `registerSwitch` from this device, publish to each friend topic. |
-| `wear/src/main/AndroidManifest.xml` | Add `/pluralware/sharing` to the listener's path filter. |
-| Tests | Announcement text, topic generation, publisher request shape and auth header, "observed switches are never published". |
+| `mobile/.../ui/sharing/` | New. Sharing setup, friends, member picker, invite links, follow-code scanning. |
+| `mobile/.../ui/following/` + UnifiedPush receiver | New. The Following section and notification posting (section 4.4). |
+| `wear/.../WatchDataListenerService.kt`, manifest | Handle `/pluralware/sharing`; secrets into the encrypted store. |
+| `wear/...` switch path | After a successful `registerSwitch` from this device, send to each friend. |
+| Tests | Announcement text and padding, RFC 8291 vectors, VAPID JWT shape, topic generation, "observed switches are never sent". |
+
+Rollout step 3 adds a `web-receiver/` directory holding the static web app. Step 4 adds the relay,
+in its own repository or a `relay/` directory.
