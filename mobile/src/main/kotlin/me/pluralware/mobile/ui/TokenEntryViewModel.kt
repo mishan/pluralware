@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.pluralware.mobile.BuildConfig
 import me.pluralware.shared.api.PluralKitClientFactory
+import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.TokenHandoff
@@ -104,10 +106,12 @@ class TokenEntryViewModel(
             val system = runCatching {
                 val client = PluralKitClientFactory.create(
                     token = token,
+                    appVersion = BuildConfig.VERSION_NAME,
                     enableLogging = BuildConfig.DEBUG,
                 )
                 client.getOwnSystem()
             }.getOrElse { e ->
+                if (e is CancellationException) throw e
                 _state.update { it.copy(status = ConnectionStatus.Error(e.toFriendlyValidationMessage())) }
                 return@launch
             }
@@ -139,6 +143,9 @@ class TokenEntryViewModel(
         viewModelScope.launch {
             tokenStore.clear()
             _state.update { it.copy(status = ConnectionStatus.Idle, input = "") }
+            // Sign the watch out too. Best-effort: with no watch in reach the
+            // Data Layer holds the write and delivers it on the next sync.
+            runCatching { TokenHandoff.pushSignOut(appContext) }
         }
     }
 
@@ -158,7 +165,7 @@ class TokenEntryViewModel(
     private fun Throwable.toFriendlyValidationMessage(): String {
         val msg = message.orEmpty()
         return when {
-            "401" in msg -> "That token wasn't accepted by PluralKit. Double-check you copied the whole `pk;token` output."
+            (this as? PluralKitHttpException)?.isUnauthorized == true -> "That token wasn't accepted by PluralKit. Double-check you copied the whole `pk;token` output."
             else -> msg.ifBlank { "Couldn't reach PluralKit. Check your connection and try again." }
         }
     }

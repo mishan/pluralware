@@ -40,6 +40,7 @@ import me.pluralware.wear.ui.viewmodel.PickerViewModel
 fun MemberPickerScreen(
     repository: PluralKitRepository,
     onDone: () -> Unit,
+    onSignOut: () -> Unit,
 ) {
     val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository))
     val state by vm.state.collectAsState()
@@ -51,7 +52,7 @@ fun MemberPickerScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         when (val members = state.members) {
             UiState.Loading -> LoadingScreen()
-            is UiState.Error -> ErrorScreen(message = members.message, onRetry = vm::loadMembers)
+            is UiState.Error -> ErrorScreen(members, onRetry = vm::loadMembers, onSignOut = onSignOut)
             is UiState.Content -> PickerContent(
                 state = state,
                 onToggle = vm::toggle,

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import me.pluralware.wear.ui.state.UiState
 
 @Composable
 fun LoadingScreen() {
@@ -29,10 +30,26 @@ fun LoadingScreen() {
     }
 }
 
+/** Shows [error] with the action that fits it: retry, or sign out for a rejected token. */
+@Composable
+fun ErrorScreen(
+    error: UiState.Error,
+    onRetry: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    if (error.unauthorized) {
+        ErrorScreen(title = "Token not accepted", message = error.message, onSignOut = onSignOut)
+    } else {
+        ErrorScreen(message = error.message, onRetry = onRetry)
+    }
+}
+
 @Composable
 fun ErrorScreen(
     message: String,
+    title: String = "Something went wrong",
     onRetry: (() -> Unit)? = null,
+    onSignOut: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -42,7 +59,7 @@ fun ErrorScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Something went wrong",
+            text = title,
             style = MaterialTheme.typography.title3,
             color = MaterialTheme.colors.error,
             textAlign = TextAlign.Center,
@@ -57,6 +74,10 @@ fun ErrorScreen(
         if (onRetry != null) {
             Spacer(Modifier.height(12.dp))
             CompactPillButton(label = "Retry", onClick = onRetry)
+        }
+        if (onSignOut != null) {
+            Spacer(Modifier.height(12.dp))
+            CompactPillButton(label = "Sign out", onClick = onSignOut)
         }
     }
 }

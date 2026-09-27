@@ -61,6 +61,7 @@ fun FrontersScreen(
     settingsStore: SettingsStore,
     onChangeFronter: () -> Unit,
     onOpenHistory: () -> Unit,
+    onSignOut: () -> Unit,
 ) {
     val vm: FrontersViewModel = viewModel(
         factory = FrontersViewModel.Factory(repository, settingsStore),
@@ -75,12 +76,12 @@ fun FrontersScreen(
     // never touch the network in the background.
     LaunchedEffect(lifecycleOwner, intervalSeconds) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            vm.refresh()
+            vm.poll()
             val seconds = intervalSeconds
             if (seconds > 0) {
                 while (isActive) {
                     delay(seconds * 1000L)
-                    vm.refresh()
+                    vm.poll()
                 }
             }
         }
@@ -88,7 +89,7 @@ fun FrontersScreen(
 
     when (val s = state) {
         UiState.Loading -> LoadingScreen()
-        is UiState.Error -> ErrorScreen(message = s.message, onRetry = vm::load)
+        is UiState.Error -> ErrorScreen(s, onRetry = vm::load, onSignOut = onSignOut)
         is UiState.Content -> FrontersContent(
             state = s.value,
             onRefresh = vm::refresh,

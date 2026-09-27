@@ -14,8 +14,9 @@ import me.pluralware.shared.settings.LocalSettingsStore
 
 /**
  * Receives data the phone pushes over the Wearable Data Layer:
- *  - the PluralKit token ([TokenHandoff.PATH]) — persisted, then the DataItem
- *    is deleted (it's a secret; minimise its lifetime on disk).
+ *  - the PluralKit token ([TokenHandoff.PATH]) — persisted (or cleared, on a
+ *    sign-out), then the DataItem is deleted (it's a secret; minimize its
+ *    lifetime on disk).
  *  - app settings ([SettingsHandoff.PATH]) — persisted and *kept* (latest-wins
  *    state the watch should retain across syncs and reboots).
  *
@@ -40,9 +41,13 @@ class WatchDataListenerService : WearableListenerService() {
                 val store = EncryptedTokenStore.get(applicationContext)
                 val dataClient = Wearable.getDataClient(applicationContext)
                 tokenItems.forEach { (uri, item) ->
-                    val token = TokenHandoff.read(item) ?: return@forEach
-                    store.setToken(token)
-                    // Best-effort delete; if it fails the next push will replace it.
+                    when (val message = TokenHandoff.read(item)) {
+                        is TokenHandoff.Message.Connect -> store.setToken(message.token)
+                        TokenHandoff.Message.SignOut -> store.clear()
+                        null -> Unit
+                    }
+                    // Delete even an unreadable item, so nothing token-shaped is
+                    // left behind. Best-effort; if it fails the next push replaces it.
                     runCatching { dataClient.deleteDataItems(uri).await() }
                 }
             }

@@ -3,6 +3,7 @@ package me.pluralware.wear.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
@@ -20,13 +22,18 @@ import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.ui.state.FronterStreak
 import me.pluralware.wear.ui.state.FrontersState
 import me.pluralware.wear.ui.state.UiState
+import me.pluralware.wear.ui.state.toUiError
 
 /** How far back we walk history when computing per-member continuous fronting time. */
 private const val HISTORY_LIMIT = 100
 
+/** How long polling pauses after a 429 that didn't say how long to wait. */
+private val DEFAULT_RATE_LIMIT_PAUSE: Duration = Duration.ofMinutes(1)
+
 class FrontersViewModel(
     private val repository: PluralKitRepository,
     settingsStore: SettingsStore,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<UiState<FrontersState>>(UiState.Loading)
@@ -44,6 +51,9 @@ class FrontersViewModel(
     // Guards against overlapping fetches: a slow refresh shouldn't stack with
     // the poll loop or the resume refresh.
     private var fetching = false
+
+    // After a 429, automatic refreshes stand down until this time (clock millis).
+    private var pausedUntilMillis = 0L
 
     init {
         load()
@@ -74,6 +84,16 @@ class FrontersViewModel(
      */
     fun refresh() = fetch(soft = true)
 
+    /**
+     * [refresh] for the screen's own triggers — resume and the poll loop.
+     * These stand down while PluralKit is rate-limiting us; a tap on the
+     * refresh button doesn't, since the user asked.
+     */
+    fun poll() {
+        if (clock() < pausedUntilMillis) return
+        refresh()
+    }
+
     private fun fetch(soft: Boolean) {
         if (fetching) return
         val current = _state.value
@@ -88,12 +108,18 @@ class FrontersViewModel(
             try {
                 val frontersResult = repository.refreshFronters()
                 if (frontersResult is PkResult.Failure) {
+                    val error = frontersResult.error
+                    if (error is PluralKitHttpException && error.isRateLimited) {
+                        val pause = error.retryAfter ?: DEFAULT_RATE_LIMIT_PAUSE
+                        pausedUntilMillis = clock() + pause.toMillis()
+                    }
                     val cur = _state.value
-                    _state.value = if (cur is UiState.Content) {
-                        // Keep stale content visible; just stop the spinner.
+                    // Keep stale content visible and just stop the spinner — unless
+                    // the token was rejected, which no amount of waiting fixes.
+                    _state.value = if (cur is UiState.Content && !frontersResult.isUnauthorized) {
                         UiState.Content(cur.value.copy(refreshing = false))
                     } else {
-                        UiState.Error(frontersResult.error.message ?: "Couldn't load fronters")
+                        frontersResult.toUiError("Couldn't load fronters")
                     }
                     return@launch
                 }

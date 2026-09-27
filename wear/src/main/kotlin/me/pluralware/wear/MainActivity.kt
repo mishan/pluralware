@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
@@ -44,19 +47,32 @@ class MainActivity : ComponentActivity() {
         val settingsStore = LocalSettingsStore.get(applicationContext)
         setContent {
             val token by tokenStore.tokenFlow.collectAsState()
+            val scope = rememberCoroutineScope()
             when (val t = token) {
                 null -> WaitingForPairingScreen()
-                else -> ConnectedApp(t, settingsStore)
+                // Keyed on the raw token so a replacement starts from scratch:
+                // a new repository, and a new nav graph whose ViewModels hold
+                // it. Without the key the ViewModels outlive the swap and keep
+                // polling the old system with the old token.
+                else -> key(t.raw) {
+                    ConnectedApp(
+                        token = t,
+                        settingsStore = settingsStore,
+                        onSignOut = { scope.launch { tokenStore.clear() } },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ConnectedApp(token: PluralKitToken, settingsStore: SettingsStore) {
-    // Re-key on the raw token: a token replacement recreates the repository so
-    // we don't accidentally serve cached member data for the wrong system.
-    val repository = remember(token.raw) {
+private fun ConnectedApp(
+    token: PluralKitToken,
+    settingsStore: SettingsStore,
+    onSignOut: () -> Unit,
+) {
+    val repository = remember {
         val client = if (BuildConfig.BENCHMARK) {
             // Zero-latency mock keeps the macrobenchmark deterministic and
             // independent of network conditions.
@@ -64,12 +80,13 @@ private fun ConnectedApp(token: PluralKitToken, settingsStore: SettingsStore) {
         } else {
             PluralKitClientFactory.create(
                 token = token,
+                appVersion = BuildConfig.VERSION_NAME,
                 enableLogging = BuildConfig.DEBUG,
             )
         }
         PluralKitRepository(client)
     }
-    PluralWareApp(repository = repository, settingsStore = settingsStore)
+    PluralWareApp(repository = repository, settingsStore = settingsStore, onSignOut = onSignOut)
 }
 
 @Composable

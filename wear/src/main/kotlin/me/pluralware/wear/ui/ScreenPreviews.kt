@@ -30,6 +30,7 @@ private fun FrontersScreenPreview() {
             settingsStore = remember { InMemorySettingsStore() },
             onChangeFronter = {},
             onOpenHistory = {},
+            onSignOut = {},
         )
     }
 }
@@ -43,6 +44,7 @@ private fun FrontersScreenSmallPreview() {
             settingsStore = remember { InMemorySettingsStore() },
             onChangeFronter = {},
             onOpenHistory = {},
+            onSignOut = {},
         )
     }
 }
@@ -51,7 +53,7 @@ private fun FrontersScreenSmallPreview() {
 @Composable
 private fun MemberPickerScreenPreview() {
     PluralWareTheme {
-        MemberPickerScreen(repository = previewRepository(), onDone = {})
+        MemberPickerScreen(repository = previewRepository(), onDone = {}, onSignOut = {})
     }
 }
 
@@ -59,6 +61,6 @@ private fun MemberPickerScreenPreview() {
 @Composable
 private fun HistoryScreenPreview() {
     PluralWareTheme {
-        HistoryScreen(repository = previewRepository(), onDone = {})
+        HistoryScreen(repository = previewRepository(), onDone = {}, onSignOut = {})
     }
 }

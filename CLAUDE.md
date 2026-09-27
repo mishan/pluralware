@@ -20,9 +20,9 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
 
-Unit tests currently live only in `:shared` (`shared/src/test/...`). They're plain JVM tests
-(JUnit4 + MockK + Turbine + `kotlinx-coroutines-test`) and need no device. After touching the
-API client or repository, run `./gradlew :shared:test` — that's the layer the tests guard.
+Unit tests live in `:shared` (client, repository, handoff) and `:wear` (ViewModels, with
+`MainDispatcherRule` standing in for the main dispatcher). They're plain JVM tests (JUnit4 + MockK +
+Turbine + `kotlinx-coroutines-test`) and need no device. Run `./gradlew test` after touching either.
 
 `local.properties` (git-ignored) must point `sdk.dir` at an Android SDK. Source lives under
 `src/main/kotlin/`, not `src/main/java/`.
@@ -53,7 +53,7 @@ Two implementations:
 
 - `RetrofitPluralKitClient` — production. Hand-rolled wrapper over PluralKit API v2 (Retrofit +
   OkHttp + kotlinx-serialization). **Never construct directly in app code** — go through
-  `PluralKitClientFactory.create(token, enableLogging)`, which wires the auth interceptor, JSON
+  `PluralKitClientFactory.create(token, appVersion, enableLogging)`, which wires the auth interceptor, JSON
   converter, timeouts, and base URL consistently. Tests instantiate it directly with a fake
   `PluralKitApi`.
 - `MockPluralKitClient` — in-memory fake with injectable latency, drives `@Preview`s and tests.
@@ -69,7 +69,9 @@ Client behaviors that look like bugs but aren't:
   unresolvable IDs** (e.g. a deleted member) rather than render a broken row.
 - The `Authorization` header carries the **raw token with no `Bearer` prefix** — PluralKit's
   documented format.
-- `USER_AGENT` in `PluralKitClientFactory.kt` has a **TODO placeholder URL** to replace before publishing.
+- Every non-success response surfaces as `PluralKitHttpException` (`isUnauthorized`, `isRateLimited`,
+  `retryAfter`), never Retrofit's `HttpException`. `PkResult.Failure.isUnauthorized` and the wear
+  `toUiError` helper build on it: a 401 becomes an error screen with **Sign out** instead of Retry.
 
 ### Repository layer
 
@@ -90,7 +92,7 @@ It is deliberately **not** a singleton — apps wire it manually so tests can in
 `EncryptedSharedPreferences`, AES-256) and `InMemoryTokenStore` (tests/previews).
 
 `EncryptedTokenStore.get(context)` is a **process-wide singleton** and that matters: on the watch,
-the `TokenListenerService` and `MainActivity` share one in-memory `tokenFlow`, so a token written by
+the `WatchDataListenerService` and `MainActivity` share one in-memory `tokenFlow`, so a token written by
 the service live-updates the activity's UI with no manual reload.
 
 End-to-end pairing flow:
@@ -100,13 +102,23 @@ End-to-end pairing flow:
    Layer. It stamps a timestamp into the payload because the Data Layer dedupes on payload hash —
    without it, re-pushing the same token would be a silent no-op. `DataClient` (not `MessageClient`)
    is used so the write survives the watch being asleep/out of range.
-3. Watch `TokenListenerService` (a `WearableListenerService`, registered in the manifest with a
+3. Watch `WatchDataListenerService` (a `WearableListenerService`, registered in the manifest with a
    path-filtered intent filter) receives `onDataChanged`, persists the token to its
-   `EncryptedTokenStore`, and **deletes the `DataItem`** — the deletion propagates back to the phone,
-   bounding how long cleartext sits on disk.
+   `EncryptedTokenStore` with `commit()`, and **deletes the `DataItem`** — the deletion propagates
+   back to the phone, bounding how long cleartext sits on disk.
 4. Watch `MainActivity` observes `tokenStore.tokenFlow`: `null` → "Pair with phone" screen;
-   non-null → builds a `PluralKitRepository` (re-`remember`ed on `token.raw` so a token swap doesn't
-   serve cached data for the wrong system) and shows `PluralWareApp`.
+   non-null → `ConnectedApp` inside **`key(token.raw)`**, which builds a `PluralKitRepository` and
+   shows `PluralWareApp`. The key matters: it makes a token swap rebuild the nav graph, so the
+   screens' ViewModels don't outlive it holding the old repository and token.
+
+Signing out: the phone's **Disconnect** calls `TokenHandoff.pushSignOut`, which overwrites the same
+`/pluralware/token` item with a sign-out marker — superseding any token the watch hasn't collected
+yet — and the watch clears its store on receipt. The watch can also sign itself out from the error
+screen a rejected token (401) produces.
+
+Neither app backs up or transfers its data (`allowBackup="false"` plus `data_extraction_rules.xml`):
+the token store is encrypted under a Keystore key that stays on the device, so a transferred copy
+is unreadable. If one turns up anyway, `EncryptedTokenStore` discards it rather than crash.
 
 Push success is surfaced independently of save success: emulators without a paired watch throw
 `API_NOT_CONNECTED`, so the phone UI lets the user retry the push alone via "Resend to watch".
@@ -124,8 +136,8 @@ history hits the fetch limit, the streak is marked truncated (`>` uncertainty ma
 
 ## Conventions
 
-- Wire `PluralKitClientFactory.create(..., enableLogging = BuildConfig.DEBUG)` — never enable HTTP
-  body logging in release.
+- Wire `PluralKitClientFactory.create(..., appVersion = BuildConfig.VERSION_NAME,
+  enableLogging = BuildConfig.DEBUG)` — never enable HTTP body logging in release.
 - Domain models in `model/Models.kt` are intentionally narrower than the full PluralKit API; widen
   deliberately, since every field is a UI stability promise.
 - Commit messages: short imperative subject, capitalized. **Do not add a `Co-Authored-By` trailer.**

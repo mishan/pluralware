@@ -55,11 +55,10 @@ phone→watch token-handoff path landing.
 
 1. ~~Project skeleton + mock data~~
 2. ~~UI polish on mocks~~
-3. ~~Hand-rolled `RetrofitPluralKitClient` + tests~~ ← we are here
-4. Companion app: token entry → Wearable Data Layer → encrypted storage on
-   watch. Add sign-out / delete-token screen. Swap `MainActivity`'s mock for
-   `PluralKitClientFactory.create(token, enableLogging = BuildConfig.DEBUG)`.
-5. Real-user testing with plural folks.
+3. ~~Hand-rolled `RetrofitPluralKitClient` + tests~~
+4. ~~Companion app: token entry → Wearable Data Layer → encrypted storage on
+   watch, with sign-out from either side. Watch on the production client.~~
+5. Real-user testing with plural folks. ← we are here
 6. Complication for current fronter.
 7. Tile for quick-switch.
 8. Pre-launch: privacy policy, Data Safety form, store listing, Play Store
@@ -71,7 +70,7 @@ phone→watch token-handoff path landing.
 should depend on. Implementations:
 
 - **`RetrofitPluralKitClient`** — production. Construct via
-  `PluralKitClientFactory.create(token)`. Talks to `https://api.pluralkit.me/v2/`.
+  `PluralKitClientFactory.create(token, appVersion)`. Talks to `https://api.pluralkit.me/v2/`.
 - **`MockPluralKitClient`** — in-memory fake with injectable latency. Used
   by previews and ViewModel tests.
 
@@ -84,9 +83,12 @@ Notable client behaviours:
   rather than rendered broken.
 - The `Authorization` header carries the raw token, with no `Bearer` prefix —
   that's PluralKit's documented format.
-- `User-Agent` is `PluralWare/<version> (+<contact URL>)` — PluralKit asks
-  consumers to be contactable. **TODO: update the placeholder URL** in
-  `PluralKitClientFactory.kt` before publishing.
+- `User-Agent` is `PluralWare/<version> (+https://github.com/mishan/pluralware)`
+  — PluralKit asks consumers to be contactable.
+- Every non-success response is a `PluralKitHttpException`, whichever endpoint
+  it came from. A 401 means the token was revoked or regenerated: the watch
+  stops showing stale fronters and offers a sign-out. A 429 pauses the home
+  screen's polling for the server's `Retry-After` (a minute if it doesn't say).
 
 ## Design notes
 

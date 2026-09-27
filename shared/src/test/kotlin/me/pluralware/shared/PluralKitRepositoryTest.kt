@@ -1,12 +1,18 @@
 package me.pluralware.shared
 
 import app.cash.turbine.test
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import me.pluralware.shared.api.PluralKitClient
+import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,5 +50,34 @@ class PluralKitRepositoryTest {
         val second = (r.refreshMembers() as PkResult.Success).value
         // Same instances because the cache returned them, not the client.
         assertTrue(first === second)
+    }
+
+    @Test
+    fun `a rejected token is a Failure that says so`() = runTest {
+        val client = mockk<PluralKitClient>()
+        coEvery { client.getCurrentFronters() } throws PluralKitHttpException(401, "Unauthorized")
+
+        val result = PluralKitRepository(client).refreshFronters()
+
+        assertTrue(result is PkResult.Failure)
+        assertTrue((result as PkResult.Failure).isUnauthorized)
+    }
+
+    @Test
+    fun `other failures are not unauthorized`() = runTest {
+        val client = mockk<PluralKitClient>()
+        coEvery { client.getCurrentFronters() } throws PluralKitHttpException(500, "Oops")
+
+        val result = PluralKitRepository(client).refreshFronters() as PkResult.Failure
+
+        assertFalse(result.isUnauthorized)
+    }
+
+    @Test(expected = CancellationException::class)
+    fun `cancellation propagates instead of becoming a Failure`() = runTest {
+        val client = mockk<PluralKitClient>()
+        coEvery { client.getCurrentFronters() } throws CancellationException("gone")
+
+        PluralKitRepository(client).refreshFronters()
     }
 }

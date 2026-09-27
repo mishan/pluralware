@@ -21,6 +21,7 @@ object Routes {
 fun PluralWareApp(
     repository: PluralKitRepository,
     settingsStore: SettingsStore,
+    onSignOut: () -> Unit,
 ) {
     PluralWareTheme {
         val navController = rememberSwipeDismissableNavController()
@@ -34,18 +35,21 @@ fun PluralWareApp(
                     settingsStore = settingsStore,
                     onChangeFronter = { navController.navigate(Routes.PICK_MEMBERS) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                    onSignOut = onSignOut,
                 )
             }
             composable(Routes.PICK_MEMBERS) {
                 MemberPickerScreen(
                     repository = repository,
                     onDone = { navController.popBackStack() },
+                    onSignOut = onSignOut,
                 )
             }
             composable(Routes.HISTORY) {
                 HistoryScreen(
                     repository = repository,
                     onDone = { navController.popBackStack(Routes.FRONTERS, inclusive = false) },
+                    onSignOut = onSignOut,
                 )
             }
         }
