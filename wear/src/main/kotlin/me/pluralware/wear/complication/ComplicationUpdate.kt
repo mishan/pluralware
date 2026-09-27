@@ -5,12 +5,10 @@ import android.content.Context
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 
 /**
- * Ask the framework to re-request data for our fronter complication.
- *
- * Our manifest declares `UPDATE_PERIOD_SECONDS = 0` (no periodic polling),
- * because PluralKit switches are user-initiated and the platform floors any
- * non-zero period at 300s. Instead we push: call this right after a switch is
- * registered so every hosted instance refreshes immediately.
+ * Ask the framework to re-request data for our fronter complication, in every
+ * slot it's hosted in. Called through [FronterSurfaces] when the fronter or the
+ * token changes; the manifest's update period is only the backstop for
+ * switches made off the watch.
  *
  * Safe to call with the application context; the requester holds no UI state.
  */

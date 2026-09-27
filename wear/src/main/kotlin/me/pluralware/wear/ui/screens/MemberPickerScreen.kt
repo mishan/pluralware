@@ -41,11 +41,8 @@ fun MemberPickerScreen(
     repository: PluralKitRepository,
     onDone: () -> Unit,
     onSignOut: () -> Unit,
-    onSwitchRegistered: () -> Unit = {},
 ) {
-    val vm: PickerViewModel = viewModel(
-        factory = PickerViewModel.Factory(repository, onSwitchRegistered = onSwitchRegistered),
-    )
+    val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository))
     val state by vm.state.collectAsState()
 
     LaunchedEffect(Unit) {

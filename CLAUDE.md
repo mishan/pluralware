@@ -79,10 +79,10 @@ Client behaviors that look like bugs but aren't:
 - Converts thrown exceptions into a `PkResult<T>` sealed type (`Success`/`Failure`) — chosen over
   `kotlin.Result` for Compose `when`-exhaustiveness and room to add states like `Unauthorized`.
 - Caches the member list (members change rarely).
-- Exposes `currentFronters` as a `StateFlow` so multiple surfaces (home screen, future tile,
-  complication) observe one source of truth. After a successful `registerSwitch`, the new switch is
-  pushed into that flow; the home ViewModel watches for **uuid** changes (not value changes) to
-  avoid re-loading on its own writes.
+- Exposes `currentFronters` as a `StateFlow` — the one place every switch the app sees lands. After
+  a successful `registerSwitch`, the new switch is pushed into that flow; the home ViewModel watches
+  for **uuid** changes (not value changes) to avoid re-loading on its own writes, and `MainActivity`
+  forwards every change to the complication and tile (see below).
 
 It is deliberately **not** a singleton — apps wire it manually so tests can inject the mock.
 
@@ -135,6 +135,23 @@ background); member colors render as a leading identity stripe on each chip; tim
 
 `FrontersViewModel` walks switch history to compute each fronter's continuous-front "streak"; if
 history hits the fetch limit, the streak is marked truncated (`>` uncertainty marker).
+
+### Complications and tile
+
+Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the static
+`LauncherComplicationService` (a shortcut, no data), and `FronterTileService`. Design notes in
+`docs/complication-design.md`.
+
+- **One answer for both.** The fronter complication and the tile both ask `FronterSource` what to
+  show — setup prompt, fresh cache, fetch, `Last known` fallback, or `Sign in again` on a 401 —
+  so they can't disagree. It's pure Kotlin and unit-tested; `FronterSurfaces` wires it to the real
+  token store, a per-process client, and `LastFronterStore`.
+- **Freshness is pushed.** `MainActivity` sends every `currentFronters` change to
+  `FronterSurfaces.publish`, which caches the line and requests updates; token changes (pairing,
+  either side's sign-out) go through `FronterSurfaces.onTokenChanged`, which clears the cache.
+  Anything that changes fronters or the token must keep reaching one of these two.
+- **Polling is only the backstop** for switches made off the watch: the complication's 30-minute
+  `UPDATE_PERIOD_SECONDS` and the tile's 10-minute freshness interval.
 
 ## Conventions
 

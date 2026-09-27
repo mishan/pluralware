@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -24,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
@@ -34,8 +36,7 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
-import me.pluralware.wear.complication.requestFronterComplicationUpdate
-import me.pluralware.wear.tile.requestFronterTileUpdate
+import me.pluralware.wear.complication.FronterSurfaces
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -69,7 +70,12 @@ class MainActivity : ComponentActivity() {
                     ConnectedApp(
                         session = session,
                         settingsStore = settingsStore,
-                        onSignOut = { scope.launch { tokenStore.clear() } },
+                        onSignOut = {
+                            scope.launch {
+                                tokenStore.clear()
+                                FronterSurfaces.onTokenChanged(applicationContext)
+                            }
+                        },
                     )
                 }
             }
@@ -101,17 +107,15 @@ private fun ConnectedApp(
     // The screens' ViewModels (through the nav graph's back-stack entries)
     // live in the session's store, not the activity's.
     val appContext = LocalContext.current.applicationContext
+    // Every switch the app sees — from the picker, History's switch-back, or
+    // any refresh — lands in currentFronters; hand each change to the
+    // complication and tile. drop(1): the initial null means "not loaded
+    // yet", not "no switches".
+    LaunchedEffect(session.repository) {
+        session.repository.currentFronters.drop(1).collect { FronterSurfaces.publish(appContext, it) }
+    }
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
-        PluralWareApp(
-            repository = session.repository,
-            settingsStore = settingsStore,
-            onSignOut = onSignOut,
-            // Push a complication + tile refresh whenever the user registers a switch.
-            onSwitchRegistered = {
-                requestFronterComplicationUpdate(appContext)
-                requestFronterTileUpdate(appContext)
-            },
-        )
+        PluralWareApp(repository = session.repository, settingsStore = settingsStore, onSignOut = onSignOut)
     }
 }
 

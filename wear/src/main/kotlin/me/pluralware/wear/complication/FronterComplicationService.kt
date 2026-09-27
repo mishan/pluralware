@@ -8,24 +8,17 @@ import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
-import me.pluralware.shared.api.PluralKitClientFactory
-import me.pluralware.shared.repository.EncryptedTokenStore
-import me.pluralware.shared.repository.PkResult
-import me.pluralware.shared.repository.PluralKitRepository
-import me.pluralware.shared.settings.LastFronterStore
-import me.pluralware.wear.BuildConfig
 import me.pluralware.wear.MainActivity
 
 /**
  * LONG_TEXT complication showing the current PluralKit fronter(s).
  *
- * Reads the same process-wide token the rest of the app uses
- * ([EncryptedTokenStore]) and fetches fronters through a [PluralKitRepository].
- * Tapping opens the app home ([MainActivity]).
+ * What it shows is decided by [FronterSource], shared with the tile. Tapping
+ * opens the app home ([MainActivity]).
  *
- * Freshness is push-based (see [requestFronterComplicationUpdate]); this service
- * just answers each request with the latest it can fetch, falling back to the
- * last-known snapshot ([LastFronterStore]) when a fetch fails.
+ * Freshness: the app pushes an update whenever it sees the fronter change
+ * ([FronterSurfaces.publish]), and the manifest's update period catches
+ * switches made elsewhere.
  */
 class FronterComplicationService : SuspendingComplicationDataSourceService() {
 
@@ -33,53 +26,26 @@ class FronterComplicationService : SuspendingComplicationDataSourceService() {
         // We only declare LONG_TEXT; defensively ignore anything else.
         if (request.complicationType != ComplicationType.LONG_TEXT) return null
 
-        val token = EncryptedTokenStore.get(applicationContext).getToken()
-            ?: return lastKnownOr(placeholder = "Tap to set up")
-
-        val repo = PluralKitRepository(
-            PluralKitClientFactory.create(
-                token = token,
-                appVersion = BuildConfig.VERSION_NAME,
-                enableLogging = BuildConfig.DEBUG,
-            ),
-        )
-        return when (val result = repo.refreshFronters()) {
-            is PkResult.Success -> {
-                val body = FronterComplicationFormatter.body(result.value)
-                val timestamp = result.value?.timestamp?.toEpochMilli() ?: System.currentTimeMillis()
-                LastFronterStore.get(applicationContext).set(body, timestamp)
-                longText(
-                    body = body,
-                    description = FronterComplicationFormatter.contentDescription(result.value),
-                )
-            }
-            // Offline / token rotation / transient error: show the last good value
-            // rather than a blank slot.
-            is PkResult.Failure -> lastKnownOr(placeholder = "Unavailable")
-        }
+        return longText(FronterSurfaces.source(this).current())
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         if (type != ComplicationType.LONG_TEXT) return null
-        return longText(body = "Fronting: Alex", description = "Current fronter: Alex")
-    }
-
-    /** Render the cached fronter if present, else a tappable [placeholder]. */
-    private suspend fun lastKnownOr(placeholder: String): ComplicationData {
-        val cached = LastFronterStore.get(applicationContext).get()
-        return if (cached != null) {
-            longText(body = cached.text, description = "Last known fronter: ${cached.text}")
-        } else {
-            longText(body = placeholder, description = placeholder)
-        }
-    }
-
-    private fun longText(body: String, description: String): ComplicationData =
-        LongTextComplicationData.Builder(
-            text = PlainComplicationText.Builder(body).build(),
-            contentDescription = PlainComplicationText.Builder(description).build(),
+        return longText(
+            FronterDisplay(
+                title = FronterComplicationFormatter.TITLE,
+                text = "Fronting: Alex",
+                description = "Current fronter: Alex",
+            ),
         )
-            .setTitle(PlainComplicationText.Builder(FronterComplicationFormatter.TITLE).build())
+    }
+
+    private fun longText(display: FronterDisplay): ComplicationData =
+        LongTextComplicationData.Builder(
+            text = PlainComplicationText.Builder(display.text).build(),
+            contentDescription = PlainComplicationText.Builder(display.description).build(),
+        )
+            .setTitle(PlainComplicationText.Builder(display.title).build())
             .setTapAction(openAppIntent())
             .build()
 

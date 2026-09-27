@@ -11,6 +11,7 @@ import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
+import me.pluralware.wear.complication.FronterSurfaces
 
 /**
  * Receives data the phone pushes over the Wearable Data Layer:
@@ -50,6 +51,9 @@ class WatchDataListenerService : WearableListenerService() {
                     // left behind. Best-effort; if it fails the next push replaces it.
                     runCatching { dataClient.deleteDataItems(uri).await() }
                 }
+                // Paired, re-paired or signed out: the complication and tile
+                // must drop the old system's line and ask again.
+                FronterSurfaces.onTokenChanged(applicationContext)
             }
             if (settingsItems.isNotEmpty()) {
                 // Latest-wins: apply the most recent settings item; keep the DataItem.

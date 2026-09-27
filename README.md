@@ -59,8 +59,8 @@ phone→watch token-handoff path landing.
 4. ~~Companion app: token entry → Wearable Data Layer → encrypted storage on
    watch, with sign-out from either side. Watch on the production client.~~
 5. Real-user testing with plural folks. ← we are here
-6. Complication for current fronter.
-7. Tile for quick-switch.
+6. ~~Complication for current fronter~~ — plus a launcher complication.
+7. ~~Tile showing the current fronter~~. Quick-switch from the tile itself is still open.
 8. Pre-launch: privacy policy, Data Safety form, store listing, Play Store
    internal testing track.
 

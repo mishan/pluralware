@@ -121,7 +121,6 @@ dependencies {
     // Producer hookup: tells the consumer plugin where the profile comes from.
     "baselineProfile"(project(":baselineprofile"))
 
-    // (Tiles added when we get to that phase.)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

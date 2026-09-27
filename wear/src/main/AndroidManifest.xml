@@ -56,9 +56,10 @@
         <!--
             LONG_TEXT complication showing the current fronter(s). The
             BIND_COMPLICATION_PROVIDER permission + UPDATE_REQUEST filter are
-            what register it in the system complication picker. UPDATE_PERIOD is
-            0 (no polling): we push updates via ComplicationDataSourceUpdateRequester
-            after a switch is registered.
+            what register it in the system complication picker. The app pushes
+            an update whenever it sees the fronter change; the 30-minute
+            UPDATE_PERIOD is the backstop for switches made off the watch
+            (Discord, the dashboard, other clients).
         -->
         <service
             android:name=".complication.FronterComplicationService"
@@ -74,7 +75,7 @@
                 android:value="LONG_TEXT" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-                android:value="0" />
+                android:value="1800" />
         </service>
 
         <!--
@@ -102,7 +103,7 @@
         <!--
             Fronter tile. BIND_TILE_PROVIDER + the BIND_TILE_PROVIDER action
             register it in the tile carousel picker. Refreshed on a coarse
-            freshness interval and pushed via TileService.getUpdater after a switch.
+            freshness interval and pushed whenever the app sees the fronter change.
         -->
         <service
             android:name=".tile.FronterTileService"

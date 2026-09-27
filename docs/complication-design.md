@@ -1,8 +1,10 @@
 # Fronter Complication — Design
 
-Status: proposal. Scope: a single **LONG_TEXT** complication data source for `:wear` that
-shows the current fronter(s), taps through to the app, and refreshes when a switch is
-registered. No code written yet.
+Status: built. Scope: a **LONG_TEXT** complication data source for `:wear` that shows the
+current fronter(s) and taps through to the app, plus the launcher complication and fronter tile
+that grew out of it (sections 12–13). This started as the proposal; sections 5, 6 and 9 were
+revised to match what shipped, after review found the first cut's freshness model missed most
+switches.
 
 ## 1. What it is
 
@@ -106,40 +108,50 @@ Text formatting rules:
 baseline-profile producer can drive the *screens*; it has no bearing on the complication, so
 we don't branch on it here.
 
-## 5. Freshness — push, don't poll
+## 5. Freshness — push from the app, poll as a backstop
 
-Complication update periods are clamped by the platform (a non-zero `UPDATE_PERIOD_SECONDS` is
-floored at 300s, and only while the face is active), so polling is both coarse and
-battery-hostile. PluralKit switches are user-initiated and infrequent, which fits a **push**
-model much better than the home screen's `RefreshInterval` polling.
+The first cut pushed an update only from the picker and set `UPDATE_PERIOD_SECONDS = 0`. That
+missed most switches: PluralKit switches usually come from Discord (`pk;switch`), the dashboard
+or another client, and History's switch-back registers through the repository without going
+near the picker. A complication could sit on the wrong fronter for days.
 
-Recommended:
+What shipped:
 
-- Set `UPDATE_PERIOD_SECONDS = 0` (no periodic refresh by the system).
-- After a successful `registerSwitch`, ask the framework to re-request our data:
+- **Push on every change the app sees.** Every switch the watch app learns about — the picker,
+  History's switch-back, or a refresh that finds a switch made elsewhere — lands in
+  `PluralKitRepository.currentFronters`. `MainActivity` observes that flow and hands each
+  change to `FronterSurfaces.publish(...)`, which caches the formatted line and asks the
+  complication (`ComplicationDataSourceUpdateRequester.requestUpdateAll()`) and the tile
+  (`TileService.getUpdater`) to re-request. The ViewModels stay `Context`-free and need no hook.
+- **Push on token changes.** `WatchDataListenerService` (pairing, re-pairing, a phone-side
+  sign-out) and the watch's own sign-out call `FronterSurfaces.onTokenChanged(...)`, which
+  clears the cache and requests updates, so a freshly paired watch fills the slot without the
+  app being opened and a signed-out one stops showing the old system.
+- **Poll as a backstop.** `UPDATE_PERIOD_SECONDS = 1800` for switches made off the watch while
+  the app is closed; the tile's 10-minute freshness interval does the same job there. Each is
+  one small request, and only while the face or tile is actually showing.
 
-```kotlin
-ComplicationDataSourceUpdateRequester
-    .create(appContext, ComponentName(appContext, FronterComplicationService::class.java))
-    .requestUpdateAll()
-```
+## 6. Offline / error behavior
 
-**Where to fire it.** `registerSwitch` lives in `PluralKitRepository` (`:shared`), which has no
-Android `Context`, so the trigger belongs in the `:wear` layer. The switch is registered from
-`PickerViewModel.submit(...)` on the `PkResult.Success` branch — but the VM also has no
-`Context`. Two clean options:
+`onComplicationRequest` can fire when offline or mid-token-rotation. Returning
+`NoDataComplicationData()` (or null) on failure leaves the slot blank, which reads as broken.
 
-1. **Callback hook (recommended).** Add an `onSwitchRegistered: () -> Unit = {}` to
-   `PickerViewModel` (and its `Factory`), invoked on success. Wire the real implementation at
-   the app layer (where a `Context` is available) to call `requestUpdateAll()`. Keeps `:shared`
-   Android-free and is trivial to unit-test (assert the lambda fires).
-2. **Observe the StateFlow.** A process-lifecycle observer on
-   `repository.currentFronters` (keyed on `Switch.uuid`, mirroring how `FrontersViewModel`
-   already watches uuid changes) that requests an update on change. More decoupled, but needs a
-   live observer outside the activity, which is extra moving parts for little gain here.
+Both surfaces ask one `FronterSource` (pure Kotlin, unit-tested) what to show:
 
-Go with option 1. Optionally also request an update from `WatchDataListenerService` after a
-token arrives, so a freshly-paired watch fills the complication without the user opening the app.
+| Situation | Shows |
+|---|---|
+| No token | `Tap to set up` |
+| Cached line fetched < 5 min ago | the cached line, no network |
+| Fetch succeeds | the fresh line, which is cached |
+| Fetch fails, cache present | the cached line, titled `Last known` (and read out as such) |
+| Fetch fails, no cache | `Unavailable` |
+| 401 — token rejected | `Sign in again`; the cache is cleared |
+
+The cache is `LastFronterStore`, a `SharedPreferences` file — non-sensitive, since it holds
+display names — storing the line, its full screen-reader text (the line itself collapses past
+two names to `+N`), and when it was fetched. It belongs to one token: whoever changes the token
+clears it. The five-minute freshness window is what lets the burst of requests after a
+`publish` answer from memory instead of each surface fetching again.
 
 ## 6. Offline / error behavior
 
@@ -177,7 +189,7 @@ v1 behavior.)
         android:value="LONG_TEXT" />
     <meta-data
         android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
-        android:value="0" />
+        android:value="1800" />
 </service>
 ```
 
@@ -188,18 +200,16 @@ filter are what register us in the system's complication picker. A small monochr
 
 ## 9. Testing plan
 
-The data-source logic is mostly pure mapping, so most of it is plain JVM tests in `:shared`-style:
-
-- **Formatter unit tests** — `Switch -> LONG_TEXT text/contentDescription` for: single fronter,
-  multiple (incl. the `+N` cap and order preservation), switch-out, null/204. Pull the formatter
-  out as a pure function so it's testable without Android.
-- **State mapping** — feed `MockPluralKitClient` through a real `PluralKitRepository` and assert
-  each `PkResult` maps to the intended complication state (reuse the existing MockK/Turbine setup).
-- **Update trigger** — assert `PickerViewModel` invokes `onSwitchRegistered` exactly once on
-  success and never on the no-op / failure branches.
-- **Manual / instrumented** — add the complication to a watch-face slot on an emulator, register a
-  switch in the app, confirm it updates; verify tap opens the app and the not-paired state shows
-  before a token exists.
+- **Formatter** (`FronterComplicationFormatterTest`) — `Switch -> text/contentDescription` for
+  single and multiple fronters (the `+N` cap, order preservation), switch-out, and null/204.
+- **What to show** (`FronterSourceTest`) — every row of the table in section 6, driven through a
+  real `PluralKitRepository` over a mocked client, with an in-memory cache and a fake clock.
+- **Where switches come from** (`PickerViewModelTest`, `HistoryViewModelTest`) — a registered
+  switch becomes `currentFronters`, which is what `publish` follows; no-ops and failures don't.
+- **Manual** — add the complication to a watch-face slot and the tile to the carousel, then:
+  switch in the app (both update at once); switch from Discord (the tile within ten minutes,
+  the complication within thirty, or at once on opening the app); pair and sign out from the
+  phone (both follow); go offline (`Last known`).
 
 ## 10. File-by-file change list
 
@@ -210,10 +220,11 @@ The data-source logic is mostly pure mapping, so most of it is plain JVM tests i
 | `wear/.../complication/FronterComplicationFormatter.kt` | New. Pure `Switch? -> text` formatting, unit-tested. |
 | `wear/src/main/AndroidManifest.xml` | Register the service (section 8). |
 | `wear/src/main/res/drawable/ic_complication.xml` | New. Picker icon. |
-| `wear/.../ui/viewmodel/PickerViewModel.kt` | Add `onSwitchRegistered` hook + fire on success. |
-| `wear/.../ui/PluralWareApp.kt` / `MainActivity.kt` | Wire the hook to `ComplicationDataSourceUpdateRequester`. |
-| `shared/.../settings/LastFronterStore.kt` | Non-sensitive cache for last-known offline render (section 6). |
-| `wear/src/test/...` | Formatter + trigger tests. |
+| `wear/.../complication/FronterSource.kt` | New. What both surfaces show (section 6), unit-tested. |
+| `wear/.../complication/FronterSurfaces.kt` | New. Android wiring for `FronterSource`; `publish` and `onTokenChanged` (section 5). |
+| `wear/.../MainActivity.kt` / `WatchDataListenerService.kt` | Publish `currentFronters` changes; report token changes. |
+| `shared/.../settings/LastFronterStore.kt` | Non-sensitive last-known cache (section 6). |
+| `wear/src/test/...` | Formatter, `FronterSource` and ViewModel tests. |
 
 ## 11. Decisions & future options
 
@@ -243,18 +254,18 @@ with `UPDATE_PERIOD_SECONDS = 0` (it never changes).
 `me.pluralware.wear.tile.FronterTileService`, a `TileService`. Shows the fronter line with a
 "Change" `CompactChip` that launches the app.
 
-- **Shared formatting/cache.** Reuses `FronterComplicationFormatter.body(...)` and
-  `LastFronterStore` so the tile and complication never disagree, including the offline
-  fallback (cached line → "Unavailable", or "Tap to set up" with no token).
+- **Shared source.** Asks the same `FronterSource` as the complication (section 6), so the two
+  never disagree, including every fallback. The fronter line carries the full screen-reader text
+  as its content description.
 - **Coroutine bridge.** `onTileRequest` / `onTileResourcesRequest` return `ListenableFuture`s;
   we use `SuspendToFutureAdapter.launchFuture { … }` (new `androidx.concurrent:concurrent-futures-ktx`
   dependency) to answer from a suspend function, matching the rest of the codebase's coroutine style.
 - **Layout.** ProtoLayout Material `PrimaryLayout` — amber caption title, the fronter line as
   body (max 3 lines), and the chip. Colors are literal ARGB ints mirroring `PluralWareTokens`
   (ProtoLayout uses int colors, not Compose `Color`).
-- **Freshness.** A coarse 10-minute freshness interval keeps the carousel copy from going stale,
-  and `requestFronterTileUpdate()` (via `TileService.getUpdater`) pushes an immediate refresh on
-  switch — wired into the same `onSwitchRegistered` hook as the complication.
+- **Freshness.** A coarse 10-minute freshness interval catches switches made off the watch, and
+  `FronterSurfaces.publish` pushes an immediate refresh whenever the app sees the fronter change
+  (section 5).
 - **Manifest.** `BIND_TILE_PROVIDER` permission + the `androidx.wear.tiles.action.BIND_TILE_PROVIDER`
   filter register it in the tile picker. The `PREVIEW` meta-data currently points at
   `ic_complication` as a placeholder — replace with a real tile preview image before publishing.
