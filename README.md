@@ -63,6 +63,10 @@ phone→watch token-handoff path landing.
 7. ~~Tile showing the current fronter~~. Quick-switch from the tile itself is still open.
 8. Pre-launch: privacy policy, Data Safety form, store listing, Play Store
    internal testing track.
+9. Friend notifications (`docs/notifications-design.md`): end-to-end
+   encrypted switch notifications to friends, or plain ntfy messages. Sending
+   from the watch and receiving in the phone app are built; a web receiver
+   and an optional relay for switches made outside PluralWare come next.
 
 ## API client
 

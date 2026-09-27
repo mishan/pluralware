@@ -1,5 +1,6 @@
 package me.pluralware.wear
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
+import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.repository.InMemoryTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
@@ -37,6 +39,7 @@ import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.complication.FronterSurfaces
+import me.pluralware.wear.sharing.WatchSharing
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -66,13 +69,14 @@ class MainActivity : ComponentActivity() {
                 // graph. Without it the screens' ViewModels would outlive the
                 // swap and keep polling the old system with the old token.
                 else -> key(t.raw) {
-                    val session = sessions.sessionFor(t) { newRepository(t) }
+                    val session = sessions.sessionFor(t) { newRepository(t, applicationContext) }
                     ConnectedApp(
                         session = session,
                         settingsStore = settingsStore,
                         onSignOut = {
                             scope.launch {
                                 tokenStore.clear()
+                                EncryptedSharingStore.get(applicationContext).clear()
                                 FronterSurfaces.onTokenChanged(applicationContext)
                             }
                         },
@@ -83,7 +87,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun newRepository(token: PluralKitToken): PluralKitRepository {
+private fun newRepository(token: PluralKitToken, appContext: Context): PluralKitRepository {
     val client = if (BuildConfig.BENCHMARK) {
         // Zero-latency mock keeps the macrobenchmark deterministic and
         // independent of network conditions.
@@ -95,7 +99,11 @@ private fun newRepository(token: PluralKitToken): PluralKitRepository {
             enableLogging = BuildConfig.DEBUG,
         )
     }
-    return PluralKitRepository(client)
+    // Friends hear about each switch this repository registers (never ones it
+    // only observes); see WatchSharing.
+    return PluralKitRepository(client) { switch ->
+        if (!BuildConfig.BENCHMARK) WatchSharing.onSwitchRegistered(appContext, switch)
+    }
 }
 
 @Composable

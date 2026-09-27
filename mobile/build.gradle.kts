@@ -64,4 +64,10 @@ dependencies {
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.security.crypto)
+
+    // Receiving friends' switch notifications. Same `tink` exclusion as :shared.
+    implementation(libs.unifiedpush.connector) {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
+    implementation(libs.tink.android)
 }

@@ -154,6 +154,20 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
 - **Polling is only the backstop** for switches made off the watch: the complication's 30-minute
   `UPDATE_PERIOD_SECONDS` and the tile's 10-minute freshness interval.
 
+### Friend notifications
+
+Sharing switches with friends is designed in `docs/notifications-design.md`; section 14 records
+what's built. In short:
+
+- The phone owns a `SharingConfig` (friends, shared members, VAPID key, ntfy server). It keeps it in
+  an encrypted store and pushes it to the watch on `/pluralware/sharing`.
+- The watch sends after each switch **it registers**, via `PluralKitRepository`'s
+  `onSwitchRegistered`. It sends either encrypted Web Push (`Friend.Private`) or ntfy messages
+  (`Friend.Simple`).
+- The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
+- Tink's `apps-webpush` and the UnifiedPush connector both depend on the JVM `tink`, which clashes
+  with `tink-android`. Every use excludes it (see `libs.versions.toml`).
+
 ## Conventions
 
 - Wire `PluralKitClientFactory.create(..., appVersion = BuildConfig.VERSION_NAME,

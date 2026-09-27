@@ -25,6 +25,13 @@ import me.pluralware.shared.model.Switch
  */
 class PluralKitRepository(
     private val client: PluralKitClient,
+    /**
+     * Called with each switch this repository registers — never with ones it
+     * merely observes on a refresh. Friend sharing hangs off it: telling
+     * friends about a switch the watch only noticed would announce old news
+     * (docs/notifications-design.md §7). Must not block; launch and return.
+     */
+    private val onSwitchRegistered: (Switch) -> Unit = {},
 ) {
     private val membersCacheMutex = Mutex()
     private var membersCache: List<Member>? = null
@@ -61,7 +68,7 @@ class PluralKitRepository(
     suspend fun registerSwitch(memberUuids: List<String>): PkResult<Switch> =
         runCatchingPk {
             client.registerSwitch(memberUuids).also(::setFronters)
-        }
+        }.also { if (it is PkResult.Success) onSwitchRegistered(it.value) }
 
     /** Convenience: switch-out (empty switch). */
     suspend fun switchOut(): PkResult<Switch> = registerSwitch(emptyList())

@@ -41,6 +41,13 @@ dependencies {
     // Encrypted token storage. API-side abstraction lives here; both apps consume it.
     implementation(libs.androidx.security.crypto)
 
+    // Friend notifications: Web Push encryption. Exclude the JVM `tink`, which
+    // clashes class-for-class with tink-android (see libs.versions.toml).
+    implementation(libs.tink.apps.webpush) {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
+    implementation(libs.tink.android)
+
     // Wearable Data Layer — used by TokenHandoff to ferry the token phone→watch.
     // Each consuming app also declares this so it can use the API directly
     // (mobile pushes; wear's listener service extends WearableListenerService).
@@ -51,4 +58,5 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }

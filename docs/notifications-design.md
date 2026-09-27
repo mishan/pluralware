@@ -1,6 +1,7 @@
 # Switch Notifications for Friends — Design
 
-Status: proposal. Scope: let a PluralWare user share "who's fronting" with chosen friends as push
+Status: rollout steps 1 and 2 are built (section 3; what differs from this plan is in section 14).
+Scope: let a PluralWare user share "who's fronting" with chosen friends as push
 notifications. There are two delivery modes:
 
 - **Private** (the default): each notification is end-to-end encrypted with standard Web Push
@@ -11,7 +12,7 @@ notifications. There are two delivery modes:
   who won't install anything.
 
 Phase A sends from PluralWare itself. Phase C, later and optional, adds a relay the user hosts, so
-switches made in Discord or elsewhere notify too. No code written yet.
+switches made in Discord or elsewhere notify too.
 
 ## 1. What it is
 
@@ -427,3 +428,39 @@ Rollout steps 1 and 2 (section 3):
 
 Rollout step 3 adds a `web-receiver/` directory holding the static web app. Step 4 adds the relay,
 in its own repository or a `relay/` directory.
+
+## 14. As built (steps 1 and 2)
+
+Where the code lives:
+
+- `shared/.../notify/`: the config and its encrypted store, invites and follow codes, the
+  announcement text, Web Push encryption and VAPID, both senders, and `SwitchSharer`, which fans a
+  switch out to every friend. Also the receiving side's `Following` store.
+- `PluralKitRepository`'s `onSwitchRegistered` hook fires only for switches the repository
+  registers, which is how "observed switches are never sent" is enforced (and tested).
+- Watch: `WatchSharing` sends from a process-wide scope. `WatchDataListenerService` stores the
+  config the phone pushes, then deletes the DataItem. Either side's sign-out clears it.
+- Phone: **Share with friends** (`sharing/`) and **Following** (`following/`, with
+  `FollowPushService` as the UnifiedPush receiver).
+
+Differences from the plan above:
+
+- **No QR codes yet.** Invites and follow codes travel as text through the share sheet and are
+  pasted in. Both formats are `pluralware-invite:` / `pluralware-follow:` plus base64url JSON, and
+  the parser finds them anywhere in a message or a link's fragment. That is what lets the web
+  receiver (step 3) carry the same invite in an `https://…/follow#…` link.
+- **The phone learns about gone friends** by reading a status DataItem the watch writes
+  (`/pluralware/sharing-status`) when the sharing screen opens.
+- **The relay switch** ("Sent by: this watch / relay") waits for step 4.
+- **The system's VAPID key** is generated on the first invite, not when sharing is first turned
+  on. Simple-mode-only setups never need one.
+
+Not yet verified end to end, because it needs real devices and a distributor:
+
+- a push through the ntfy app as UnifiedPush distributor;
+- a push through Google's FCM-backed endpoint;
+- `EncryptedSharedPreferences` on Tink 1.23 (section 4.2).
+
+The unit tests cover every piece up to the HTTP request, including decrypting what the sender
+produces with an independent RFC 8291 implementation.
+

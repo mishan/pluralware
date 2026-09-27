@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for friends' switch notifications: two overlapping figures. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,11a3.5,3.5 0,1 0,0 -7a3.5,3.5 0,1 0,0 7zM9,13c-3.3,0 -7,1.6 -7,4v2h14v-2c0,-2.4 -3.7,-4 -7,-4zM16.5,11a3,3 0,1 0,0 -6a3,3 0,1 0,0 6zM17.5,13.1c1.9,0.6 3.5,1.8 3.5,3.9v2h-3v-2c0,-1.6 -0.2,-2.8 -0.5,-3.9z" />
+</vector>

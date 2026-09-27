@@ -92,4 +92,27 @@ class PluralKitRepositoryTest {
 
         assertEquals(me.pluralware.shared.repository.LoadedFronters(null), r.loadedFronters.value)
     }
+
+    @Test
+    fun `the registered-switch hook fires for registrations only`() = runTest {
+        val seen = mutableListOf<me.pluralware.shared.model.Switch>()
+        val r = PluralKitRepository(MockPluralKitClient(artificialLatencyMillis = 0)) { seen += it }
+
+        r.refreshFronters()
+        assertTrue("observed switches are never announced", seen.isEmpty())
+
+        val registered = (r.registerSwitch(emptyList()) as PkResult.Success).value
+        assertEquals(listOf(registered), seen)
+    }
+
+    @Test
+    fun `a failed registration fires nothing`() = runTest {
+        val client = mockk<PluralKitClient>()
+        coEvery { client.registerSwitch(any()) } throws PluralKitHttpException(500, "Oops")
+        var fired = false
+
+        PluralKitRepository(client) { fired = true }.registerSwitch(listOf("uuid"))
+
+        assertFalse(fired)
+    }
 }

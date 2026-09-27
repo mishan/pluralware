@@ -21,6 +21,7 @@ import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.model.SystemInfo
+import me.pluralware.shared.notify.SharingStore
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.AppSettings
 import me.pluralware.shared.settings.RefreshInterval
@@ -41,6 +42,7 @@ import me.pluralware.shared.settings.SettingsStore
 class TokenEntryViewModel(
     private val tokenStore: TokenStore,
     private val settingsStore: SettingsStore,
+    private val sharingStore: SharingStore,
     private val appContext: Context,
 ) : ViewModel() {
 
@@ -142,6 +144,9 @@ class TokenEntryViewModel(
     fun disconnect() {
         viewModelScope.launch {
             tokenStore.clear()
+            // Sharing belongs to the system being disconnected. The watch clears
+            // its copy when the sign-out below reaches it.
+            sharingStore.clear()
             _state.update { it.copy(status = ConnectionStatus.Idle, input = "") }
             // Sign the watch out too. Best-effort: with no watch in reach the
             // Data Layer holds the write and delivers it on the next sync.
@@ -187,9 +192,10 @@ class TokenEntryViewModel(
     class Factory(
         private val tokenStore: TokenStore,
         private val settingsStore: SettingsStore,
+        private val sharingStore: SharingStore,
         private val appContext: Context,
     ) : ViewModelProvider.Factory by viewModelFactory({
-        initializer { TokenEntryViewModel(tokenStore, settingsStore, appContext) }
+        initializer { TokenEntryViewModel(tokenStore, settingsStore, sharingStore, appContext) }
     })
 }
 
