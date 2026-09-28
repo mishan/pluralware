@@ -14,10 +14,9 @@ private const val BASE_URL = "https://api.pluralkit.me/v2/"
 /**
  * Sent as `User-Agent` on every request. PluralKit asks API consumers to set
  * a contactable UA so maintainers can reach out about misbehaving clients.
- *
- * TODO: replace the placeholder URL once we have a public issue tracker.
  */
-private const val USER_AGENT = "PluralWare/0.1.0 (+https://github.com/TODO/pluralware)"
+internal fun userAgent(appVersion: String) =
+    "PluralWare/$appVersion (+https://github.com/mishan/pluralware)"
 
 /**
  * Builds the production [PluralKitClient].
@@ -32,24 +31,28 @@ object PluralKitClientFactory {
      * connection pool — for the watch app's traffic pattern (single user, sparse
      * requests) sharing one pool gives no meaningful benefit and complicates DI.
      *
+     * @param appVersion the calling app's `BuildConfig.VERSION_NAME`, sent in
+     *   the `User-Agent` so PluralKit can tell releases apart.
      * @param enableLogging when true, attaches an [HttpLoggingInterceptor] at
      *   BODY level. Wire to BuildConfig.DEBUG at the call site — never enable
      *   in release builds (logs would include the bearer token).
      */
     fun create(
         token: PluralKitToken,
+        appVersion: String,
         enableLogging: Boolean = false,
     ): PluralKitClient {
-        val okHttp = buildOkHttpClient(token, enableLogging)
+        val okHttp = buildOkHttpClient(token, userAgent(appVersion), enableLogging)
         val retrofit = buildRetrofit(okHttp)
         return RetrofitPluralKitClient(retrofit.create(PluralKitApi::class.java))
     }
 
     private fun buildOkHttpClient(
         token: PluralKitToken,
+        userAgent: String,
         enableLogging: Boolean,
     ): OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(AuthAndUaInterceptor(token))
+        .addInterceptor(AuthAndUaInterceptor(token, userAgent))
         .apply {
             if (enableLogging) {
                 addInterceptor(HttpLoggingInterceptor().apply {
@@ -93,11 +96,12 @@ object PluralKitClientFactory {
  */
 private class AuthAndUaInterceptor(
     private val token: PluralKitToken,
+    private val userAgent: String,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
         val request = chain.request().newBuilder()
             .header("Authorization", token.raw)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", userAgent)
             .build()
         return chain.proceed(request)
     }

@@ -20,7 +20,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.HttpException
 import retrofit2.Response
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -126,6 +128,58 @@ class RetrofitPluralKitClientTest {
         } catch (e: PluralKitHttpException) {
             assertEquals(500, e.statusCode)
         }
+    }
+
+    @Test
+    fun `a 401 from any endpoint surfaces as an unauthorized PluralKitHttpException`() = runTest {
+        val api = mockk<PluralKitApi>()
+        val errorBody = "".toResponseBody("application/json".toMediaType())
+        coEvery { api.getOwnMembers() } throws HttpException(Response.error<Any>(401, errorBody))
+
+        try {
+            client(api).getOwnMembers()
+            error("expected PluralKitHttpException")
+        } catch (e: PluralKitHttpException) {
+            assertEquals(401, e.statusCode)
+            assertTrue(e.isUnauthorized)
+        }
+    }
+
+    @Test
+    fun `a 429 carries the server's Retry-After`() = runTest {
+        val api = mockk<PluralKitApi>()
+        val raw = okhttp3.Response.Builder()
+            .request(okhttp3.Request.Builder().url("https://api.pluralkit.me/v2/systems/@me/fronters").build())
+            .protocol(okhttp3.Protocol.HTTP_1_1)
+            .code(429)
+            .message("Too Many Requests")
+            .header("Retry-After", "7")
+            .build()
+        val errorBody = "".toResponseBody("application/json".toMediaType())
+        coEvery { api.getCurrentFronters() } returns Response.error(errorBody, raw)
+
+        try {
+            client(api).getCurrentFronters()
+            error("expected PluralKitHttpException")
+        } catch (e: PluralKitHttpException) {
+            assertTrue(e.isRateLimited)
+            assertEquals(Duration.ofSeconds(7), e.retryAfter)
+        }
+    }
+
+    @Test
+    fun `parseRetryAfter reads delta-seconds and ignores anything else`() {
+        assertEquals(Duration.ofSeconds(30), parseRetryAfter(" 30 "))
+        assertNull(parseRetryAfter(null))
+        assertNull(parseRetryAfter("-1"))
+        assertNull(parseRetryAfter("Wed, 21 Oct 2026 07:28:00 GMT"))
+    }
+
+    @Test
+    fun `user agent names the app version and a contact URL`() {
+        val ua = userAgent("1.2.3")
+        assertTrue(ua.startsWith("PluralWare/1.2.3 "))
+        assertTrue("https://github.com/mishan/pluralware" in ua)
     }
 
     @Test

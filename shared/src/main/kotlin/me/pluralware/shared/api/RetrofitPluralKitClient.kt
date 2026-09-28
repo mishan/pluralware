@@ -10,6 +10,8 @@ import me.pluralware.shared.api.dto.SystemDto
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
+import retrofit2.HttpException
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -32,6 +34,12 @@ import java.time.Instant
  * the refresh still doesn't find them — which can happen if the member was
  * deleted — we drop that ID from the resulting [Switch.members] list rather
  * than surface a half-broken history entry.
+ *
+ * ## Errors
+ *
+ * Every non-success response surfaces as a [PluralKitHttpException], whichever
+ * endpoint it came from, so callers can branch on [PluralKitHttpException.isUnauthorized]
+ * and [PluralKitHttpException.retryAfter] without knowing about Retrofit.
  */
 class RetrofitPluralKitClient internal constructor(
     private val api: PluralKitApi,
@@ -40,10 +48,10 @@ class RetrofitPluralKitClient internal constructor(
     private val cacheMutex = Mutex()
     private var memberCache: Map<String, Member>? = null
 
-    override suspend fun getOwnSystem(): SystemInfo = api.getOwnSystem().toDomain()
+    override suspend fun getOwnSystem(): SystemInfo = http { api.getOwnSystem() }.toDomain()
 
     override suspend fun getOwnMembers(): List<Member> {
-        val members = api.getOwnMembers().map { it.toDomain() }
+        val members = http { api.getOwnMembers() }.map { it.toDomain() }
         // Opportunistically warm the resolver cache — same network round-trip,
         // saves a future fetch when getRecentSwitches() needs the lookup.
         cacheMutex.withLock { memberCache = buildMemberLookup(members) }
@@ -51,12 +59,16 @@ class RetrofitPluralKitClient internal constructor(
     }
 
     override suspend fun getCurrentFronters(): Switch? {
-        val response = api.getCurrentFronters()
+        val response = http { api.getCurrentFronters() }
         // 204 = no switches ever registered for this system. Per the API docs
         // this is a documented success state, not an error.
         if (response.code() == 204) return null
         if (!response.isSuccessful) {
-            throw PluralKitHttpException(response.code(), response.message())
+            throw PluralKitHttpException(
+                statusCode = response.code(),
+                message = response.message(),
+                retryAfter = parseRetryAfter(response.headers()["Retry-After"]),
+            )
         }
         val body = response.body() ?: return null
         return body.toDomain()
@@ -65,7 +77,7 @@ class RetrofitPluralKitClient internal constructor(
     override suspend fun getRecentSwitches(limit: Int): List<Switch> {
         // The API caps at 100; defend against callers that didn't read the doc.
         val safeLimit = limit.coerceIn(1, 100)
-        val refs = api.getRecentSwitches(safeLimit)
+        val refs = http { api.getRecentSwitches(safeLimit) }
         if (refs.isEmpty()) return emptyList()
 
         // Build the lookup. If any switch references members we don't know about,
@@ -80,7 +92,7 @@ class RetrofitPluralKitClient internal constructor(
     override suspend fun registerSwitch(memberUuids: List<String>): Switch {
         // PluralKit's POST accepts either short IDs or UUIDs. We send UUIDs
         // because the pickers track members by UUID — the stable identifier.
-        val switch = api.createSwitch(CreateSwitchRequest(members = memberUuids))
+        val switch = http { api.createSwitch(CreateSwitchRequest(members = memberUuids)) }
             .toDomain()
         // Server returned full Member objects in the response; refresh the cache
         // so any newly-added members from the response are visible to history.
@@ -95,6 +107,18 @@ class RetrofitPluralKitClient internal constructor(
         return switch
     }
 
+    /** Runs one API call, translating Retrofit's [HttpException] into [PluralKitHttpException]. */
+    private inline fun <T> http(block: () -> T): T = try {
+        block()
+    } catch (e: HttpException) {
+        throw PluralKitHttpException(
+            statusCode = e.code(),
+            message = e.message(),
+            retryAfter = parseRetryAfter(e.response()?.headers()?.get("Retry-After")),
+            cause = e,
+        )
+    }
+
     // --- Member-cache helpers ---
 
     private suspend fun ensureMemberLookup(): Map<String, Member> {
@@ -105,7 +129,7 @@ class RetrofitPluralKitClient internal constructor(
     }
 
     private suspend fun refreshMemberLookup(): Map<String, Member> {
-        val fresh = buildMemberLookup(api.getOwnMembers().map { it.toDomain() })
+        val fresh = buildMemberLookup(http { api.getOwnMembers() }.map { it.toDomain() })
         cacheMutex.withLock { memberCache = fresh }
         return fresh
     }
@@ -165,4 +189,16 @@ class RetrofitPluralKitClient internal constructor(
 class PluralKitHttpException(
     val statusCode: Int,
     message: String,
-) : RuntimeException("PluralKit API returned HTTP $statusCode: $message")
+    /** How long the server asked us to wait, from `Retry-After`; null if it didn't say. */
+    val retryAfter: Duration? = null,
+    cause: Throwable? = null,
+) : RuntimeException("PluralKit API returned HTTP $statusCode: $message", cause) {
+    /** The token was rejected — revoked, regenerated with `pk;token refresh`, or mistyped. */
+    val isUnauthorized: Boolean get() = statusCode == 401
+
+    val isRateLimited: Boolean get() = statusCode == 429
+}
+
+/** `Retry-After` in its delta-seconds form; the HTTP-date form is rare enough to ignore. */
+internal fun parseRetryAfter(value: String?): Duration? =
+    value?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.let(Duration::ofSeconds)

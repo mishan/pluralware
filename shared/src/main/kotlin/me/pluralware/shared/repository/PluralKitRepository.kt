@@ -1,11 +1,13 @@
 package me.pluralware.shared.repository
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.api.PluralKitClient
+import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 
@@ -56,6 +58,9 @@ class PluralKitRepository(
 
     private inline fun <T> runCatchingPk(block: () -> T): PkResult<T> = try {
         PkResult.Success(block())
+    } catch (e: CancellationException) {
+        // A canceled caller must stay canceled, not see a Failure it might retry.
+        throw e
     } catch (e: Exception) {
         PkResult.Failure(e)
     }
@@ -68,5 +73,9 @@ class PluralKitRepository(
  */
 sealed interface PkResult<out T> {
     data class Success<T>(val value: T) : PkResult<T>
-    data class Failure(val error: Throwable) : PkResult<Nothing>
+    data class Failure(val error: Throwable) : PkResult<Nothing> {
+        /** PluralKit rejected the token; retrying won't help until it's replaced. */
+        val isUnauthorized: Boolean
+            get() = (error as? PluralKitHttpException)?.isUnauthorized == true
+    }
 }

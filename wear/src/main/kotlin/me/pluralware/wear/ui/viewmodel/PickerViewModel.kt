@@ -16,6 +16,7 @@ import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.wear.ui.state.PickerState
 import me.pluralware.wear.ui.state.UiState
+import me.pluralware.wear.ui.state.toUiError
 
 class PickerViewModel(
     private val repository: PluralKitRepository,
@@ -46,7 +47,7 @@ class PickerViewModel(
                 it.copy(
                     members = when (r) {
                         is PkResult.Success -> UiState.Content(r.value)
-                        is PkResult.Failure -> UiState.Error(r.error.message ?: "Couldn't load members")
+                        is PkResult.Failure -> r.toUiError("Couldn't load members")
                     },
                 )
             }
@@ -127,9 +128,7 @@ class PickerViewModel(
                     _state.update {
                         it.copy(
                             submitting = false,
-                            members = UiState.Error(
-                                r.error.message ?: "Couldn't register switch",
-                            ),
+                            members = r.toUiError("Couldn't register switch"),
                         )
                     }
                 }

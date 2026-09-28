@@ -1,14 +1,34 @@
 package me.pluralware.wear.ui.state
 
 import java.time.Instant
+import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
+import me.pluralware.shared.repository.PkResult
 
 /** Generic three-state container used by simple screens. */
 sealed interface UiState<out T> {
     data object Loading : UiState<Nothing>
-    data class Error(val message: String, val canRetry: Boolean = true) : UiState<Nothing>
+    /**
+     * [unauthorized] means PluralKit rejected the token: retrying can't help,
+     * so the screen offers a sign-out instead.
+     */
+    data class Error(val message: String, val unauthorized: Boolean = false) : UiState<Nothing>
     data class Content<T>(val value: T) : UiState<T>
+}
+
+/** The error state for a failed call, worded for why it failed. */
+fun PkResult.Failure.toUiError(fallback: String): UiState.Error =
+    UiState.Error(message = error.userMessage(fallback), unauthorized = isUnauthorized)
+
+private fun Throwable.userMessage(fallback: String): String {
+    val http = this as? PluralKitHttpException
+    return when {
+        http?.isUnauthorized == true ->
+            "PluralKit no longer accepts this token. Sign out, then connect again from your phone."
+        http?.isRateLimited == true -> "PluralKit is busy. Try again in a minute."
+        else -> message ?: fallback
+    }
 }
 
 /**

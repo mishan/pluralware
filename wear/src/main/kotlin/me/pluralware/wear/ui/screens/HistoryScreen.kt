@@ -37,13 +37,14 @@ import me.pluralware.wear.ui.viewmodel.HistoryViewModel
 fun HistoryScreen(
     repository: PluralKitRepository,
     onDone: () -> Unit,
+    onSignOut: () -> Unit,
 ) {
     val vm: HistoryViewModel = viewModel(factory = HistoryViewModel.Factory(repository))
     val state by vm.state.collectAsState()
 
     when (val s = state) {
         UiState.Loading -> LoadingScreen()
-        is UiState.Error -> ErrorScreen(message = s.message, onRetry = vm::load)
+        is UiState.Error -> ErrorScreen(s, onRetry = vm::load, onSignOut = onSignOut)
         is UiState.Content -> {
             if (s.value.isEmpty()) {
                 EmptyScreen(title = "No switches recorded yet")
