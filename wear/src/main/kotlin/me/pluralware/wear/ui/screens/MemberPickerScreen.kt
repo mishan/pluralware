@@ -3,6 +3,8 @@ package me.pluralware.wear.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -154,11 +157,19 @@ private fun PickerContent(
     }
 }
 
+/**
+ * Drawn over the picker, so it brings its own backdrop: without one, the amber
+ * text landed on whatever was underneath, often the amber Confirm button,
+ * and all but vanished. The backdrop also takes taps for the moment it's up, so
+ * nothing underneath can be pressed again on the way out.
+ */
 @Composable
 private fun ConfirmedOverlay() {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colors.background.copy(alpha = 0.92f))
+            .pointerInput(Unit) { detectTapGestures { } }
             .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
