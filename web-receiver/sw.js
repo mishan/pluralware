@@ -23,14 +23,19 @@ self.addEventListener('push', (event) => {
     } catch (e) {
       payload = null;
     }
-    const follow = id ? await PwDb.get(id) : null;
+    const follow = id ? await PwDb.get(id).catch(() => null) : null;
     // Browsers require every push to show a notification, so an unreadable one
     // still does, generically, rather than getting this registration penalized.
     if (!follow || !payload || typeof payload.text !== 'string') {
       await self.registration.showNotification('PluralWare', { body: 'A system you follow switched.' });
       return;
     }
-    await PwDb.update(id, (f) => ({ ...f, lastText: payload.text, lastSwitchedAt: payload.switchedAt }));
+    try {
+      await PwDb.update(id, (f) => ({ ...f, lastText: payload.text, lastSwitchedAt: payload.switchedAt }));
+    } catch (e) {
+      // Never let bookkeeping cost the notification: browsers (Safari
+      // especially) revoke subscriptions whose pushes show nothing.
+    }
     const when = Date.parse(payload.switchedAt);
     await self.registration.showNotification(payload.system || follow.system, {
       body: payload.text,

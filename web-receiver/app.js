@@ -26,13 +26,24 @@ function scopeFor(id) {
   return new URL(`follow/${id}/`, location.href).href;
 }
 
-/** Resolves once a new registration's worker is active, so it can subscribe. */
-function activated(registration) {
+/**
+ * Resolves once a new registration's worker is active, so it can subscribe.
+ * Rejects if it fails to install (it goes "redundant", e.g. a script failed to
+ * load) or takes too long, so the Follow button never stays stuck.
+ */
+function activated(registration, timeoutMs = 30000) {
   const worker = registration.installing || registration.waiting || registration.active;
   if (!worker || worker.state === 'activated') return Promise.resolve(registration);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('The notification worker took too long to start. Try again.')), timeoutMs);
     worker.addEventListener('statechange', () => {
-      if (worker.state === 'activated') resolve(registration);
+      if (worker.state === 'activated') {
+        clearTimeout(timer);
+        resolve(registration);
+      } else if (worker.state === 'redundant') {
+        clearTimeout(timer);
+        reject(new Error('The notification worker failed to start. Check your connection and try again.'));
+      }
     });
   });
 }
@@ -44,11 +55,20 @@ async function follow(invite, myName) {
     throw new Error('Notifications are blocked for this page. Allow them in your browser settings, then try again.');
   }
   const id = crypto.randomUUID();
-  const registration = await activated(await navigator.serviceWorker.register('sw.js', { scope: scopeFor(id) }));
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: b64urlDecode(invite.vapid),
-  });
+  const registration = await navigator.serviceWorker.register('sw.js', { scope: scopeFor(id) });
+  let subscription;
+  try {
+    await activated(registration);
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: b64urlDecode(invite.vapid),
+    });
+  } catch (e) {
+    // Don't leave a half-made follow behind (e.g. an invite whose key isn't a
+    // valid point); its registration would linger with no entry to remove it.
+    await registration.unregister().catch(() => {});
+    throw e;
+  }
   const json = subscription.toJSON();
   const followCode = encodeFollowCode({
     name: myName || 'A friend',

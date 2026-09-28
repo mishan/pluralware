@@ -23,6 +23,9 @@ const PwDb = (() => {
         const result = fn(tx.objectStore(STORE));
         tx.oncomplete = () => resolve(result && 'result' in result ? result.result : undefined);
         tx.onerror = () => reject(tx.error);
+        // An abort (e.g. over quota) fires no error event; without this the
+        // promise would never settle.
+        tx.onabort = () => reject(tx.error ?? new Error('transaction aborted'));
       });
     } finally {
       db.close();
