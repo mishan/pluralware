@@ -9,15 +9,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import kotlinx.coroutines.launch
@@ -48,15 +51,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             val token by tokenStore.tokenFlow.collectAsState()
             val scope = rememberCoroutineScope()
+            val sessions: SessionHolder = viewModel()
             when (val t = token) {
-                null -> WaitingForPairingScreen()
+                null -> {
+                    SideEffect { sessions.end() }
+                    WaitingForPairingScreen()
+                }
                 // Keyed on the raw token so a replacement starts from scratch:
-                // a new repository, and a new nav graph whose ViewModels hold
-                // it. Without the key the ViewModels outlive the swap and keep
-                // polling the old system with the old token.
+                // a new session (repository and ViewModel store) and a new nav
+                // graph. Without it the screens' ViewModels would outlive the
+                // swap and keep polling the old system with the old token.
                 else -> key(t.raw) {
+                    val session = sessions.sessionFor(t) { newRepository(t) }
                     ConnectedApp(
-                        token = t,
+                        session = session,
                         settingsStore = settingsStore,
                         onSignOut = { scope.launch { tokenStore.clear() } },
                     )
@@ -66,27 +74,32 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun newRepository(token: PluralKitToken): PluralKitRepository {
+    val client = if (BuildConfig.BENCHMARK) {
+        // Zero-latency mock keeps the macrobenchmark deterministic and
+        // independent of network conditions.
+        MockPluralKitClient(artificialLatencyMillis = 0L)
+    } else {
+        PluralKitClientFactory.create(
+            token = token,
+            appVersion = BuildConfig.VERSION_NAME,
+            enableLogging = BuildConfig.DEBUG,
+        )
+    }
+    return PluralKitRepository(client)
+}
+
 @Composable
 private fun ConnectedApp(
-    token: PluralKitToken,
+    session: Session,
     settingsStore: SettingsStore,
     onSignOut: () -> Unit,
 ) {
-    val repository = remember {
-        val client = if (BuildConfig.BENCHMARK) {
-            // Zero-latency mock keeps the macrobenchmark deterministic and
-            // independent of network conditions.
-            MockPluralKitClient(artificialLatencyMillis = 0L)
-        } else {
-            PluralKitClientFactory.create(
-                token = token,
-                appVersion = BuildConfig.VERSION_NAME,
-                enableLogging = BuildConfig.DEBUG,
-            )
-        }
-        PluralKitRepository(client)
+    // The screens' ViewModels (through the nav graph's back-stack entries)
+    // live in the session's store, not the activity's.
+    CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
+        PluralWareApp(repository = session.repository, settingsStore = settingsStore, onSignOut = onSignOut)
     }
-    PluralWareApp(repository = repository, settingsStore = settingsStore, onSignOut = onSignOut)
 }
 
 @Composable

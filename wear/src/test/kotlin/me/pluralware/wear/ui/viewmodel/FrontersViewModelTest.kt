@@ -46,6 +46,17 @@ class FrontersViewModelTest {
     }
 
     @Test
+    fun `polling stops once the token is rejected`() = runTest {
+        coEvery { client.getCurrentFronters() } throws PluralKitHttpException(401, "Unauthorized")
+        val vm = viewModel() // fetch 1: rejected
+
+        vm.poll()
+        vm.poll()
+
+        coVerify(exactly = 1) { client.getCurrentFronters() }
+    }
+
+    @Test
     fun `other refresh failures keep the stale content`() = runTest {
         coEvery { client.getCurrentFronters() } returns PreviewData.currentSwitch
         val vm = viewModel()

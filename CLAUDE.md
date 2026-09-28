@@ -107,9 +107,11 @@ End-to-end pairing flow:
    `EncryptedTokenStore` with `commit()`, and **deletes the `DataItem`** — the deletion propagates
    back to the phone, bounding how long cleartext sits on disk.
 4. Watch `MainActivity` observes `tokenStore.tokenFlow`: `null` → "Pair with phone" screen;
-   non-null → `ConnectedApp` inside **`key(token.raw)`**, which builds a `PluralKitRepository` and
-   shows `PluralWareApp`. The key matters: it makes a token swap rebuild the nav graph, so the
-   screens' ViewModels don't outlive it holding the old repository and token.
+   non-null → `ConnectedApp` inside **`key(token.raw)`**, with a `Session` from the
+   activity-scoped `SessionHolder`: one `PluralKitRepository` per token, plus the `ViewModelStore`
+   the screens' ViewModels live in (provided as `LocalViewModelStoreOwner`). The repository and
+   the screens survive configuration changes together. A token swap or sign-out clears the old
+   store, which releases the old screens' ViewModels along with their repository and token.
 
 Signing out: the phone's **Disconnect** calls `TokenHandoff.pushSignOut`, which overwrites the same
 `/pluralware/token` item with a sign-out marker — superseding any token the watch hasn't collected

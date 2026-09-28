@@ -86,11 +86,15 @@ class FrontersViewModel(
 
     /**
      * [refresh] for the screen's own triggers — resume and the poll loop.
-     * These stand down while PluralKit is rate-limiting us; a tap on the
-     * refresh button doesn't, since the user asked.
+     * These stand down while PluralKit is rate-limiting us, and once it has
+     * rejected the token; a tap on the refresh button doesn't, since the user
+     * asked.
      */
     fun poll() {
         if (clock() < pausedUntilMillis) return
+        // A rejected token stays rejected; asking again only re-sends it.
+        val current = _state.value
+        if (current is UiState.Error && current.unauthorized) return
         refresh()
     }
 

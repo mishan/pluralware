@@ -44,9 +44,13 @@ class HistoryViewModel(
     fun switchBackTo(switch: Switch, onDone: () -> Unit) {
         if (switching) return
         val uuids = switch.members.map { it.uuid }
-        // PluralKit answers a switch identical to the current one with a 400.
-        // The user already has what they tapped for.
-        if (uuids == repository.currentFronters.value?.members?.map { it.uuid }) {
+        // PluralKit answers a switch identical to the current one with a 400,
+        // and the user already has what they tapped for. "Current" is the
+        // newest switch in the history this screen just loaded; the
+        // repository's cached fronters can be stale (a switch made in Discord
+        // since the home screen last refreshed).
+        val newest = (_state.value as? UiState.Content)?.value?.firstOrNull()
+        if (newest != null && uuids == newest.members.map { it.uuid }) {
             onDone()
             return
         }

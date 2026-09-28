@@ -64,14 +64,28 @@ class HistoryViewModelTest {
     }
 
     @Test
-    fun `switching back to the current fronters skips the request`() = runTest {
-        repository.refreshFronters()
+    fun `switching back to the newest switch's fronters skips the request`() = runTest {
         var done = 0
-        val sameAsCurrent = PreviewData.currentSwitch.copy(uuid = "older-but-identical")
+        val sameAsNewest = PreviewData.historyRecent.first().copy(uuid = "older-but-identical")
 
-        HistoryViewModel(repository).switchBackTo(sameAsCurrent) { done++ }
+        HistoryViewModel(repository).switchBackTo(sameAsNewest) { done++ }
 
         coVerify(exactly = 0) { client.registerSwitch(any()) }
+        assertEquals(1, done)
+    }
+
+    @Test
+    fun `a stale cached front doesn't swallow a real switch back`() = runTest {
+        // The home screen last saw `past` in front; since then someone switched
+        // elsewhere, and the history this screen loads starts with that switch.
+        coEvery { client.getCurrentFronters() } returns past
+        repository.refreshFronters()
+        coEvery { client.registerSwitch(any()) } returns past
+        var done = 0
+
+        HistoryViewModel(repository).switchBackTo(past) { done++ }
+
+        coVerify(exactly = 1) { client.registerSwitch(past.members.map { it.uuid }) }
         assertEquals(1, done)
     }
 }
