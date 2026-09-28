@@ -25,8 +25,13 @@ data class SharingConfig(
     val vapid: VapidKeys? = null,
     /** Carries Simple-mode messages. */
     val ntfy: NtfyServer? = null,
+    /** The optional phase C relay (§10). */
+    val relay: RelaySettings? = null,
 ) {
     val isSharing: Boolean get() = friends.isNotEmpty()
+
+    /** The relay sends instead of the watch, so friends never get a switch twice (§7). */
+    val relaySends: Boolean get() = relay?.enabled == true
 
     fun toJson(): String = json.encodeToString(serializer(), this)
 
@@ -74,6 +79,29 @@ data class VapidKeys(
     val publicKey: String,
     val privateKey: String,
 )
+
+/**
+ * The user's relay (§10). [adminSecret] is the one set when deploying it;
+ * [webhookPath] is the unguessable path PluralKit posts to; [signingToken]
+ * is what PluralKit showed when the webhook was set.
+ */
+@Serializable
+data class RelaySettings(
+    val url: String,
+    val adminSecret: String,
+    val webhookPath: String = newWebhookPath(),
+    val signingToken: String? = null,
+    val enabled: Boolean = false,
+) {
+    /** What to give PluralKit's `pk;s webhook` command. */
+    val webhookUrl: String get() = url.trimEnd('/') + "/pk/" + webhookPath
+
+    companion object {
+        private val random = SecureRandom()
+
+        fun newWebhookPath(): String = B64.encode(ByteArray(18).also(random::nextBytes))
+    }
+}
 
 /** An ntfy server for Simple mode; [accessToken] only on a server with accounts (§5.1). */
 @Serializable

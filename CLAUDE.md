@@ -167,6 +167,11 @@ what's built. In short:
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
   `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
   `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.
+- `relay/` is the optional server that turns PluralKit's dispatch webhook into notifications
+  (Cloudflare Worker or Node, no dependencies; `npm test` there). The phone uploads a `RelayConfig`
+  to it. When `RelaySettings.enabled` is on, the watch stops sending (`SharingConfig.relaySends`).
+  The announcement wording exists in both Kotlin and `relay/src/announce.js`, and so does the
+  upload's JSON shape; each pair has tests that must change together.
 - The invite and follow-code formats exist twice, in `Invites.kt` and `web-receiver/formats.js`.
   Their tests share fixture strings, so change both sides and both tests together.
 - Tink's `apps-webpush` and the UnifiedPush connector both depend on the JVM `tink`, which clashes

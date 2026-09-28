@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import me.pluralware.shared.notify.Friend
+import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
 
 /** Share switches with friends: who may be named, who receives, and how (docs/notifications-design.md). */
@@ -123,6 +125,17 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
                 onAddFriend = viewModel::addSimpleFriend,
                 onShareTopic = { shareText(context, it) },
                 onDismissTopic = viewModel::dismissNewTopic,
+            )
+
+            RelaySection(
+                relay = config.relay,
+                configured = state.relayConfigured,
+                error = state.relayError,
+                onSave = viewModel::saveRelay,
+                onSigningToken = viewModel::setSigningToken,
+                onEnabled = viewModel::setRelayEnabled,
+                onRemove = viewModel::removeRelay,
+                onShareCommand = { shareText(context, it) },
             )
         }
     }
@@ -305,3 +318,81 @@ internal fun shareText(context: Context, text: String) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
     context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
+
+@Composable
+private fun RelaySection(
+    relay: RelaySettings?,
+    configured: Boolean,
+    error: String?,
+    onSave: (String, String) -> Unit,
+    onSigningToken: (String) -> Unit,
+    onEnabled: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+    onShareCommand: (String) -> Unit,
+) {
+    var url by remember(relay?.url) { mutableStateOf(relay?.url.orEmpty()) }
+    var secret by remember(relay?.adminSecret) { mutableStateOf(relay?.adminSecret.orEmpty()) }
+    var token by remember(relay?.signingToken) { mutableStateOf(relay?.signingToken.orEmpty()) }
+    Section(title = "Relay (optional)") {
+        Text(
+            "Without one, friends hear about switches you make on your watch. A relay you host also " +
+                "catches switches made in Discord or anywhere else. Setup is in the relay's README.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("Relay address, e.g. https://relay.example.org") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = secret,
+            onValueChange = { secret = it },
+            label = { Text("Its admin secret") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (url.isNotBlank() && secret.isNotBlank() && (url != relay?.url || secret != relay.adminSecret)) {
+            OutlinedButton(onClick = { onSave(url, secret) }) { Text("Save relay") }
+        }
+        if (relay == null) return@Section
+
+        val command = "pk;s webhook ${relay.webhookUrl}"
+        Text("1. In a DM with PluralKit, run:", style = MaterialTheme.typography.bodySmall)
+        Text(command, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { onShareCommand(command) }) { Text("Copy or share the command") }
+        Text(
+            "2. PluralKit shows a token and waits. Paste it here and save, then reply \"yes\" to PluralKit.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = token,
+            onValueChange = { token = it },
+            label = { Text("Token from PluralKit") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+        )
+        if (token != relay.signingToken.orEmpty()) {
+            OutlinedButton(onClick = { onSigningToken(token) }) { Text("Save token") }
+        }
+        when {
+            error != null -> Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            configured -> Text("The relay has your settings.", style = MaterialTheme.typography.bodySmall)
+        }
+        if (relay.signingToken != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = relay.enabled, onCheckedChange = onEnabled)
+                Text("  Send through the relay")
+            }
+            Text(
+                "3. Once PluralKit confirms the webhook, turn this on. The watch stops sending while it's on, " +
+                    "so friends never get a switch twice.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        TextButton(onClick = onRemove) { Text("Remove relay") }
+    }
+}
+

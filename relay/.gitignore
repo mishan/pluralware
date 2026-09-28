@@ -1,0 +1,5 @@
+# Your deployment's own settings and state.
+wrangler.toml
+relay-state.json*
+.wrangler/
+node_modules/

@@ -22,6 +22,9 @@ import me.pluralware.shared.notify.Friend
 import me.pluralware.shared.notify.Invite
 import me.pluralware.shared.notify.NtfyServer
 import me.pluralware.shared.notify.NtfyTopics
+import me.pluralware.shared.notify.RelayClient
+import me.pluralware.shared.notify.RelayConfig
+import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
 import me.pluralware.shared.notify.SharingStore
 import me.pluralware.shared.notify.Vapid
@@ -49,7 +52,13 @@ class SharingViewModel(
         val followCodeError: String? = null,
         /** Set after adding a Simple-mode friend, so the screen can show what to send them. */
         val newTopicUrl: String? = null,
+        /** The relay's last complaint, or null when the last upload worked. */
+        val relayError: String? = null,
+        /** Whether the relay holds our config (it answers PluralKit's checks once it does). */
+        val relayConfigured: Boolean = false,
     )
+
+    private val relayClient = RelayClient.create(BuildConfig.VERSION_NAME)
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -81,8 +90,18 @@ class SharingViewModel(
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, loadError = e.message ?: "Couldn't load your members.") }
             }
-            val gone = runCatching { SharingHandoff.readStatus(appContext) }.getOrDefault(emptySet())
-            _state.update { it.copy(goneFriendIds = gone) }
+            val watchGone = runCatching { SharingHandoff.readStatus(appContext) }.getOrDefault(emptySet())
+            val relayStatus = config.value.relay?.let { relay ->
+                runCatching { relayClient.status(relay) }.getOrNull()
+            }
+            _state.update {
+                it.copy(
+                    goneFriendIds = watchGone + relayStatus?.gone.orEmpty(),
+                    relayConfigured = relayStatus?.configured == true,
+                )
+            }
+            // Members are loaded now, so the relay's name list can be complete.
+            syncRelay(config.value)
         }
     }
 
@@ -142,6 +161,36 @@ class SharingViewModel(
 
     fun removeFriend(id: String) = change { config -> config.copy(friends = config.friends.filterNot { it.id == id }) }
 
+    /** Points sharing at a relay the user deployed (docs/notifications-design.md §10). */
+    fun saveRelay(url: String, adminSecret: String) = change { config ->
+        val trimmedUrl = url.trim().trimEnd('/')
+        val secret = adminSecret.trim()
+        config.copy(
+            relay = config.relay?.copy(url = trimmedUrl, adminSecret = secret)
+                ?: RelaySettings(url = trimmedUrl, adminSecret = secret),
+        )
+    }
+
+    /** The token PluralKit showed for the webhook; uploading it lets the relay pass PluralKit's check. */
+    fun setSigningToken(token: String) = change { config ->
+        config.copy(relay = config.relay?.copy(signingToken = token.trim().ifEmpty { null }))
+    }
+
+    /** Hands sending to the relay, or back to the watch. */
+    fun setRelayEnabled(enabled: Boolean) = change { config ->
+        config.copy(relay = config.relay?.copy(enabled = enabled))
+    }
+
+    fun removeRelay() {
+        viewModelScope.launch {
+            editLock.withLock {
+                config.value.relay?.let { runCatching { relayClient.clear(it) } }
+                save(config.value.copy(relay = null))
+            }
+            _state.update { it.copy(relayError = null, relayConfigured = false) }
+        }
+    }
+
     // Serializes edits: each reads the config the previous one saved.
     private val editLock = Mutex()
 
@@ -153,6 +202,25 @@ class SharingViewModel(
         sharingStore.set(next)
         // Best-effort: with no watch in reach, the Data Layer delivers it later.
         runCatching { SharingHandoff.push(appContext, next) }
+        syncRelay(next)
+    }
+
+    /**
+     * Keeps the relay's copy current. Skipped until members have loaded: an
+     * upload without them would tell the relay to name nobody.
+     */
+    private suspend fun syncRelay(config: SharingConfig) {
+        val relay = config.relay ?: return
+        if (_state.value.system == null) return
+        val upload = RelayConfig.from(config, _state.value.members) ?: return
+        try {
+            relayClient.upload(relay, upload)
+            _state.update { it.copy(relayError = null, relayConfigured = true) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(relayError = e.message ?: "Couldn't reach the relay.") }
+        }
     }
 
     class Factory(

@@ -1,0 +1,11 @@
+# Copy to wrangler.toml, then:
+#   npx wrangler kv namespace create RELAY_KV     # paste the id below
+#   npx wrangler secret put ADMIN_SECRET          # a long random string; the phone needs it too
+#   npx wrangler deploy
+name = "pluralware-relay"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[[kv_namespaces]]
+binding = "RELAY_KV"
+id = "<your KV namespace id>"

@@ -1,6 +1,6 @@
 # Switch Notifications for Friends — Design
 
-Status: rollout steps 1–3 are built (section 3; what differs from this plan is in section 14).
+Status: all four rollout steps are built (section 3; what differs from this plan is in section 14).
 Scope: let a PluralWare user share "who's fronting" with chosen friends as push
 notifications. There are two delivery modes:
 
@@ -356,9 +356,10 @@ only piece that receives PluralKit's dispatch, and it sends in whichever mode ea
    answer 401 on a mismatch (this is what keeps PluralKit's `PING` check happy) and 200 otherwise.
 2. **Filter.** Act on `CREATE_SWITCH` only. Skip switches whose timestamp is more than a few
    minutes old: PluralKit lets switches be backdated, and imports create old ones in bulk.
-3. **Translate.** Turn member IDs into display labels using a **name map the phone uploads**:
-   `{ pluralkitId → label }`, for shared members only. The relay never holds a PluralKit token, so
-   it can't read the system or act on it.
+3. **Translate.** Turn members into display labels using a **name map the phone uploads**:
+   `{ member UUID → label }`, for shared members only. (`CREATE_SWITCH` names members by UUID, per
+   PluralKit's `ModelRepository.Switch.cs`.) The relay never holds a PluralKit token, so it can't
+   read the system or act on it.
 4. **Send** to each friend exactly as in section 4.2 or 5.3.
 
 Configuration comes from the phone over `PUT /config`, authenticated with a relay secret generated
@@ -379,7 +380,7 @@ User setup:
 
 Caveats to state in the setup screen:
 
-- **PluralKit appears to allow one webhook per system** (confirm before building), so this
+- **PluralKit allows one webhook per system** (a single `WebhookUrl` on the system), so this
   displaces any other dispatch integration the user runs.
 - If the relay goes down long enough, PluralKit removes the webhook, and the user has to re-run the
   command.
@@ -429,7 +430,7 @@ Rollout steps 1 and 2 (section 3):
 Rollout step 3 adds a `web-receiver/` directory holding the static web app. Step 4 adds the relay,
 in its own repository or a `relay/` directory.
 
-## 14. As built (steps 1–3)
+## 14. As built
 
 Where the code lives:
 
@@ -474,12 +475,32 @@ Differences from the plan above:
 - **The system's VAPID key** is generated on the first invite, not when sharing is first turned
   on. Simple-mode-only setups never need one.
 
+**The relay** (`relay/`, step 4) is plain JavaScript on web standards (fetch, WebCrypto) with no
+dependencies. `worker.js` runs it on Cloudflare Workers with KV; `server.mjs` runs it on Node with a
+JSON state file. What PluralKit's source added to the plan:
+
+- `pk;s webhook <url>` works only in DMs. It shows the signing token and waits for "yes" before
+  testing the URL, with one ping carrying the right token (expecting 200) and one carrying a wrong
+  one (expecting 401). So the phone uploads the token to the relay in between, and the setup
+  screen walks through that order.
+- The uploaded config carries an `enabled` flag. A relay that has the token but isn't enabled
+  still answers PluralKit's checks, but sends nothing. That lets the webhook be set up before
+  sending moves off the watch, with no window where both send.
+- The relay's Web Push is its own WebCrypto implementation (no Tink in JavaScript). Its tests
+  reproduce RFC 8291's worked example byte for byte.
+
 **Verified end to end** with the web receiver in Google Chrome:
 
 1. It subscribed through Google's push service (FCM) using a VAPID key from an invite.
 2. `SwitchSharer` in `:shared` encrypted and signed a switch and sent it to that endpoint.
 3. Chrome decrypted it, and the service worker recorded and showed "Alex and someone else are
    fronting".
+
+The same through the relay, running under Node:
+
+1. A PluralKit-shaped `CREATE_SWITCH` with the right signing token was posted to it.
+2. It pushed through FCM to the subscribed Chrome, which showed "Bea and Alex are fronting", in
+   front order.
 
 One finding: after the browser unsubscribed, FCM kept accepting pushes to the old endpoint for
 at least a minute. So how quickly a friend shows as gone depends on the push service's own timing.

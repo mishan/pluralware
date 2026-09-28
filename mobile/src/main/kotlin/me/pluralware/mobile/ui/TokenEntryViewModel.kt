@@ -21,6 +21,7 @@ import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.model.SystemInfo
+import me.pluralware.shared.notify.RelayClient
 import me.pluralware.shared.notify.SharingStore
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.AppSettings
@@ -145,7 +146,11 @@ class TokenEntryViewModel(
         viewModelScope.launch {
             tokenStore.clear()
             // Sharing belongs to the system being disconnected. The watch clears
-            // its copy when the sign-out below reaches it.
+            // its copy when the sign-out below reaches it; the relay, if any,
+            // forgets its copy now (best-effort: it may be unreachable).
+            sharingStore.configFlow.value.relay?.let { relay ->
+                runCatching { RelayClient.create(BuildConfig.VERSION_NAME).clear(relay) }
+            }
             sharingStore.clear()
             _state.update { it.copy(status = ConnectionStatus.Idle, input = "") }
             // Sign the watch out too. Best-effort: with no watch in reach the

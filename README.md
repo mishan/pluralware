@@ -66,8 +66,8 @@ phone→watch token-handoff path landing.
 9. Friend notifications (`docs/notifications-design.md`): end-to-end
    encrypted switch notifications to friends, or plain ntfy messages. Sending
    from the watch, receiving in the phone app, and the web receiver
-   (`web-receiver/`, for iPhone and desktop) are built. An optional relay for
-   switches made outside PluralWare comes next.
+   (`web-receiver/`, for iPhone and desktop) are built, and so is an optional
+   relay (`relay/`) that also catches switches made in Discord or elsewhere.
 
 ## API client
 
