@@ -25,12 +25,29 @@ import me.pluralware.shared.model.Switch
  */
 class PluralKitRepository(
     private val client: PluralKitClient,
+    /**
+     * Called with each switch this repository registers — never with ones it
+     * merely observes on a refresh. Friend sharing hangs off it: telling
+     * friends about a switch the watch only noticed would announce old news
+     * (docs/notifications-design.md §7). Must not block; launch and return.
+     */
+    private val onSwitchRegistered: (Switch) -> Unit = {},
 ) {
     private val membersCacheMutex = Mutex()
     private var membersCache: List<Member>? = null
 
     private val _currentFronters = MutableStateFlow<Switch?>(null)
     val currentFronters: StateFlow<Switch?> = _currentFronters.asStateFlow()
+
+    private val _loadedFronters = MutableStateFlow<LoadedFronters?>(null)
+
+    /**
+     * [currentFronters] with "not loaded yet" told apart from "no switches":
+     * null until the first successful fetch or registration, then
+     * [LoadedFronters], whose switch is null for a system that has never
+     * switched (PluralKit's 204).
+     */
+    val loadedFronters: StateFlow<LoadedFronters?> = _loadedFronters.asStateFlow()
 
     suspend fun refreshMembers(force: Boolean = false): PkResult<List<Member>> = runCatchingPk {
         membersCacheMutex.withLock {
@@ -41,7 +58,7 @@ class PluralKitRepository(
     }
 
     suspend fun refreshFronters(): PkResult<Switch?> = runCatchingPk {
-        client.getCurrentFronters().also { _currentFronters.value = it }
+        client.getCurrentFronters().also(::setFronters)
     }
 
     suspend fun recentSwitches(limit: Int = 10): PkResult<List<Switch>> =
@@ -50,11 +67,16 @@ class PluralKitRepository(
     /** Registers a switch and updates [currentFronters] on success. */
     suspend fun registerSwitch(memberUuids: List<String>): PkResult<Switch> =
         runCatchingPk {
-            client.registerSwitch(memberUuids).also { _currentFronters.value = it }
-        }
+            client.registerSwitch(memberUuids).also(::setFronters)
+        }.also { if (it is PkResult.Success) onSwitchRegistered(it.value) }
 
     /** Convenience: switch-out (empty switch). */
     suspend fun switchOut(): PkResult<Switch> = registerSwitch(emptyList())
+
+    private fun setFronters(switch: Switch?) {
+        _currentFronters.value = switch
+        _loadedFronters.value = LoadedFronters(switch)
+    }
 
     private inline fun <T> runCatchingPk(block: () -> T): PkResult<T> = try {
         PkResult.Success(block())
@@ -65,6 +87,9 @@ class PluralKitRepository(
         PkResult.Failure(e)
     }
 }
+
+/** See [PluralKitRepository.loadedFronters]. */
+data class LoadedFronters(val switch: Switch?)
 
 /**
  * Two-state result. We could use kotlin.Result, but a sealed type plays nicer

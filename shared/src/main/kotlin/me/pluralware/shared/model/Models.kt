@@ -16,6 +16,11 @@ data class Member(
     val pronouns: String?,
     val color: String?,       // Hex without leading '#'.
     val avatarUrl: String?,
+    /**
+     * PluralKit visibility is private. Only friend sharing reads it: such
+     * members start out unshared (docs/notifications-design.md §6).
+     */
+    val isPrivate: Boolean = false,
 ) {
     /** What the watch should actually render. */
     val displayLabel: String get() = displayName ?: name
@@ -39,4 +44,6 @@ data class SystemInfo(
     val uuid: String,
     val name: String?,
     val tag: String?,
+    /** PluralKit front privacy is private; friend sharing warns before going ahead. */
+    val frontIsPrivate: Boolean = false,
 )

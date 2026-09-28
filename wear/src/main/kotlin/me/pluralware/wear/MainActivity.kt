@@ -1,5 +1,6 @@
 package me.pluralware.wear
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,28 +12,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
+import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.repository.InMemoryTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.TokenStore
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
+import me.pluralware.wear.complication.FronterSurfaces
+import me.pluralware.wear.sharing.WatchSharing
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -62,11 +69,17 @@ class MainActivity : ComponentActivity() {
                 // graph. Without it the screens' ViewModels would outlive the
                 // swap and keep polling the old system with the old token.
                 else -> key(t.raw) {
-                    val session = sessions.sessionFor(t) { newRepository(t) }
+                    val session = sessions.sessionFor(t) { newRepository(t, applicationContext) }
                     ConnectedApp(
                         session = session,
                         settingsStore = settingsStore,
-                        onSignOut = { scope.launch { tokenStore.clear() } },
+                        onSignOut = {
+                            scope.launch {
+                                tokenStore.clear()
+                                EncryptedSharingStore.get(applicationContext).clear()
+                                FronterSurfaces.onTokenChanged(applicationContext)
+                            }
+                        },
                     )
                 }
             }
@@ -74,7 +87,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun newRepository(token: PluralKitToken): PluralKitRepository {
+private fun newRepository(token: PluralKitToken, appContext: Context): PluralKitRepository {
     val client = if (BuildConfig.BENCHMARK) {
         // Zero-latency mock keeps the macrobenchmark deterministic and
         // independent of network conditions.
@@ -86,7 +99,11 @@ private fun newRepository(token: PluralKitToken): PluralKitRepository {
             enableLogging = BuildConfig.DEBUG,
         )
     }
-    return PluralKitRepository(client)
+    // Friends hear about each switch this repository registers (never ones it
+    // only observes); see WatchSharing.
+    return PluralKitRepository(client) { switch ->
+        if (!BuildConfig.BENCHMARK) WatchSharing.onSwitchRegistered(appContext, switch)
+    }
 }
 
 @Composable
@@ -97,6 +114,15 @@ private fun ConnectedApp(
 ) {
     // The screens' ViewModels (through the nav graph's back-stack entries)
     // live in the session's store, not the activity's.
+    val appContext = LocalContext.current.applicationContext
+    // Every switch the app sees — from the picker, History's switch-back, or
+    // any refresh — lands in the repository; hand each change to the
+    // complication and tile, including "no switches yet".
+    LaunchedEffect(session) {
+        session.repository.loadedFronters.filterNotNull().collect {
+            FronterSurfaces.publish(appContext, it.switch, session.token)
+        }
+    }
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
         PluralWareApp(repository = session.repository, settingsStore = settingsStore, onSignOut = onSignOut)
     }

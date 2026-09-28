@@ -156,6 +156,7 @@ class RetrofitPluralKitClient internal constructor(
         uuid = uuid,
         name = name,
         tag = tag,
+        frontIsPrivate = privacy?.frontPrivacy == "private",
     )
 
     private fun MemberDto.toDomain() = Member(
@@ -166,6 +167,7 @@ class RetrofitPluralKitClient internal constructor(
         pronouns = pronouns,
         color = color,
         avatarUrl = avatarUrl,
+        isPrivate = privacy?.visibility == "private",
     )
 
     private fun SwitchFullDto.toDomain() = Switch(

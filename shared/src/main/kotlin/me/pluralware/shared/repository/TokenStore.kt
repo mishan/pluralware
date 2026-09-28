@@ -2,9 +2,6 @@ package me.pluralware.shared.repository
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +35,7 @@ class InMemoryTokenStore(initial: PluralKitToken? = null) : TokenStore {
 }
 
 /**
- * Production [TokenStore] backed by [EncryptedSharedPreferences].
+ * Production [TokenStore] backed by encrypted preferences ([EncryptedPrefs]).
  *
  * Singleton-per-process via [get] so the wear listener service and the
  * activity share one in-memory [tokenFlow] — writes from the service are
@@ -53,7 +50,7 @@ class EncryptedTokenStore private constructor(
 ) : TokenStore {
 
     private val mutex = Mutex()
-    private val prefs: SharedPreferences = openEncryptedPrefs(appContext)
+    private val prefs: SharedPreferences = EncryptedPrefs.open(appContext, PREFS_FILE)
 
     private val _flow = MutableStateFlow(prefs.readToken())
     override val tokenFlow: StateFlow<PluralKitToken?> = _flow.asStateFlow()
@@ -82,7 +79,6 @@ class EncryptedTokenStore private constructor(
             ?.let(::PluralKitToken)
 
     companion object {
-        private const val TAG = "EncryptedTokenStore"
         private const val PREFS_FILE = "pluralware_token_store"
         private const val KEY_TOKEN = "pluralkit_token"
 
@@ -93,34 +89,5 @@ class EncryptedTokenStore private constructor(
             instance ?: synchronized(this) {
                 instance ?: EncryptedTokenStore(context.applicationContext).also { instance = it }
             }
-
-        /**
-         * Opens the prefs file, discarding it if it can't be decrypted. That
-         * happens when the file arrived without its Keystore key — a
-         * device-to-device transfer, or a restore — and the only way forward
-         * is to start over; the user pairs again. Losing a token beats a
-         * crash on every launch.
-         */
-        private fun openEncryptedPrefs(context: Context): SharedPreferences =
-            try {
-                createEncryptedPrefs(context)
-            } catch (e: Exception) {
-                Log.w(TAG, "Token store unreadable; discarding it", e)
-                context.deleteSharedPreferences(PREFS_FILE)
-                createEncryptedPrefs(context)
-            }
-
-        private fun createEncryptedPrefs(context: Context): SharedPreferences {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            return EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-        }
     }
 }

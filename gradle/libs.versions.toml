@@ -20,9 +20,21 @@ playServicesWearable = "19.0.0"
 wearTiles = "1.4.1"
 wearProtolayout = "1.2.1"
 wearWatchface = "1.2.1"
+# Bridges suspend functions to the ListenableFutures that TileService returns.
+concurrentFutures = "1.2.0"
 
 # Token storage on the watch.
 securityCrypto = "1.1.0-alpha06"
+
+# Friend notifications. apps-webpush encrypts Web Push payloads (RFC 8291); the
+# UnifiedPush connector receives them on the phone. Both depend on the JVM
+# `tink` artifact, which duplicates tink-android's classes, so every use
+# excludes it and tinkAndroid pins the version they're built against.
+tinkAndroid = "1.23.0"
+tinkAppsWebpush = "1.15.0"
+unifiedpushConnector = "3.3.5"
+# QR codes for invite links; the core encoder only, no camera or scanning.
+zxing = "3.5.4"
 
 # PluralKit HTTP client stack — Retrofit over OkHttp with kotlinx-serialization for JSON.
 # converter-kotlinx-serialization ships in the retrofit BOM since 2.10; we just align versions.
@@ -75,10 +87,17 @@ androidx-wear-tiles-material = { group = "androidx.wear.tiles", name = "tiles-ma
 androidx-wear-protolayout = { group = "androidx.wear.protolayout", name = "protolayout", version.ref = "wearProtolayout" }
 androidx-wear-protolayout-material = { group = "androidx.wear.protolayout", name = "protolayout-material", version.ref = "wearProtolayout" }
 androidx-wear-watchface-complications-data-source = { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "wearWatchface" }
+androidx-concurrent-futures-ktx = { group = "androidx.concurrent", name = "concurrent-futures-ktx", version.ref = "concurrentFutures" }
 play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
 
 # Encrypted token storage (used on both watch and phone).
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+
+# Friend notifications (see docs/notifications-design.md).
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tinkAndroid" }
+tink-apps-webpush = { group = "com.google.crypto.tink", name = "apps-webpush", version.ref = "tinkAppsWebpush" }
+unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpushConnector" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 # PluralKit HTTP client — Retrofit/OkHttp/kotlinx-serialization.
 # We hand-roll the client because Plural.kt was archived in 2024 and its Maven server
@@ -88,6 +107,7 @@ retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = 
 retrofit-kotlinx-serialization-converter = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 
 # Kotlinx.
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }

@@ -36,7 +36,11 @@ import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.settings.RefreshInterval
 
 @Composable
-fun TokenEntryScreen(viewModel: TokenEntryViewModel) {
+fun TokenEntryScreen(
+    viewModel: TokenEntryViewModel,
+    onOpenSharing: () -> Unit,
+    onOpenFollowing: () -> Unit,
+) {
     val state by viewModel.state.collectAsState()
     val settings by viewModel.settings.collectAsState()
 
@@ -111,6 +115,16 @@ fun TokenEntryScreen(viewModel: TokenEntryViewModel) {
                 selected = settings.refreshInterval,
                 onSelect = viewModel::setRefreshInterval,
             )
+
+            // Sharing needs this system's account; following others doesn't.
+            if (state.status is ConnectionStatus.Connected) {
+                OutlinedButton(onClick = onOpenSharing, modifier = Modifier.fillMaxWidth()) {
+                    Text("Share with friends")
+                }
+            }
+            OutlinedButton(onClick = onOpenFollowing, modifier = Modifier.fillMaxWidth()) {
+                Text("Following")
+            }
         }
     }
 }

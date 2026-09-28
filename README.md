@@ -59,10 +59,15 @@ phone→watch token-handoff path landing.
 4. ~~Companion app: token entry → Wearable Data Layer → encrypted storage on
    watch, with sign-out from either side. Watch on the production client.~~
 5. Real-user testing with plural folks. ← we are here
-6. Complication for current fronter.
-7. Tile for quick-switch.
+6. ~~Complication for current fronter~~ — plus a launcher complication.
+7. ~~Tile showing the current fronter~~. Quick-switch from the tile itself is still open.
 8. Pre-launch: privacy policy, Data Safety form, store listing, Play Store
    internal testing track.
+9. Friend notifications (`docs/notifications-design.md`): end-to-end
+   encrypted switch notifications to friends, or plain ntfy messages. Sending
+   from the watch, receiving in the phone app, and the web receiver
+   (`web-receiver/`, for iPhone and desktop) are built, and so is an optional
+   relay (`relay/`) that also catches switches made in Discord or elsewhere.
 
 ## API client
 

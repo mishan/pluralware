@@ -25,6 +25,13 @@ internal data class SystemDto(
     val uuid: String,
     val name: String? = null,
     val tag: String? = null,
+    /** Present only when the token owns the system; null otherwise. */
+    val privacy: SystemPrivacyDto? = null,
+)
+
+@Serializable
+internal data class SystemPrivacyDto(
+    @SerialName("front_privacy") val frontPrivacy: String? = null,
 )
 
 @Serializable
@@ -36,6 +43,13 @@ internal data class MemberDto(
     val pronouns: String? = null,
     val color: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    /** Present only when the token owns the member; null otherwise. */
+    val privacy: MemberPrivacyDto? = null,
+)
+
+@Serializable
+internal data class MemberPrivacyDto(
+    val visibility: String? = null,
 )
 
 /**

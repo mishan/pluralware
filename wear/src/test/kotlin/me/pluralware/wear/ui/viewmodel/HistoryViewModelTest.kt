@@ -11,6 +11,7 @@ import me.pluralware.shared.model.Switch
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.wear.ui.state.UiState
+import me.pluralware.wear.util.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
