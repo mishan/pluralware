@@ -1,9 +1,13 @@
 name: CI
 
+# Changes that can't affect the Android build don't run it: prose, and the
+# web receiver and relay, which have their own workflows.
 on:
   push:
     branches: [main]
+    paths-ignore: ["**/*.md", "docs/**", "web-receiver/**", "relay/**"]
   pull_request:
+    paths-ignore: ["**/*.md", "docs/**", "web-receiver/**", "relay/**"]
 
 # A newer push to the same branch or PR supersedes a run still in flight.
 concurrency:
@@ -26,13 +30,18 @@ jobs:
           java-version: 21
 
       # Caches Gradle and checks the committed wrapper jar against Gradle's
-      # published checksums before anything runs it.
+      # published checksums before anything runs it. Only runs on main write
+      # the cache; pull requests restore main's (dependencies, the Gradle
+      # distribution, and build-cache entries for unchanged work).
       - uses: gradle/actions/setup-gradle@v6
 
-      # `build` is the whole gate: compile, unit tests and lint for every
-      # module, debug and release (R8) variants. The runner image ships the
-      # Android SDK and sets ANDROID_HOME, so no local.properties is needed.
-      - run: ./gradlew build --console=plain
+      # The gate: unit tests and lint for every module, and debug and release
+      # (R8) builds of both apps. That's `./gradlew build` without the
+      # baseline-profile machinery (:baselineprofile and the benchmark and
+      # non-minified variants it adds), which is a third of the tasks and
+      # none of the checks. The runner image ships the Android SDK and sets
+      # ANDROID_HOME, so no local.properties is needed.
+      - run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --console=plain
 
       - name: Upload test and lint reports
         if: failure()
