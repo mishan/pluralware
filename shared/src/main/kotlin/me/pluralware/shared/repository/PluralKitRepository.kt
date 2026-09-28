@@ -32,6 +32,16 @@ class PluralKitRepository(
     private val _currentFronters = MutableStateFlow<Switch?>(null)
     val currentFronters: StateFlow<Switch?> = _currentFronters.asStateFlow()
 
+    private val _loadedFronters = MutableStateFlow<LoadedFronters?>(null)
+
+    /**
+     * [currentFronters] with "not loaded yet" told apart from "no switches":
+     * null until the first successful fetch or registration, then
+     * [LoadedFronters], whose switch is null for a system that has never
+     * switched (PluralKit's 204).
+     */
+    val loadedFronters: StateFlow<LoadedFronters?> = _loadedFronters.asStateFlow()
+
     suspend fun refreshMembers(force: Boolean = false): PkResult<List<Member>> = runCatchingPk {
         membersCacheMutex.withLock {
             val cached = membersCache
@@ -41,7 +51,7 @@ class PluralKitRepository(
     }
 
     suspend fun refreshFronters(): PkResult<Switch?> = runCatchingPk {
-        client.getCurrentFronters().also { _currentFronters.value = it }
+        client.getCurrentFronters().also(::setFronters)
     }
 
     suspend fun recentSwitches(limit: Int = 10): PkResult<List<Switch>> =
@@ -50,11 +60,16 @@ class PluralKitRepository(
     /** Registers a switch and updates [currentFronters] on success. */
     suspend fun registerSwitch(memberUuids: List<String>): PkResult<Switch> =
         runCatchingPk {
-            client.registerSwitch(memberUuids).also { _currentFronters.value = it }
+            client.registerSwitch(memberUuids).also(::setFronters)
         }
 
     /** Convenience: switch-out (empty switch). */
     suspend fun switchOut(): PkResult<Switch> = registerSwitch(emptyList())
+
+    private fun setFronters(switch: Switch?) {
+        _currentFronters.value = switch
+        _loadedFronters.value = LoadedFronters(switch)
+    }
 
     private inline fun <T> runCatchingPk(block: () -> T): PkResult<T> = try {
         PkResult.Success(block())
@@ -65,6 +80,9 @@ class PluralKitRepository(
         PkResult.Failure(e)
     }
 }
+
+/** See [PluralKitRepository.loadedFronters]. */
+data class LoadedFronters(val switch: Switch?)
 
 /**
  * Two-state result. We could use kotlin.Result, but a sealed type plays nicer

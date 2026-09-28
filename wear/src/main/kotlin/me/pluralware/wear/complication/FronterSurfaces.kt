@@ -40,9 +40,9 @@ object FronterSurfaces {
         )
     }
 
-    /** The app has a new current switch in hand: cache it and refresh the surfaces. */
-    suspend fun publish(context: Context, switch: Switch?) {
-        source(context).remember(switch)
+    /** The app has a new current switch in hand, fetched with [token]: cache it and refresh the surfaces. */
+    suspend fun publish(context: Context, switch: Switch?, token: PluralKitToken) {
+        source(context).remember(switch, token)
         requestUpdates(context)
     }
 

@@ -1,5 +1,6 @@
 package me.pluralware.wear.complication
 
+import java.security.MessageDigest
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
@@ -37,12 +38,18 @@ internal class FronterSource(
 ) {
     suspend fun current(): FronterDisplay {
         val token = token() ?: return SETUP
-        val cached = cache.get()
+        // A line fetched with another token belongs to another system.
+        val cached = cache.get()?.takeIf { it.tokenId == idOf(token) }
         if (cached != null && clock() - cached.fetchedAtEpochMillis in 0 until FRESH_FOR_MILLIS) {
             return cached.toDisplay(lastKnown = false)
         }
         return when (val result = repositoryFor(token).refreshFronters()) {
-            is PkResult.Success -> remember(result.value).toDisplay(lastKnown = false)
+            is PkResult.Success -> {
+                val line = lineFor(result.value, token)
+                // Cache only if the token didn't change while we were fetching.
+                if (token() == token) cache.set(line)
+                line.toDisplay(lastKnown = false)
+            }
             is PkResult.Failure -> when {
                 result.isUnauthorized -> {
                     cache.clear()
@@ -54,13 +61,22 @@ internal class FronterSource(
         }
     }
 
-    /** Cache [switch] as the current fronters, fetched now. */
-    suspend fun remember(switch: Switch?): LastFronter =
-        LastFronter(
-            text = FronterComplicationFormatter.body(switch),
-            description = FronterComplicationFormatter.contentDescription(switch),
-            fetchedAtEpochMillis = clock(),
-        ).also { cache.set(it) }
+    /**
+     * Cache [switch], which the app fetched with [fetchedWith], as the current
+     * fronters. Ignored if the token has changed since: it describes a system
+     * that's no longer paired.
+     */
+    suspend fun remember(switch: Switch?, fetchedWith: PluralKitToken) {
+        if (token() != fetchedWith) return
+        cache.set(lineFor(switch, fetchedWith))
+    }
+
+    private fun lineFor(switch: Switch?, token: PluralKitToken) = LastFronter(
+        text = FronterComplicationFormatter.body(switch),
+        description = FronterComplicationFormatter.contentDescription(switch),
+        fetchedAtEpochMillis = clock(),
+        tokenId = idOf(token),
+    )
 
     private fun LastFronter.toDisplay(lastKnown: Boolean) = if (lastKnown) {
         FronterDisplay(title = "Last known", text = text, description = "Last known. $description")
@@ -69,6 +85,11 @@ internal class FronterSource(
     }
 
     companion object {
+        /** A token's cache key: a truncated SHA-256, so the token itself is never stored here. */
+        fun idOf(token: PluralKitToken): String =
+            MessageDigest.getInstance("SHA-256").digest(token.raw.toByteArray())
+                .take(16).joinToString("") { "%02x".format(it) }
+
         /**
          * How long a cached line is answered without fetching. Shorter than the
          * complication's update period and the tile's freshness interval, so

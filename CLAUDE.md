@@ -146,8 +146,9 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
   show — setup prompt, fresh cache, fetch, `Last known` fallback, or `Sign in again` on a 401 —
   so they can't disagree. It's pure Kotlin and unit-tested; `FronterSurfaces` wires it to the real
   token store, a per-process client, and `LastFronterStore`.
-- **Freshness is pushed.** `MainActivity` sends every `currentFronters` change to
-  `FronterSurfaces.publish`, which caches the line and requests updates; token changes (pairing,
+- **Freshness is pushed.** `MainActivity` sends every `loadedFronters` change to
+  `FronterSurfaces.publish`, along with the session's token. That caches the line (keyed by a hash
+  of the token, so a stale fetch can't cross systems) and requests updates; token changes (pairing,
   either side's sign-out) go through `FronterSurfaces.onTokenChanged`, which clears the cache.
   Anything that changes fronters or the token must keep reaching one of these two.
 - **Polling is only the backstop** for switches made off the watch: the complication's 30-minute

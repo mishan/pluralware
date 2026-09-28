@@ -13,100 +13,67 @@ renders one of three states:
 
 | State | Source signal | Rendered text (example) |
 |---|---|---|
-| Someone fronting | `Switch` with non-empty `members` | `Fronting: Alice & Bob` |
+| Someone fronting | `Switch` with non-empty `members` | `Fronting: Alex, Bea` (past two: `Fronting: Alex, Bea +2`) |
 | Switched out | `Switch.isSwitchOut` (empty members) | `Switched out` |
-| No data / not paired | `refreshFronters()` returns `null` (204) or fails, or no token | `Tap to set up` / last-known |
+| No switches ever | `refreshFronters()` returns `null` (PluralKit's 204) | `No switches yet` |
+| Not paired | no token | `Tap to set up` |
+| Fetch failed, rejected token | see section 6 | `Last known` / `Unavailable` / `Sign in again` |
 
 LONG_TEXT is the only declared type. SHORT_TEXT is deliberately *not* a second info surface —
 ~7 characters can't meaningfully show a fronter. If we add a SHORT_TEXT complication later it
 should be a **launcher shortcut** (static icon / short label like `PW`, tap opens the app), not
 a data view. Captured as a future option in section 11, out of scope for v1.
 
-## 2. Why this is "that phase"
+## 2. Dependencies
 
-The catalog already declares the dependency; it's just not pulled into the module. In
-`wear/build.gradle.kts` there's literally a placeholder:
+The complication data source (`watchface-complications-data-source-ktx`) and the tiles and
+ProtoLayout libraries were already in the version catalog; `:wear` now uses them. The tile also
+needed one addition, `androidx.concurrent:concurrent-futures-ktx`, whose `SuspendToFutureAdapter`
+lets a `TileService` answer from a coroutine.
 
-```kotlin
-// (Tiles and complications added when we get to that phase.)
-```
+## 3. Data plumbing
 
-And `gradle/libs.versions.toml` already has:
+The surfaces reuse what the app already has:
 
-```toml
-androidx-wear-watchface-complications-data-source =
-  { group = "androidx.wear.watchface", name = "watchface-complications-data-source-ktx", version.ref = "wearWatchface" }  # 1.2.1
-```
+- **Token:** `EncryptedTokenStore.get(appContext)`, the same process-wide store the activity and
+  listener service use.
+- **Fronters:** `PluralKitRepository.refreshFronters(): PkResult<Switch?>` already covers every
+  state. `Success(null)` is the 204 "no switches" case, `Success(switch)` with `isSwitchOut` is a
+  switch-out, and `Failure` is the error path.
+- **Labels:** `Member.displayLabel`.
 
-So step one is a one-line dependency add — no version-catalog change.
-
-## 3. The data plumbing already exists
-
-Nothing new is needed in `:shared`. The complication reuses the same singletons the activity
-and listener service use:
-
-- **Token** — `EncryptedTokenStore.get(appContext)` is a process-wide singleton, so the
-  service reads the exact token the rest of the app holds. No new storage, no handoff change.
-- **Fronters** — `PluralKitRepository.refreshFronters(): PkResult<Switch?>` already encodes
-  all three render states: `Success(null)` is the documented 204 "no switches" case,
-  `Success(switch)` with `isSwitchOut` is switch-out, `Failure` is the error path.
-- **Labels & color** — `Member.displayLabel` for text; `Member.indicatorColor()` exists if we
-  later add a monochromatic image variant.
+Two pieces are new. `LastFronterStore` in `:shared` is the cache (section 6). In `:wear`,
+`FronterSource` decides what to show and `FronterSurfaces` wires it up (section 4).
 
 ## 4. Service design
 
-A subclass of `SuspendingComplicationDataSourceService` (the `-ktx` artifact), which lets
-`onComplicationRequest` be a `suspend fun` so we can do the network call directly.
+`FronterComplicationService` is a `SuspendingComplicationDataSourceService`, so
+`onComplicationRequest` is a `suspend fun`. It and the tile both ask `FronterSource` for a
+`FronterDisplay` (title, text, screen-reader description), and only turn that into their own
+data types:
 
 ```kotlin
-// wear/.../complication/FronterComplicationService.kt
-class FronterComplicationService : SuspendingComplicationDataSourceService() {
-
-    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        if (request.complicationType != ComplicationType.LONG_TEXT) return null
-
-        val token = EncryptedTokenStore.get(applicationContext).getToken()
-            ?: return notPairedData()              // "Tap to set up", tap -> MainActivity
-
-        val repo = PluralKitRepository(
-            PluralKitClientFactory.create(token, enableLogging = BuildConfig.DEBUG)
-        )
-        return when (val r = repo.refreshFronters()) {
-            is PkResult.Success -> fronterData(r.value)   // null / switch-out / fronting
-            is PkResult.Failure -> errorOrLastKnownData()
-        }
-    }
-
-    override fun getPreviewData(type: ComplicationType): ComplicationData? =
-        if (type == ComplicationType.LONG_TEXT) previewData() else null
+override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
+    if (request.complicationType != ComplicationType.LONG_TEXT) return null
+    return longText(FronterSurfaces.source(this).current())
 }
 ```
 
-Builder shape for the populated case:
+`FronterSurfaces` keeps one client per process, rebuilt when the token changes, so repeated
+requests reuse a connection instead of paying a TLS handshake each. It also opens the encrypted
+token store off the main thread.
 
-```kotlin
-LongTextComplicationData.Builder(
-    text = PlainComplicationText.Builder("Fronting: $names").build(),
-    contentDescription = PlainComplicationText.Builder("Current fronter: $names").build(),
-)
-    .setTitle(PlainComplicationText.Builder("Fronter").build())
-    .setTapAction(openAppPendingIntent())
-    .build()
-```
+Text formatting (`FronterComplicationFormatter`):
 
-Text formatting rules:
-
-- One fronter → `Fronting: Alice`.
-- Multiple → join `displayLabel` with `, `, cap at ~2–3 names then `+N` to stay legible in a
-  long-text slot (`Fronting: Alice, Bob +2`). The order is meaningful — index 0 is PluralKit's
-  proxy fronter (same ordering the picker preserves), so don't sort.
+- One fronter → `Fronting: Alex`.
+- Several → display labels joined with `, `, capped at two names then `+N`
+  (`Fronting: Alex, Bea +2`). Order is meaningful (index 0 is PluralKit's proxy fronter, the
+  order the picker preserves), so never sort.
 - Switch-out → `Switched out`.
-- Always set `contentDescription` for accessibility/screen-reader faces.
+- The content description is never capped, so a screen reader hears every fronter.
 
-**BENCHMARK note:** unlike `MainActivity`, the service should always take the production path
-(real token + factory client). The `BuildConfig.BENCHMARK` mock seam exists so the
-baseline-profile producer can drive the *screens*; it has no bearing on the complication, so
-we don't branch on it here.
+**BENCHMARK note:** the surfaces always take the production path. The `BuildConfig.BENCHMARK`
+mock seam exists so the baseline-profile producer can drive the *screens*.
 
 ## 5. Freshness — push from the app, poll as a backstop
 
@@ -119,8 +86,9 @@ What shipped:
 
 - **Push on every change the app sees.** Every switch the watch app learns about — the picker,
   History's switch-back, or a refresh that finds a switch made elsewhere — lands in
-  `PluralKitRepository.currentFronters`. `MainActivity` observes that flow and hands each
-  change to `FronterSurfaces.publish(...)`, which caches the formatted line and asks the
+  the repository. `MainActivity` observes `PluralKitRepository.loadedFronters`, which unlike
+  `currentFronters` tells "no switches yet" apart from "not loaded". It hands each change,
+  with the session's token, to `FronterSurfaces.publish(...)`, which caches the formatted line and asks the
   complication (`ComplicationDataSourceUpdateRequester.requestUpdateAll()`) and the tile
   (`TileService.getUpdater`) to re-request. The ViewModels stay `Context`-free and need no hook.
 - **Push on token changes.** `WatchDataListenerService` (pairing, re-pairing, a phone-side
@@ -147,23 +115,20 @@ Both surfaces ask one `FronterSource` (pure Kotlin, unit-tested) what to show:
 | Fetch fails, no cache | `Unavailable` |
 | 401 — token rejected | `Sign in again`; the cache is cleared |
 
-The cache is `LastFronterStore`, a `SharedPreferences` file — non-sensitive, since it holds
-display names — storing the line, its full screen-reader text (the line itself collapses past
-two names to `+N`), and when it was fetched. It belongs to one token: whoever changes the token
-clears it. The five-minute freshness window is what lets the burst of requests after a
+The cache is `LastFronterStore`, an app-private `SharedPreferences` file, excluded from backup
+like everything else. It holds display names, including members private in PluralKit. It stores
+the line, its full screen-reader text (the line itself collapses past two names to `+N`), when it
+was fetched, and a hash of the token it was fetched with.
+
+It belongs to one token:
+- Whoever changes the token clears it.
+- A line whose token hash doesn't match is ignored.
+- A fetch that finishes after a re-pair isn't cached.
+- The app publishes each switch together with the token it was fetched with.
+
+So a request that was already in flight can't put one system's fronters on another's watch
+face. The five-minute freshness window is what lets the burst of requests after a
 `publish` answer from memory instead of each surface fetching again.
-
-## 6. Offline / error behavior
-
-`onComplicationRequest` can fire when offline or mid-token-rotation. Returning
-`NoDataComplicationData()` (or null) on failure leaves the slot blank, which reads as broken.
-
-**Decision: ship last-known render in v1.** On a successful request, persist the formatted
-fronter string (and its `Switch.timestamp`); on `Failure`, render that cached value instead of a
-blank slot. A small `SharedPreferences`-backed `LastFronterStore` — same pattern as
-`LocalSettingsStore`, non-sensitive since it's just a display name — holds it. It does *not*
-belong in the encrypted token store. Only when there's no token *and* no cache do we fall back
-to the "Tap to set up" state.
 
 ## 7. Tap action
 
@@ -205,7 +170,7 @@ filter are what register us in the system's complication picker. A small monochr
 - **What to show** (`FronterSourceTest`) — every row of the table in section 6, driven through a
   real `PluralKitRepository` over a mocked client, with an in-memory cache and a fake clock.
 - **Where switches come from** (`PickerViewModelTest`, `HistoryViewModelTest`) — a registered
-  switch becomes `currentFronters`, which is what `publish` follows; no-ops and failures don't.
+  switch lands in the repository, which is what `publish` follows; no-ops and failures don't.
 - **Manual** — add the complication to a watch-face slot and the tile to the carousel, then:
   switch in the app (both update at once); switch from Discord (the tile within ten minutes,
   the complication within thirty, or at once on opening the app); pair and sign out from the
@@ -222,7 +187,7 @@ filter are what register us in the system's complication picker. A small monochr
 | `wear/src/main/res/drawable/ic_complication.xml` | New. Picker icon. |
 | `wear/.../complication/FronterSource.kt` | New. What both surfaces show (section 6), unit-tested. |
 | `wear/.../complication/FronterSurfaces.kt` | New. Android wiring for `FronterSource`; `publish` and `onTokenChanged` (section 5). |
-| `wear/.../MainActivity.kt` / `WatchDataListenerService.kt` | Publish `currentFronters` changes; report token changes. |
+| `wear/.../MainActivity.kt` / `WatchDataListenerService.kt` | Publish `loadedFronters` changes; report token changes. |
 | `shared/.../settings/LastFronterStore.kt` | Non-sensitive last-known cache (section 6). |
 | `wear/src/test/...` | Formatter, `FronterSource` and ViewModel tests. |
 

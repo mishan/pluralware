@@ -80,4 +80,16 @@ class PluralKitRepositoryTest {
 
         PluralKitRepository(client).refreshFronters()
     }
+
+    @Test
+    fun `loaded fronters tell no switches apart from not loaded yet`() = runTest {
+        val client = mockk<PluralKitClient>()
+        coEvery { client.getCurrentFronters() } returns null
+        val r = PluralKitRepository(client)
+        assertEquals(null, r.loadedFronters.value)
+
+        r.refreshFronters()
+
+        assertEquals(me.pluralware.shared.repository.LoadedFronters(null), r.loadedFronters.value)
+    }
 }

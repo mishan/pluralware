@@ -21,9 +21,9 @@ class SessionHolder : ViewModel() {
     private var current: Session? = null
 
     fun sessionFor(token: PluralKitToken, newRepository: () -> PluralKitRepository): Session {
-        current?.takeIf { it.tokenRaw == token.raw }?.let { return it }
+        current?.takeIf { it.token == token }?.let { return it }
         end()
-        return Session(token.raw, newRepository()).also { current = it }
+        return Session(token, newRepository()).also { current = it }
     }
 
     fun end() {
@@ -35,7 +35,8 @@ class SessionHolder : ViewModel() {
 }
 
 class Session internal constructor(
-    internal val tokenRaw: String,
+    /** The token [repository] talks to PluralKit with. */
+    val token: PluralKitToken,
     val repository: PluralKitRepository,
 ) : ViewModelStoreOwner {
     override val viewModelStore = ViewModelStore()

@@ -13,8 +13,10 @@ import kotlinx.coroutines.withContext
  *  - gives them something useful to show when a fetch fails (offline, etc.)
  *    instead of a blank slot.
  *
- * It belongs to one token: whoever changes the token clears it, so one
- * system's fronters are never shown for another.
+ * It belongs to one token. Whoever changes the token clears it, and each line
+ * records the token it came from ([LastFronter.tokenId]). So a fetch that was
+ * already in flight during a re-pair can't put one system's fronters back on
+ * another's watch face.
  *
  * Implementations:
  *  - [LastFronterStore] (Android SharedPreferences) — production.
@@ -27,11 +29,16 @@ interface LastFronterCache {
     suspend fun clear()
 }
 
-/** A formatted fronter line, its screen-reader text, and when it was fetched (epoch millis). */
+/**
+ * A formatted fronter line, its screen-reader text, when it was fetched
+ * (epoch millis), and which token it was fetched with ([tokenId], a hash, never
+ * the token itself). A line from another token is never shown.
+ */
 data class LastFronter(
     val text: String,
     val description: String,
     val fetchedAtEpochMillis: Long,
+    val tokenId: String,
 )
 
 class InMemoryLastFronterCache(private var value: LastFronter? = null) : LastFronterCache {
@@ -43,9 +50,9 @@ class InMemoryLastFronterCache(private var value: LastFronter? = null) : LastFro
 /**
  * Production [LastFronterCache].
  *
- * This is display-only text — a member's already-public display name — so unlike
- * [me.pluralware.shared.repository.TokenStore] it lives in plain
- * [SharedPreferences], not encrypted storage.
+ * It holds display names, including members private in PluralKit, since the
+ * system's own token sees them all. It's app-private, and excluded from backups
+ * and device transfers like everything else.
  *
  * Process-wide singleton via [get] so the complication service and any other
  * surface share one instance, matching [LocalSettingsStore].
@@ -62,6 +69,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             text = text,
             description = prefs.getString(KEY_DESCRIPTION, null) ?: text,
             fetchedAtEpochMillis = prefs.getLong(KEY_FETCHED_AT, 0L),
+            tokenId = prefs.getString(KEY_TOKEN_ID, null) ?: return@withContext null,
         )
     }
 
@@ -70,6 +78,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             .putString(KEY_TEXT, fronter.text)
             .putString(KEY_DESCRIPTION, fronter.description)
             .putLong(KEY_FETCHED_AT, fronter.fetchedAtEpochMillis)
+            .putString(KEY_TOKEN_ID, fronter.tokenId)
             .apply()
     }
 
@@ -86,6 +95,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
         private const val KEY_TEXT = "last_fronter_text"
         private const val KEY_DESCRIPTION = "last_fronter_description"
         private const val KEY_FETCHED_AT = "last_fronter_fetched_at"
+        private const val KEY_TOKEN_ID = "last_fronter_token_id"
 
         @Volatile private var instance: LastFronterStore? = null
 

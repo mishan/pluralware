@@ -25,7 +25,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
@@ -108,11 +108,12 @@ private fun ConnectedApp(
     // live in the session's store, not the activity's.
     val appContext = LocalContext.current.applicationContext
     // Every switch the app sees — from the picker, History's switch-back, or
-    // any refresh — lands in currentFronters; hand each change to the
-    // complication and tile. drop(1): the initial null means "not loaded
-    // yet", not "no switches".
-    LaunchedEffect(session.repository) {
-        session.repository.currentFronters.drop(1).collect { FronterSurfaces.publish(appContext, it) }
+    // any refresh — lands in the repository; hand each change to the
+    // complication and tile, including "no switches yet".
+    LaunchedEffect(session) {
+        session.repository.loadedFronters.filterNotNull().collect {
+            FronterSurfaces.publish(appContext, it.switch, session.token)
+        }
     }
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
         PluralWareApp(repository = session.repository, settingsStore = settingsStore, onSignOut = onSignOut)

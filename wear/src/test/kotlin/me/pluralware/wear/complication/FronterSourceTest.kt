@@ -13,6 +13,7 @@ import me.pluralware.shared.settings.InMemoryLastFronterCache
 import me.pluralware.shared.settings.LastFronter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 
@@ -30,7 +31,12 @@ class FronterSourceTest {
         clock = { now },
     )
 
-    private val cachedAlex = LastFronter("Fronting: Alex", "Current fronter: Alex", fetchedAtEpochMillis = now)
+    private val cachedAlex = LastFronter(
+        "Fronting: Alex",
+        "Current fronter: Alex",
+        fetchedAtEpochMillis = now,
+        tokenId = FronterSource.idOf(PluralKitToken("token")),
+    )
 
     @Test
     fun `no token asks for setup, even with a cached line`() = runTest {
@@ -102,8 +108,46 @@ class FronterSourceTest {
 
     @Test
     fun `remember caches a switch the app already has, stamped now`() = runTest {
-        source.remember(PreviewData.switchOut)
+        source.remember(PreviewData.switchOut, PluralKitToken("token"))
 
-        assertEquals(LastFronter("Switched out", "Switched out — nobody fronting", now), cache.get())
+        assertEquals(
+            LastFronter("Switched out", "Switched out — nobody fronting", now, FronterSource.idOf(PluralKitToken("token"))),
+            cache.get(),
+        )
+    }
+
+    @Test
+    fun `a line cached for another token is never shown`() = runTest {
+        cache.set(cachedAlex.copy(tokenId = FronterSource.idOf(PluralKitToken("other system"))))
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+
+        // Fresh, and the fetch fails, yet it isn't even used as "last known".
+        assertEquals(FronterSource.UNAVAILABLE, source.current())
+    }
+
+    @Test
+    fun `a fetch that finishes after a re-pair isn't cached`() = runTest {
+        coEvery { client.getCurrentFronters() } coAnswers {
+            token = PluralKitToken("new system") // re-paired while in flight
+            PreviewData.currentSwitch
+        }
+
+        source.current()
+
+        assertNull(cache.get())
+    }
+
+    @Test
+    fun `the app can't publish a switch fetched with an old token`() = runTest {
+        source.remember(PreviewData.currentSwitch, fetchedWith = PluralKitToken("old system"))
+
+        assertNull(cache.get())
+    }
+
+    @Test
+    fun `the cache key never contains the token`() {
+        val id = FronterSource.idOf(PluralKitToken("secret-token-value"))
+        assertEquals(32, id.length)
+        assertTrue("secret" !in id)
     }
 }
