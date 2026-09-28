@@ -11,6 +11,34 @@ runs end-to-end against `MockPluralKitClient`. The production HTTP client is
 written and unit-tested; wiring it into the activity is gated on the
 phone→watch token-handoff path landing.
 
+## Install
+
+PluralWare is published as [GitHub Releases](https://github.com/mishan/pluralware/releases).
+Each release has a phone APK and a watch APK, and both must come from the same
+release.
+
+**Phone**, with [Obtainium](https://github.com/ImranR98/Obtainium), which keeps
+it updated:
+
+1. In Obtainium, tap **Add App** and enter `https://github.com/mishan/pluralware`.
+2. Under **Filter APKs by regular expression**, enter `pluralware-mobile`, so
+   Obtainium ignores the watch APK.
+3. Tap **Add**, then install.
+
+**Watch**: download `pluralware-wear-X.Y.Z.apk` from the same release and
+install it over wireless debugging, with a Wear OS installer app or `adb`:
+
+1. On the watch, turn on **Developer options** (tap **Build number** in
+   Settings → System → About, sometimes under Versions, seven times), then
+   **Wireless debugging**. The watch and the phone or computer must be on
+   the same Wi-Fi.
+2. From a computer: `adb pair IP:PORT` with the pairing code the watch shows,
+   then `adb connect IP:PORT` and `adb install pluralware-wear-X.Y.Z.apk`.
+3. Turn **Wireless debugging** off again when you're done.
+
+Each release's notes list the signing certificate's SHA-256 fingerprint, for
+checking the APKs with a tool such as AppVerifier.
+
 ## Modules
 
 - **`:shared`** — Android library. Domain models, `PluralKitClient` interface,

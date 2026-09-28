@@ -8,13 +8,13 @@ plugins {
 
 android {
     namespace = "me.pluralware.baselineprofile"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // Wear OS 3+ matches :wear's minSdk; the producer doesn't have to be
         // any lower since it only runs against the target app.
         minSdk = 30
-        targetSdk = 34
+        targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

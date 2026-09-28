@@ -186,4 +186,6 @@ what's built. In short:
   enableLogging = BuildConfig.DEBUG)` — never enable HTTP body logging in release.
 - Domain models in `model/Models.kt` are intentionally narrower than the full PluralKit API; widen
   deliberately, since every field is a UI stability promise.
+- Both apps take their version from `pluralware.version` in `gradle.properties`; releases are
+  cut by pushing a matching `vX.Y.Z` tag (see `docs/releasing.md`).
 - Commit messages: short imperative subject, capitalized. **Do not add a `Co-Authored-By` trailer.**
