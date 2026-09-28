@@ -449,8 +449,17 @@ Differences from the plan above:
   pasted in. Both formats are `pluralware-invite:` / `pluralware-follow:` plus base64url JSON, and
   the parser finds them anywhere in a message or a link's fragment. That is what lets the web
   receiver (step 3) carry the same invite in an `https://…/follow#…` link.
-- **The phone learns about gone friends** by reading a status DataItem the watch writes
-  (`/pluralware/sharing-status`) when the sharing screen opens.
+- **Gone friends:**
+  - The phone learns about them by reading a status DataItem the watch writes
+    (`/pluralware/sharing-status`) when the sharing screen opens.
+  - A gone mark isn't permanent. The friend is retried once a day (`GoneFriends`), and a delivery
+    clears the mark, so one misattributed 404 doesn't mute someone for good.
+- **A changed endpoint is loud.** When a follower's distributor moves them to a new endpoint, their
+  follow code changes and the system's copy stops working. The phone notifies them and marks the
+  follow, until they share the new code.
+- **One bad friend can't break the rest.** Follow codes must name a real https host.
+  `SwitchSharer` turns any per-friend error into that friend's `Failed` outcome, and the watch's
+  sending scope has a last-resort exception handler.
 - **The relay switch** ("Sent by: this watch / relay") waits for step 4.
 - **The system's VAPID key** is generated on the first invite, not when sharing is first turned
   on. Simple-mode-only setups never need one.

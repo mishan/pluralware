@@ -51,9 +51,19 @@ data class FollowCode(
         const val PREFIX = "pluralware-follow:"
 
         fun parse(text: String): FollowCode? = decodeFrom(text, PREFIX, serializer())?.takeIf {
-            it.endpoint.startsWith("https://") &&
+            isPushEndpoint(it.endpoint) &&
                 runCatching { B64.decode(it.p256dh).size == 65 && B64.decode(it.auth).size == 16 }
                     .getOrDefault(false)
+        }
+
+        /**
+         * An https URL with a real host name, as every push service's endpoints
+         * are. Anything else would fail at send time, or worse: a space in the
+         * path is fine to OkHttp but not to [java.net.URI].
+         */
+        internal fun isPushEndpoint(endpoint: String): Boolean {
+            val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return false
+            return uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.userInfo == null
         }
     }
 }

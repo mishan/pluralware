@@ -36,6 +36,10 @@ class InvitesTest {
     @Test
     fun `follow codes with bad keys or a non-https endpoint are rejected`() {
         assertNull(FollowCode.parse(code.copy(endpoint = "http://insecure.example/x").encode()))
+        // Both pass a startsWith("https://") check, and both would fail at send time.
+        assertNull(FollowCode.parse(code.copy(endpoint = "https://push.example/a b").encode()))
+        assertNull(FollowCode.parse(code.copy(endpoint = "https://bad_host.example/x").encode()))
+        assertNull(FollowCode.parse(code.copy(endpoint = "https://user@push.example/x").encode()))
         assertNull(FollowCode.parse(code.copy(auth = B64.encode(ByteArray(8))).encode()))
         assertNull(FollowCode.parse(code.copy(p256dh = "not base64!").encode()))
     }

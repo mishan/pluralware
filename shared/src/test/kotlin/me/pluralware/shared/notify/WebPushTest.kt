@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,7 +39,7 @@ class WebPushTest {
     }
 
     @Test
-    fun `only the receiver's keys open a push, and it is padded to a bucket`() {
+    fun `the receiver's keys open a push, and it is padded to a bucket`() {
         val receiver = Receiver()
         val plaintext = SwitchPayload("Sample", "Alex is fronting", "2026-09-27T14:02:00Z").toBytes()
 
@@ -46,6 +47,38 @@ class WebPushTest {
 
         assertEquals(512, ciphertext.size)
         assertArrayEquals(plaintext, receiver.decrypt(ciphertext))
+    }
+
+    @Test
+    fun `another receiver's keys can't open it`() {
+        val receiver = Receiver()
+        val eavesdropper = Receiver()
+        val ciphertext = WebPushCrypto.encrypt(receiver.followCode, "secret".toByteArray())
+
+        assertThrows(java.security.GeneralSecurityException::class.java) { eavesdropper.decrypt(ciphertext) }
+    }
+
+    @Test
+    fun `the decrypter these tests trust opens RFC 8291's own example`() {
+        // So the round trips above are checked against the RFC, not just Tink against itself.
+        val b = { s: String -> B64.decode(s) }
+        val decrypted = WebPushHybridDecrypt.Builder()
+            .withAuthSecret(b("BTBZMqHH6r4Tts7J_aSIgg"))
+            .withRecipientPublicKey(b("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"))
+            .withRecipientPrivateKey(b("q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94"))
+            .build()
+            .decrypt(
+                b("DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8") +
+                    b("8pfeW0KbunFT06SuDKoJH9Ql87S1QUrdirN6GcG7sFz1y1sqLgVi1VhjVkHsUoEsbI_0LpXMuGvnzQ"),
+                null,
+            )
+        assertEquals("When I grow up, I want to be a watermelon", String(decrypted))
+    }
+
+    @Test
+    fun `a malformed endpoint fails its request, not the process`() {
+        assertThrows(IllegalArgumentException::class.java) { Vapid.audience("https://push.example/a b") }
+        assertThrows(IllegalArgumentException::class.java) { Vapid.audience("https://bad_host.example/x") }
     }
 
     @Test

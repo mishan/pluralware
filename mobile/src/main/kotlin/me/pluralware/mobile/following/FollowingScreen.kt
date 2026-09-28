@@ -117,6 +117,7 @@ fun FollowingScreen(viewModel: FollowingViewModel, onBack: () -> Unit) {
                             context,
                             "Here's my PluralWare follow code. Paste it under Share with friends:\n\n$code",
                         )
+                        viewModel.codeShared(follow)
                     },
                     onRetry = { viewModel.retry(activity, follow) },
                     onUnfollow = { viewModel.unfollow(follow) },
@@ -140,6 +141,15 @@ private fun FollowCard(
                 OutlinedButton(onClick = onRetry) { Text("Try again") }
             }
             follow.followCode == null -> Text("Registering with your push distributor…", style = MaterialTheme.typography.bodySmall)
+            follow.codeChanged -> {
+                Text(
+                    "Your follow code changed. Send them the new one: until they have it, their " +
+                        "switches won't reach you.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(onClick = { onShareCode(follow.followCode!!) }) { Text("Send new follow code") }
+            }
             follow.lastText == null -> {
                 Text(
                     "Send them your follow code to finish. It works like a password for sending you " +
@@ -161,7 +171,7 @@ private fun FollowCard(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (follow.followCode != null && follow.lastText != null) {
+            if (follow.followCode != null && follow.lastText != null && !follow.codeChanged) {
                 TextButton(onClick = { onShareCode(follow.followCode!!) }) { Text("Resend follow code") }
             }
             TextButton(onClick = onUnfollow) { Text("Unfollow") }

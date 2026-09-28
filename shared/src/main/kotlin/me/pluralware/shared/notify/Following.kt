@@ -29,6 +29,12 @@ data class Follow(
     val myName: String,
     /** Encoded [FollowCode] to send back, once the distributor has given us an endpoint. */
     val followCode: String? = null,
+    /**
+     * The distributor moved us to a new endpoint after the code was sent, so
+     * the system still has the old one and its pushes no longer arrive. Cleared
+     * when the new code is shared.
+     */
+    val codeChanged: Boolean = false,
     /** Why registering failed, if it did. */
     val problem: String? = null,
     val lastText: String? = null,

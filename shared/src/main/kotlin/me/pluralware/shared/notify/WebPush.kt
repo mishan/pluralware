@@ -81,7 +81,12 @@ object Vapid {
 
     /** The push service's origin: scheme, host, and any explicit port. */
     internal fun audience(endpoint: String): String {
-        val uri = URI(endpoint)
+        val uri = try {
+            URI(endpoint)
+        } catch (e: java.net.URISyntaxException) {
+            throw IllegalArgumentException("malformed push endpoint", e)
+        }
+        require(!uri.host.isNullOrEmpty()) { "push endpoint has no host" }
         val port = if (uri.port == -1) "" else ":${uri.port}"
         return "${uri.scheme}://${uri.host}$port"
     }

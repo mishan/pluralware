@@ -24,14 +24,7 @@ object FollowNotifications {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
         ensureChannel(context)
-        val open = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java)
-                .putExtra(MainActivity.EXTRA_SCREEN, MainActivity.SCREEN_FOLLOWING)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val open = openFollowing(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(payload.system)
@@ -48,9 +41,38 @@ object FollowNotifications {
         }
     }
 
+    /** The follow code for [system] changed; until they get the new one, nothing arrives. */
+    fun showCodeChanged(context: Context, instance: String, system: String) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        ensureChannel(context)
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Send $system your new follow code")
+            .setContentText("Your push service changed your address. Until they have the new code, their switches won't reach you.")
+            .setStyle(NotificationCompat.BigTextStyle())
+            .setContentIntent(openFollowing(context))
+            .setAutoCancel(true)
+            .build()
+        try {
+            manager.notify(instance, ID, notification)
+        } catch (e: SecurityException) {
+            // Permission revoked between the check and the post; the screen still shows it.
+        }
+    }
+
     fun cancel(context: Context, instance: String) {
         NotificationManagerCompat.from(context).cancel(instance, ID)
     }
+
+    private fun openFollowing(context: Context): PendingIntent = PendingIntent.getActivity(
+        context,
+        0,
+        Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SCREEN, MainActivity.SCREEN_FOLLOWING)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     private fun ensureChannel(context: Context) {
         val channel = NotificationChannel(

@@ -45,9 +45,11 @@ class SwitchSharer(
             throw e
         } catch (e: GeneralSecurityException) {
             SendOutcome.Failed("encryption: ${e.message}")
-        } catch (e: IllegalArgumentException) {
-            // A malformed follow code or endpoint.
-            SendOutcome.Failed(e.message ?: "invalid friend")
+        } catch (e: Exception) {
+            // Anything else about one friend (a malformed follow code, an
+            // endpoint OkHttp or URI rejects) fails that friend alone; it must
+            // never take the others, or the app, down with it.
+            SendOutcome.Failed(e.message ?: e.javaClass.simpleName)
         }
 
     companion object {

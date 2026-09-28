@@ -143,6 +143,23 @@ class SendersTest {
     }
 
     @Test
+    fun `a malformed endpoint fails that friend alone`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+        val alex = Member("alex", "uuid-alex", "Alex", null, null, null, null)
+        val switch = Switch("s", Instant.EPOCH, listOf(alex))
+        // Built directly: FollowCode.parse would refuse it, but a config from an
+        // older build, or a bug, shouldn't be able to crash the sender.
+        val broken = Friend.Private("bad", "Bad", privateFriend().followCode.copy(endpoint = "https://push.example/a b"))
+        val sam = privateFriend()
+        val config = SharingConfig(friends = listOf(broken, sam), vapid = Vapid.generate())
+
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http)).announce(config, switch)
+
+        assertTrue(outcomes[broken] is SendOutcome.Failed)
+        assertEquals(SendOutcome.Delivered, outcomes[sam])
+    }
+
+    @Test
     fun `a friend the config can't serve fails without stopping the others`() = runTest {
         server.enqueue(MockResponse().setResponseCode(201))
         val alex = Member("alex", "uuid-alex", "Alex", null, null, null, null)

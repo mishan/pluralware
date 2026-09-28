@@ -63,6 +63,12 @@ class FollowingViewModel(
         }
     }
 
+    /** The user shared their (new) follow code; stop nagging. */
+    fun codeShared(follow: Follow) {
+        if (!follow.codeChanged) return
+        viewModelScope.launch { store.update(follow.instance) { it.copy(codeChanged = false) } }
+    }
+
     fun unfollow(follow: Follow) {
         UnifiedPush.unregister(appContext, follow.instance)
         viewModelScope.launch {

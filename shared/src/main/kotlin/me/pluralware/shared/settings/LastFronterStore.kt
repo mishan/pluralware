@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.pluralware.shared.repository.EncryptedPrefs
 
 /**
  * Last-known fronter line, shared by the watch's glanceable surfaces (the
@@ -51,16 +52,16 @@ class InMemoryLastFronterCache(private var value: LastFronter? = null) : LastFro
  * Production [LastFronterCache].
  *
  * It holds display names, including members private in PluralKit, since the
- * system's own token sees them all. It's app-private, and excluded from backups
- * and device transfers like everything else.
+ * system's own token sees them all, so it's encrypted like the token. It's
+ * opened lazily, on the IO dispatcher every accessor already uses, which keeps
+ * the Keystore work off the thread a complication request arrives on.
  *
  * Process-wide singleton via [get] so the complication service and any other
  * surface share one instance, matching [LocalSettingsStore].
  */
 class LastFronterStore private constructor(appContext: Context) : LastFronterCache {
 
-    private val prefs: SharedPreferences =
-        appContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences by lazy { EncryptedPrefs.open(appContext, PREFS_FILE) }
 
     override suspend fun get(): LastFronter? = withContext(Dispatchers.IO) {
         val text = prefs.getString(KEY_TEXT, null)?.takeIf { it.isNotBlank() }

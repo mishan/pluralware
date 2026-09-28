@@ -35,8 +35,12 @@ class FollowPushService : PushService() {
                     p256dh = keys.pubKey,
                     auth = keys.auth,
                 )
-                // A changed endpoint means a new code; the old one stops working.
-                follow.copy(followCode = code.encode(), problem = null)
+                val encoded = code.encode()
+                // A changed endpoint means a new code, and the system's copy of the
+                // old one stops working. Say so, loudly: nothing else would.
+                val changed = follow.followCode != null && follow.followCode != encoded
+                if (changed) FollowNotifications.showCodeChanged(applicationContext, instance, follow.system)
+                follow.copy(followCode = encoded, problem = null, codeChanged = follow.codeChanged || changed)
             }
         }
     }
