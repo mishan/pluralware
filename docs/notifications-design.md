@@ -1,6 +1,6 @@
 # Switch Notifications for Friends — Design
 
-Status: rollout steps 1 and 2 are built (section 3; what differs from this plan is in section 14).
+Status: rollout steps 1–3 are built (section 3; what differs from this plan is in section 14).
 Scope: let a PluralWare user share "who's fronting" with chosen friends as push
 notifications. There are two delivery modes:
 
@@ -429,7 +429,7 @@ Rollout steps 1 and 2 (section 3):
 Rollout step 3 adds a `web-receiver/` directory holding the static web app. Step 4 adds the relay,
 in its own repository or a `relay/` directory.
 
-## 14. As built (steps 1 and 2)
+## 14. As built (steps 1–3)
 
 Where the code lives:
 
@@ -442,13 +442,23 @@ Where the code lives:
   config the phone pushes, then deletes the DataItem. Either side's sign-out clears it.
 - Phone: **Share with friends** (`sharing/`) and **Following** (`following/`, with
   `FollowPushService` as the UnifiedPush receiver).
+- Web: `web-receiver/`, with no dependencies and no build step. `.github/workflows/pages.yml`
+  tests it and publishes it to GitHub Pages, whose address is `Invite.WEB_RECEIVER`.
+  - Each followed system gets its own service worker registration, scoped `follow/<id>/`. A
+    registration holds one push subscription bound to one VAPID key, so following several systems
+    needs several registrations.
+  - `formats.js` holds the invite and follow-code encoding. Its tests share fixture strings with
+    `InvitesInteropTest.kt`, so the two sides can't drift apart.
 
 Differences from the plan above:
 
-- **No QR codes yet.** Invites and follow codes travel as text through the share sheet and are
-  pasted in. Both formats are `pluralware-invite:` / `pluralware-follow:` plus base64url JSON, and
-  the parser finds them anywhere in a message or a link's fragment. That is what lets the web
-  receiver (step 3) carry the same invite in an `https://…/follow#…` link.
+- **Invites are links, shown as a QR code.** An invite is the web receiver's address with the invite
+  in the fragment, so a friend can scan it with any phone camera. PluralWare's Following screen
+  accepts the same link pasted in.
+- **Follow codes come back as text**, through any chat, and are pasted into the sharing screen.
+  Scanning them would need a camera and a barcode scanner in the app, which isn't worth it yet.
+- Both formats are `pluralware-invite:` / `pluralware-follow:` plus base64url JSON, and the parsers
+  find them anywhere in a message or a link.
 - **Gone friends:**
   - The phone learns about them by reading a status DataItem the watch writes
     (`/pluralware/sharing-status`) when the sharing screen opens.
@@ -464,12 +474,19 @@ Differences from the plan above:
 - **The system's VAPID key** is generated on the first invite, not when sharing is first turned
   on. Simple-mode-only setups never need one.
 
-Not yet verified end to end, because it needs real devices and a distributor:
+**Verified end to end** with the web receiver in Google Chrome:
 
-- a push through the ntfy app as UnifiedPush distributor;
-- a push through Google's FCM-backed endpoint;
+1. It subscribed through Google's push service (FCM) using a VAPID key from an invite.
+2. `SwitchSharer` in `:shared` encrypted and signed a switch and sent it to that endpoint.
+3. Chrome decrypted it, and the service worker recorded and showed "Alex and someone else are
+   fronting".
+
+One finding: after the browser unsubscribed, FCM kept accepting pushes to the old endpoint for
+at least a minute. So how quickly a friend shows as gone depends on the push service's own timing.
+
+Still needing real devices:
+
+- the Android receiver through the ntfy app as UnifiedPush distributor;
+- Safari/iOS;
 - `EncryptedSharedPreferences` on Tink 1.23 (section 4.2).
-
-The unit tests cover every piece up to the HTTP request, including decrypting what the sender
-produces with an independent RFC 8291 implementation.
 

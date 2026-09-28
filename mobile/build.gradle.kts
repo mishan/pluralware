@@ -70,4 +70,9 @@ dependencies {
         exclude(group = "com.google.crypto.tink", module = "tink")
     }
     implementation(libs.tink.android)
+
+    // Drawing invite links as QR codes.
+    implementation(libs.zxing.core)
+
+    testImplementation(libs.junit)
 }

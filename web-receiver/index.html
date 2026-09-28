@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Everything is local; nothing is fetched from, or sent to, anywhere but the push service. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#101114">
+  <title>PluralWare · Following</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="formats.js" defer></script>
+  <script src="db.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>PluralWare <span class="sub">Following</span></h1>
+    <p class="lede">
+      Get a notification when a system you follow switches. Messages are end-to-end encrypted:
+      only this browser can read them, not PluralWare and not the push service carrying them.
+    </p>
+
+    <section id="unsupported" hidden>
+      <h2>This browser can't receive notifications</h2>
+      <p id="unsupported-why"></p>
+    </section>
+
+    <section id="ios-install" hidden>
+      <h2>Add this page to your Home Screen first</h2>
+      <p>
+        On iPhone and iPad, only web apps on the Home Screen can receive notifications (iOS 16.4 or later).
+      </p>
+      <ol>
+        <li>Copy your invite with the button below. The Home Screen app can't see it otherwise.</li>
+        <li>Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</li>
+        <li>Open PluralWare from your Home Screen and paste the invite there.</li>
+      </ol>
+      <button id="copy-pending" type="button" hidden>Copy invite</button>
+    </section>
+
+    <section id="follow">
+      <h2 id="follow-title">Follow a system</h2>
+      <label for="invite">Invite</label>
+      <textarea id="invite" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"
+                placeholder="Paste the invite you were sent"></textarea>
+      <label for="my-name">Your name, as they'll see it</label>
+      <input id="my-name" autocomplete="nickname" maxlength="60">
+      <button id="follow-button" type="button">Follow</button>
+      <p id="follow-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="follows" aria-live="polite"></section>
+
+    <footer>
+      <p>
+        Nothing leaves this browser except your follow code, and only when you send it.
+        <a href="https://github.com/mishan/pluralware" rel="noreferrer">Source</a>
+      </p>
+    </footer>
+  </main>
+
+  <template id="follow-card">
+    <article class="card">
+      <h3 class="system"></h3>
+      <p class="status"></p>
+      <p class="last"></p>
+      <p class="since"></p>
+      <div class="code" hidden>
+        <p>
+          Send them your follow code to finish. It works like a password for sending you
+          notifications, so send it only to them.
+        </p>
+        <button class="share-code" type="button">Send follow code</button>
+      </div>
+      <button class="unfollow secondary" type="button">Unfollow</button>
+    </article>
+  </template>
+</body>
+</html>

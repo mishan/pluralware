@@ -93,14 +93,14 @@ class SharingViewModel(
 
     fun setTitle(title: String) = change { it.copy(title = title.trim().ifEmpty { SharingConfig.DEFAULT_TITLE }) }
 
-    /** The text to send a friend for Private mode; makes this system's VAPID key the first time. */
+    /** The invite link to send a friend for Private mode; makes this system's VAPID key the first time. */
     fun invite(onReady: (String) -> Unit) {
         viewModelScope.launch {
             val withKey = editLock.withLock {
                 val current = config.value
                 if (current.vapid != null) current else current.copy(vapid = Vapid.generate()).also { save(it) }
             }
-            onReady(Invite(system = withKey.title, vapid = withKey.vapid!!.publicKey).encode())
+            onReady(Invite(system = withKey.title, vapid = withKey.vapid!!.publicKey).link())
         }
     }
 

@@ -24,8 +24,18 @@ data class Invite(
 ) {
     fun encode(): String = PREFIX + encodePayload(serializer(), this)
 
+    /**
+     * The invite as a link to the web receiver, with the invite in the
+     * fragment, which browsers never send to the server. PluralWare's
+     * Following screen accepts the same link pasted in.
+     */
+    fun link(): String = "$WEB_RECEIVER#${encode()}"
+
     companion object {
         const val PREFIX = "pluralware-invite:"
+
+        /** Where web-receiver/ is published (see .github/workflows/pages.yml). */
+        const val WEB_RECEIVER = "https://mishan.github.io/pluralware/"
 
         fun parse(text: String): Invite? = decodeFrom(text, PREFIX, serializer())
     }

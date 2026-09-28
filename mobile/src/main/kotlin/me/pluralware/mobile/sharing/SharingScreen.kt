@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,14 +105,13 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
 
             PrivateInviteSection(
                 error = state.followCodeError,
-                onInvite = {
-                    viewModel.invite { invite ->
-                        shareText(
-                            context,
-                            "Follow ${config.title}'s switches in PluralWare: in the app, open Following " +
-                                "and paste this invite.\n\n$invite",
-                        )
-                    }
+                onInvite = viewModel::invite,
+                onShareInvite = { link ->
+                    shareText(
+                        context,
+                        "Follow ${config.title}'s switches: open this link, or paste it into " +
+                            "PluralWare's Following screen.\n\n$link",
+                    )
                 },
                 onAddFollowCode = viewModel::addFollowCode,
             )
@@ -173,18 +173,35 @@ private fun FriendsSection(config: SharingConfig, gone: Set<String>, onRemove: (
 @Composable
 private fun PrivateInviteSection(
     error: String?,
-    onInvite: () -> Unit,
+    onInvite: ((String) -> Unit) -> Unit,
+    onShareInvite: (String) -> Unit,
     onAddFollowCode: (String, String) -> Boolean,
 ) {
     var code by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
+    var inviteLink by remember { mutableStateOf<String?>(null) }
     Section(title = "Add a friend (private)") {
         Text(
-            "1. Send an invite. 2. They open it in PluralWare, which gives them a follow code. " +
-                "3. Paste their follow code here. Only their device can read what you send.",
+            "1. Invite them: they scan the code or open the link, in a browser or in PluralWare. " +
+                "2. They send back a follow code. 3. Paste it here. Only their device can read what you send.",
             style = MaterialTheme.typography.bodySmall,
         )
-        Button(onClick = onInvite) { Text("Send an invite") }
+        val link = inviteLink
+        if (link == null) {
+            Button(onClick = { onInvite { inviteLink = it } }) { Text("Invite a friend") }
+        } else {
+            QrCode(
+                text = link,
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .align(Alignment.CenterHorizontally),
+            )
+            Text("Have them scan this with their phone's camera.", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onShareInvite(link) }) { Text("Share link") }
+                TextButton(onClick = { inviteLink = null }) { Text("Done") }
+            }
+        }
         OutlinedTextField(
             value = code,
             onValueChange = { code = it },
@@ -272,7 +289,7 @@ private fun SimpleModeSection(
 }
 
 @Composable
-internal fun Section(title: String, content: @Composable () -> Unit) {
+internal fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),

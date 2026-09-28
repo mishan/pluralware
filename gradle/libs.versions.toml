@@ -33,6 +33,8 @@ securityCrypto = "1.1.0-alpha06"
 tinkAndroid = "1.23.0"
 tinkAppsWebpush = "1.15.0"
 unifiedpushConnector = "3.3.5"
+# QR codes for invite links; the core encoder only, no camera or scanning.
+zxing = "3.5.4"
 
 # PluralKit HTTP client stack — Retrofit over OkHttp with kotlinx-serialization for JSON.
 # converter-kotlinx-serialization ships in the retrofit BOM since 2.10; we just align versions.
@@ -95,6 +97,7 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tinkAndroid" }
 tink-apps-webpush = { group = "com.google.crypto.tink", name = "apps-webpush", version.ref = "tinkAppsWebpush" }
 unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpushConnector" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 # PluralKit HTTP client — Retrofit/OkHttp/kotlinx-serialization.
 # We hand-roll the client because Plural.kt was archived in 2024 and its Maven server

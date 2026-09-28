@@ -1,0 +1,52 @@
+name: Web receiver
+
+# Tests the web receiver on every change to it, and publishes it to GitHub
+# Pages from main. It's static: what's in web-receiver/ is what's served,
+# minus the tests.
+on:
+  push:
+    branches: [main]
+    paths: ["web-receiver/**", ".github/workflows/pages.yml"]
+  pull_request:
+    paths: ["web-receiver/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Includes the format fixtures shared with the Kotlin InvitesInteropTest.
+      - run: node --test 'web-receiver/test/*.test.mjs'
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Never cancel a deploy halfway; let a newer one queue behind it.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - run: rsync -a --exclude test/ web-receiver/ _site/
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5

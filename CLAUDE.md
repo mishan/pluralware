@@ -165,6 +165,10 @@ what's built. In short:
   `onSwitchRegistered`. It sends either encrypted Web Push (`Friend.Private`) or ntfy messages
   (`Friend.Simple`).
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
+  `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
+  `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.
+- The invite and follow-code formats exist twice, in `Invites.kt` and `web-receiver/formats.js`.
+  Their tests share fixture strings, so change both sides and both tests together.
 - Tink's `apps-webpush` and the UnifiedPush connector both depend on the JVM `tink`, which clashes
   with `tink-android`. Every use excludes it (see `libs.versions.toml`).
 
