@@ -147,9 +147,12 @@ class TokenEntryViewModel(
             tokenStore.clear()
             // Sharing belongs to the system being disconnected. The watch clears
             // its copy when the sign-out below reaches it; the relay, if any,
-            // forgets its copy now (best-effort: it may be unreachable).
+            // is told to forget its copy now.
             sharingStore.configFlow.value.relay?.let { relay ->
-                runCatching { RelayClient.create(BuildConfig.VERSION_NAME).clear(relay) }
+                val cleared = runCatching { RelayClient.create(BuildConfig.VERSION_NAME).clear(relay) }.isSuccess
+                // Unreachable: keep its admin details (orphans survive clear())
+                // so the sharing screen can delete from it later.
+                if (!cleared) sharingStore.addOrphan(relay)
             }
             sharingStore.clear()
             _state.update { it.copy(status = ConnectionStatus.Idle, input = "") }

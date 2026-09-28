@@ -33,6 +33,18 @@ data class SharingConfig(
     /** The relay sends instead of the watch, so friends never get a switch twice (§7). */
     val relaySends: Boolean get() = relay?.enabled == true
 
+    /** Whether the watch tells friends about its switches. */
+    val watchSends: Boolean get() = isSharing && !relaySends
+
+    /**
+     * The copy the watch gets: everything it sends with, but of the relay only
+     * whether it's on. The relay's admin secret and PluralKit's signing token
+     * have no business on the watch or in the Data Layer.
+     */
+    fun forWatch(): SharingConfig = copy(
+        relay = relay?.let { RelaySettings(url = "", adminSecret = "", webhookPath = "", enabled = it.enabled) },
+    )
+
     fun toJson(): String = json.encodeToString(serializer(), this)
 
     companion object {

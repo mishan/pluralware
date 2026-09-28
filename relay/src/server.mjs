@@ -12,22 +12,36 @@ import { createRelay } from './relay.js';
 const file = process.env.STATE_FILE ?? './relay-state.json';
 const port = Number(process.env.PORT ?? 8787);
 
-/** Everything in one JSON file, rewritten atomically; the relay's state is tiny. */
-function fileStore(path) {
+/**
+ * Everything in one JSON file, rewritten atomically; the relay's state is tiny.
+ * Saves run one at a time: two overlapping writes to one temp file used to
+ * interleave into an unparseable file, which failed every request after a
+ * restart, PluralKit's checks included.
+ */
+export function fileStore(path) {
   let state = null;
-  const load = async () => {
-    if (state) return state;
-    try {
-      state = JSON.parse(await readFile(path, 'utf8'));
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e;
-      state = {};
-    }
-    return state;
+  let loading = null;
+  let saving = Promise.resolve();
+  // Loaded once and shared: requests arriving together before the first load
+  // finishes must all get the same object, or each would replace the others'.
+  const load = () => {
+    loading ??= readFile(path, 'utf8').then(
+      (text) => { state = JSON.parse(text); return state; },
+      (e) => {
+        if (e.code !== 'ENOENT') { loading = null; throw e; }
+        state = {};
+        return state;
+      },
+    );
+    return loading;
   };
-  const save = async () => {
-    await writeFile(`${path}.tmp`, JSON.stringify(state), { mode: 0o600 });
-    await rename(`${path}.tmp`, path);
+  const save = () => {
+    const run = saving.then(async () => {
+      await writeFile(`${path}.tmp`, JSON.stringify(state), { mode: 0o600 });
+      await rename(`${path}.tmp`, path);
+    });
+    saving = run.catch(() => {});
+    return run;
   };
   return {
     get: async (key) => (await load())[key] ?? null,
@@ -36,14 +50,42 @@ function fileStore(path) {
   };
 }
 
-const handle = createRelay({ store: fileStore(file), adminSecret: process.env.ADMIN_SECRET });
+/** Largest body worth reading, by path: dispatch events are small, configs a little bigger. */
+export function bodyLimit(pathname) {
+  if (pathname.startsWith('/pk/')) return 64 * 1024;
+  if (pathname === '/config') return 1024 * 1024;
+  return 0;
+}
 
-createServer(async (req, res) => {
+class TooLarge extends Error {}
+
+/** Reads the body, refusing (before buffering it all) anything over `limit`. */
+async function readBody(req, limit) {
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > limit) throw new TooLarge();
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new TooLarge();
+    chunks.push(chunk);
+  }
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+}
+
+async function onRequest(handle, req, res) {
   try {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const body = chunks.length ? Buffer.concat(chunks) : undefined;
-    const request = new Request(new URL(req.url, `http://${req.headers.host ?? 'localhost'}`), {
+    const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
+    let body;
+    try {
+      body = await readBody(req, bodyLimit(url.pathname));
+    } catch (e) {
+      if (!(e instanceof TooLarge)) throw e;
+      res.writeHead(413, { connection: 'close' }).end();
+      req.destroy();
+      return;
+    }
+    const request = new Request(url, {
       method: req.method,
       headers: req.headers,
       body: req.method === 'GET' || req.method === 'HEAD' ? undefined : body,
@@ -56,4 +98,13 @@ createServer(async (req, res) => {
     console.error(e);
     res.writeHead(500).end();
   }
-}).listen(port, () => console.log(`PluralWare relay on :${port}`));
+}
+
+function serve() {
+  const handle = createRelay({ store: fileStore(file), adminSecret: process.env.ADMIN_SECRET });
+  createServer((req, res) => onRequest(handle, req, res))
+    .listen(port, () => console.log(`PluralWare relay on :${port}`));
+}
+
+// Serve when run directly; tests import the helpers above.
+if (import.meta.url === `file://${process.argv[1]}`) serve();

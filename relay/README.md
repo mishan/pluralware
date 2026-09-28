@@ -18,6 +18,10 @@ short:
 
 It has no dependencies. The same code runs as a Cloudflare Worker or under Node 20+.
 
+It accepts push endpoints and ntfy servers only at https addresses on public host names. An IP
+address, `localhost` or an internal name is refused, so a friend's follow code can't aim your
+relay at your own network. A friend whose subscription is gone is skipped, and retried once a day.
+
 ## Deploy
 
 You need a public **https** address, because PluralKit and your phone both have to reach it. You
@@ -29,10 +33,12 @@ also need a long random **admin secret**, which your phone uses to upload settin
 ```sh
 cd relay
 cp wrangler.toml.example wrangler.toml
-npx wrangler kv namespace create RELAY_KV   # put the id it prints into wrangler.toml
 npx wrangler secret put ADMIN_SECRET        # paste your admin secret
 npx wrangler deploy                         # prints your https://…workers.dev address
 ```
+
+State lives in one Durable Object rather than KV. KV reads can lag writes by up to a minute, which
+could fail PluralKit's check of a token you've just uploaded.
 
 ### Your own server
 
@@ -43,7 +49,8 @@ ADMIN_SECRET='…' PORT=8787 STATE_FILE=/var/lib/pluralware-relay/state.json nod
 
 Put it behind a reverse proxy that terminates TLS, the way you would a self-hosted ntfy. The state
 file holds your friends' follow codes and your VAPID key, so it's written readable by its owner
-only; keep it that way.
+only; keep it that way. Request bodies are capped (64 KB for PluralKit's events, 1 MB for a
+config) before anything is buffered.
 
 ## Connect it
 

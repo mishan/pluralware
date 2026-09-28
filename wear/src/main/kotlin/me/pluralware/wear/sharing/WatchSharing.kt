@@ -42,7 +42,7 @@ object WatchSharing {
             val store = EncryptedSharingStore.get(appContext)
             val config = store.configFlow.value
             // With the relay on, it tells friends about every switch, this one included.
-            if (!config.isSharing || config.relaySends) return@launch
+            if (!config.watchSends) return@launch
             val now = System.currentTimeMillis()
             val before = store.goneFlow.value
             val outcomes = sharer.announce(config, switch, skipFriendIds = GoneFriends.toSkip(before, now))

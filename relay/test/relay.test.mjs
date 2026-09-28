@@ -105,7 +105,7 @@ test('a new switch goes to every friend, each their own way', async () => {
   assert.deepEqual(JSON.parse(ntfy.init.body), { topic: 'pw_kit', title: 'Sample', message: 'Alex and someone else are fronting' });
 
   // The gone friend is remembered and skipped next time.
-  assert.deepEqual(await store.get('gone'), ['p2']);
+  assert.deepEqual(Object.keys(await store.get('gone')), ['p2']);
   sent.length = 0;
   await (await handle(event(switchEvent(['uuid-alex'])))).background;
   assert.ok(!sent.some((s) => s.url === 'https://push.example/gone'));
@@ -180,4 +180,49 @@ test('secrets compare equal only when equal', () => {
 
 test('a short admin secret is refused at startup', () => {
   assert.throws(() => createRelay({ store: memoryStore(), adminSecret: 'short' }));
+});
+
+test('push endpoints and ntfy servers must be public https hosts', async () => {
+  const { handle, config } = await setup();
+  const put = (c) => handle(new Request('https://relay.example/config', {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${ADMIN}` },
+    body: JSON.stringify(c),
+  }));
+  for (const endpoint of ['https://10.0.0.5/x', 'https://localhost:8443/x', 'https://[::1]/x', 'https://router.lan/x', 'http://push.example/x']) {
+    const friends = [{ ...config.friends[0], followCode: { ...config.friends[0].followCode, endpoint } }];
+    const r = await put({ ...config, friends });
+    assert.equal(r.response.status, 400, endpoint);
+  }
+  const r = await put({ ...config, ntfy: { baseUrl: 'http://ntfy.example.org' } });
+  assert.equal(r.response.status, 400);
+});
+
+test('a gone friend is retried after a day, and a delivery clears the mark', async () => {
+  let now = NOW;
+  const sent = [];
+  let goneStatus = 410;
+  const fetch = async (url) => {
+    sent.push(String(url));
+    return new Response(null, { status: String(url).includes('/sam') ? goneStatus : 201 });
+  };
+  const store = memoryStore();
+  const handle = createRelay({ store, adminSecret: ADMIN, fetch, now: () => now });
+  const { config } = await setup();
+  await handle(new Request('https://relay.example/config', { method: 'PUT', headers: { authorization: `Bearer ${ADMIN}` }, body: JSON.stringify({ ...config, friends: [config.friends[0]] }) }));
+  const at = (t) => new Date(t - 1000).toISOString();
+
+  await (await handle(event(switchEvent(['uuid-alex'], at(now))))).background; // 410: gone
+  assert.deepEqual(Object.keys(await store.get('gone')), ['p1']);
+
+  now += 60 * 60 * 1000;
+  sent.length = 0;
+  await (await handle(event(switchEvent(['uuid-alex'], at(now))))).background;
+  assert.equal(sent.length, 0, 'skipped within the day');
+
+  now += 24 * 60 * 60 * 1000;
+  goneStatus = 201;
+  await (await handle(event(switchEvent(['uuid-alex'], at(now))))).background;
+  assert.equal(sent.length, 1, 'retried after a day');
+  assert.deepEqual(await store.get('gone'), {});
 });

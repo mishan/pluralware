@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import me.pluralware.shared.notify.Friend
 import me.pluralware.shared.notify.RelaySettings
@@ -46,6 +48,7 @@ import me.pluralware.shared.notify.SharingConfig
 fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val config by viewModel.config.collectAsState()
+    val orphans by viewModel.orphanedRelays.collectAsState()
     val context = LocalContext.current
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -120,6 +123,7 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
 
             SimpleModeSection(
                 config = config,
+                error = state.ntfyError,
                 newTopicUrl = state.newTopicUrl,
                 onSaveServer = viewModel::setNtfyServer,
                 onAddFriend = viewModel::addSimpleFriend,
@@ -131,12 +135,32 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
                 relay = config.relay,
                 configured = state.relayConfigured,
                 error = state.relayError,
+                removeFailed = state.relayRemoveFailed,
                 onSave = viewModel::saveRelay,
                 onSigningToken = viewModel::setSigningToken,
                 onEnabled = viewModel::setRelayEnabled,
+                onRetry = viewModel::retryRelay,
                 onRemove = viewModel::removeRelay,
+                onRemoveAnyway = viewModel::removeRelayAnyway,
                 onShareCommand = { shareText(context, it) },
             )
+
+            if (orphans.isNotEmpty()) {
+                Section(title = "Relays still holding your settings") {
+                    Text(
+                        "These couldn't be reached when you let them go, so they may still have your friends' " +
+                            "follow codes and keep sending. PluralWare retries each time you open this screen.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    orphans.forEach { relay ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(relay.url, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = viewModel::retryOrphans) { Text("Retry") }
+                            TextButton(onClick = { viewModel.forgetOrphan(relay) }) { Text("Forget") }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -241,6 +265,7 @@ private fun PrivateInviteSection(
 @Composable
 private fun SimpleModeSection(
     config: SharingConfig,
+    error: String?,
     newTopicUrl: String?,
     onSaveServer: (String, String) -> Unit,
     onAddFriend: (String) -> Unit,
@@ -261,15 +286,11 @@ private fun SimpleModeSection(
             onValueChange = { url = it },
             label = { Text("ntfy server, e.g. https://ntfy.example.org") },
             singleLine = true,
+            isError = error != null,
+            supportingText = error?.let { { Text(it) } },
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
-            label = { Text("Access token (servers with accounts)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        SecretField(value = token, onValueChange = { token = it }, label = "Access token (servers with accounts)")
         if (url != config.ntfy?.baseUrl.orEmpty() || token != config.ntfy?.accessToken.orEmpty()) {
             OutlinedButton(onClick = { onSaveServer(url, token) }) { Text("Save server") }
         }
@@ -326,8 +347,11 @@ private fun RelaySection(
     error: String?,
     onSave: (String, String) -> Unit,
     onSigningToken: (String) -> Unit,
+    removeFailed: Boolean,
     onEnabled: (Boolean) -> Unit,
+    onRetry: () -> Unit,
     onRemove: () -> Unit,
+    onRemoveAnyway: () -> Unit,
     onShareCommand: (String) -> Unit,
 ) {
     var url by remember(relay?.url) { mutableStateOf(relay?.url.orEmpty()) }
@@ -339,6 +363,12 @@ private fun RelaySection(
                 "catches switches made in Discord or anywhere else. Setup is in the relay's README.",
             style = MaterialTheme.typography.bodySmall,
         )
+        Text(
+            "PluralKit allows one webhook per system. If something else already uses it, such as a " +
+                "Discord bot that announces your switches, this replaces it.",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+        )
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
@@ -346,13 +376,7 @@ private fun RelaySection(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            value = secret,
-            onValueChange = { secret = it },
-            label = { Text("Its admin secret") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        SecretField(value = secret, onValueChange = { secret = it }, label = "Its admin secret")
         if (url.isNotBlank() && secret.isNotBlank() && (url != relay?.url || secret != relay.adminSecret)) {
             OutlinedButton(onClick = { onSave(url, secret) }) { Text("Save relay") }
         }
@@ -366,19 +390,15 @@ private fun RelaySection(
             "2. PluralKit shows a token and waits. Paste it here and save, then reply \"yes\" to PluralKit.",
             style = MaterialTheme.typography.bodySmall,
         )
-        OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
-            label = { Text("Token from PluralKit") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
-        )
+        SecretField(value = token, onValueChange = { token = it }, label = "Token from PluralKit")
         if (token != relay.signingToken.orEmpty()) {
             OutlinedButton(onClick = { onSigningToken(token) }) { Text("Save token") }
         }
         when {
-            error != null -> Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            error != null -> {
+                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (!removeFailed) TextButton(onClick = onRetry) { Text("Retry") }
+            }
             configured -> Text("The relay has your settings.", style = MaterialTheme.typography.bodySmall)
         }
         if (relay.signingToken != null) {
@@ -392,7 +412,30 @@ private fun RelaySection(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        TextButton(onClick = onRemove) { Text("Remove relay") }
+        if (removeFailed) {
+            TextButton(onClick = onRemove) { Text("Try removing again") }
+            TextButton(onClick = onRemoveAnyway) { Text("Remove anyway (keep trying to delete from it)") }
+        } else {
+            TextButton(onClick = onRemove) { Text("Remove relay") }
+        }
     }
+}
+
+/** A masked field for secrets: no autocorrect or suggestions, so the keyboard never learns it. */
+@Composable
+private fun SecretField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.None,
+            autoCorrectEnabled = false,
+            keyboardType = KeyboardType.Password,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 

@@ -476,8 +476,10 @@ Differences from the plan above:
   on. Simple-mode-only setups never need one.
 
 **The relay** (`relay/`, step 4) is plain JavaScript on web standards (fetch, WebCrypto) with no
-dependencies. `worker.js` runs it on Cloudflare Workers with KV; `server.mjs` runs it on Node with a
-JSON state file. What PluralKit's source added to the plan:
+dependencies. `worker.js` runs it on Cloudflare Workers, with its state in one SQLite-backed Durable
+Object: KV reads can lag writes by a minute, which could fail PluralKit's check of a just-uploaded
+token. `server.mjs` runs it on Node with a JSON state file, saved one write at a time, with request
+bodies capped before they're buffered. What PluralKit's source added to the plan:
 
 - `pk;s webhook <url>` works only in DMs. It shows the signing token and waits for "yes" before
   testing the URL, with one ping carrying the right token (expecting 200) and one carrying a wrong
@@ -488,6 +490,17 @@ JSON state file. What PluralKit's source added to the plan:
   sending moves off the watch, with no window where both send.
 - The relay's Web Push is its own WebCrypto implementation (no Tink in JavaScript). Its tests
   reproduce RFC 8291's worked example byte for byte.
+- It accepts push endpoints and ntfy servers only at https addresses on public host names, so a
+  follow code can't aim a self-hosted relay at its own network. Like the watch, it retries gone
+  friends once a day.
+- On the phone:
+  - Turning the relay on uploads first, and only a confirmed upload stops the watch sending. A
+    failed or skipped upload leaves the watch sending and says why.
+  - Uploads run one at a time and always send the current settings.
+  - The watch gets the relay's on/off flag but none of its secrets.
+  - A relay that can't be reached when it's removed, replaced or disconnected from is kept as an
+    "orphan" (with its admin secret) and retried, rather than silently left sending with your
+    friends' follow codes.
 
 **Verified end to end** with the web receiver in Google Chrome:
 

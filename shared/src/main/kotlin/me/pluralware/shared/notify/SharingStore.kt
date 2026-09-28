@@ -21,9 +21,20 @@ import me.pluralware.shared.repository.EncryptedPrefs
 interface SharingStore {
     val configFlow: StateFlow<SharingConfig>
     val goneFlow: StateFlow<Map<String, Long>>
+
+    /**
+     * Relays the phone let go of (removed, replaced, or disconnected from) but
+     * couldn't reach to delete their copy. They still hold follow codes and the
+     * VAPID key, and may still send, so the phone keeps their admin details
+     * until a delete gets through. Survives [clear].
+     */
+    val orphanedRelays: StateFlow<List<RelaySettings>>
+
     suspend fun set(config: SharingConfig)
     suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long)
     suspend fun clearGone(friendIds: Set<String>)
+    suspend fun addOrphan(relay: RelaySettings)
+    suspend fun removeOrphan(relay: RelaySettings)
     suspend fun clear()
 }
 
@@ -49,8 +60,14 @@ object GoneFriends {
 class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingStore {
     private val _config = MutableStateFlow(initial)
     private val _gone = MutableStateFlow(emptyMap<String, Long>())
+    private val _orphans = MutableStateFlow(emptyList<RelaySettings>())
     override val configFlow: StateFlow<SharingConfig> = _config.asStateFlow()
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
+    override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
+    override suspend fun addOrphan(relay: RelaySettings) {
+        if (relay !in _orphans.value) _orphans.value = _orphans.value + relay
+    }
+    override suspend fun removeOrphan(relay: RelaySettings) { _orphans.value = _orphans.value - relay }
     override suspend fun set(config: SharingConfig) {
         _config.value = config
         _gone.value = GoneFriends.retain(_gone.value, config)
@@ -60,6 +77,7 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
     }
     override suspend fun clearGone(friendIds: Set<String>) { _gone.value = _gone.value - friendIds }
     override suspend fun clear() {
+        // Like the real store: orphaned relays outlive a sign-out.
         _config.value = SharingConfig()
         _gone.value = emptyMap()
     }
@@ -73,8 +91,25 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
 
     private val _config = MutableStateFlow(readConfig())
     private val _gone = MutableStateFlow(readGone())
+    private val _orphans = MutableStateFlow(readOrphans())
     override val configFlow: StateFlow<SharingConfig> = _config.asStateFlow()
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
+    override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
+
+    override suspend fun addOrphan(relay: RelaySettings) =
+        if (relay in _orphans.value) Unit else writeOrphans(_orphans.value + relay)
+
+    override suspend fun removeOrphan(relay: RelaySettings) = writeOrphans(_orphans.value - relay)
+
+    private suspend fun writeOrphans(orphans: List<RelaySettings>) = write {
+        prefs.edit().putString(KEY_ORPHANS, orphansJson.encodeToString(orphansSerializer, orphans)).commit()
+        _orphans.value = orphans
+    }
+
+    private fun readOrphans(): List<RelaySettings> =
+        prefs.getString(KEY_ORPHANS, null)
+            ?.let { runCatching { orphansJson.decodeFromString(orphansSerializer, it) }.getOrNull() }
+            .orEmpty()
 
     override suspend fun set(config: SharingConfig) = write {
         val gone = GoneFriends.retain(_gone.value, config)
@@ -103,7 +138,8 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
         }.toMap()
 
     override suspend fun clear() = write {
-        prefs.edit().clear().commit()
+        // Orphaned relays outlive a sign-out: they're exactly what it leaves behind.
+        prefs.edit().remove(KEY_CONFIG).remove(KEY_GONE).commit()
         _config.value = SharingConfig()
         _gone.value = emptyMap()
     }
@@ -123,6 +159,9 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
         private const val PREFS_FILE = "pluralware_sharing"
         private const val KEY_CONFIG = "config"
         private const val KEY_GONE = "gone_friends"
+        private const val KEY_ORPHANS = "orphaned_relays"
+        private val orphansJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        private val orphansSerializer = kotlinx.serialization.builtins.ListSerializer(RelaySettings.serializer())
 
         @Volatile private var instance: EncryptedSharingStore? = null
 

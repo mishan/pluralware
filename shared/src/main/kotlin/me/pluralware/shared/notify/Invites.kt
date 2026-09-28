@@ -71,7 +71,7 @@ data class FollowCode(
          * are. Anything else would fail at send time, or worse: a space in the
          * path is fine to OkHttp but not to [java.net.URI].
          */
-        internal fun isPushEndpoint(endpoint: String): Boolean {
+        fun isPushEndpoint(endpoint: String): Boolean {
             val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return false
             return uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.userInfo == null
         }

@@ -10,6 +10,8 @@ export const MAX_SWITCH_AGE_MS = 5 * 60 * 1000;
 /** Allowance for PluralKit's clock running ahead of ours. */
 const MAX_CLOCK_SKEW_MS = 60 * 1000;
 const TTL_SECONDS = 12 * 3600;
+/** Gone friends are retried once a day, like the watch does (GoneFriends.kt). */
+export const GONE_RETRY_MS = 24 * 3600 * 1000;
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -27,6 +29,25 @@ export function sameSecret(a, b) {
   return diff === 0;
 }
 
+/**
+ * An https URL on a public host name: what push endpoints and ntfy servers
+ * are. Anything else (an IP literal, localhost, an internal name) would let a
+ * follow code aim a self-hosted relay at its own network.
+ */
+export function isPublicHttpsUrl(text) {
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return false;
+  const host = url.hostname.toLowerCase();
+  if (host.startsWith('[') || /^[\d.]+$/.test(host)) return false; // IPv6 / IPv4 literal
+  if (!host.includes('.')) return false; // localhost and other bare names
+  return !/\.(localhost|local|internal|intranet|lan|home\.arpa)$/.test(host);
+}
+
 /** Checks the shape of a config the phone uploads; returns an error message or null. */
 export function configProblem(c) {
   if (!c || typeof c !== 'object') return 'not an object';
@@ -37,9 +58,9 @@ export function configProblem(c) {
   for (const f of c.friends) {
     if (typeof f.id !== 'string') return 'friend without id';
     if (f.type === 'private') {
-      if (!c.vapid || !f.followCode?.endpoint?.startsWith('https://')) return `friend ${f.id}: bad follow code`;
+      if (!c.vapid || !isPublicHttpsUrl(f.followCode?.endpoint)) return `friend ${f.id}: bad follow code`;
     } else if (f.type === 'simple') {
-      if (!c.ntfy?.baseUrl || typeof f.topic !== 'string') return `friend ${f.id}: bad ntfy setup`;
+      if (!isPublicHttpsUrl(c.ntfy?.baseUrl) || typeof f.topic !== 'string') return `friend ${f.id}: bad ntfy setup`;
     } else {
       return `friend ${f.id}: unknown type`;
     }
@@ -57,6 +78,15 @@ export function configProblem(c) {
  */
 export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now = Date.now }) {
   if (!adminSecret || adminSecret.length < 16) throw new Error('ADMIN_SECRET must be at least 16 characters');
+
+  // State updates run one at a time, so two switches finishing together can't
+  // lose each other's read-modify-write of the gone list.
+  let updates = Promise.resolve();
+  const serially = (fn) => {
+    const run = updates.then(fn, fn);
+    updates = run.catch(() => {});
+    return run;
+  };
 
   const isAdmin = (request) => {
     const header = request.headers.get('authorization') ?? '';
@@ -104,12 +134,19 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
       switchedAt: sw.timestamp,
       v: 1,
     }));
-    const gone = new Set((await store.get('gone')) ?? []);
-    const friends = config.friends.filter((f) => !gone.has(f.id));
+    const at = now();
+    const goneBefore = (await store.get('gone')) ?? {};
+    const friends = config.friends.filter((f) => !(at - (goneBefore[f.id] ?? -Infinity) < GONE_RETRY_MS));
     const outcomes = await Promise.all(friends.map((f) => sendTo(f, config, payload, text)));
-    const newlyGone = friends.filter((_, i) => outcomes[i] === 'gone').map((f) => f.id);
-    if (newlyGone.length) await store.put('gone', [...gone, ...newlyGone]);
-    await store.put('last', { at: new Date(now()).toISOString(), outcomes: Object.fromEntries(friends.map((f, i) => [f.id, outcomes[i]])) });
+    await serially(async () => {
+      const gone = (await store.get('gone')) ?? {};
+      friends.forEach((f, i) => {
+        if (outcomes[i] === 'gone') gone[f.id] = at;
+        else if (outcomes[i] === 'delivered') delete gone[f.id];
+      });
+      await store.put('gone', gone);
+      await store.put('last', { at: new Date(at).toISOString(), outcomes: Object.fromEntries(friends.map((f, i) => [f.id, outcomes[i]])) });
+    });
   }
 
   async function dispatch(request, path) {
@@ -152,14 +189,17 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
       }
       const problem = configProblem(config);
       if (problem) return { response: json({ error: problem }, 400) };
-      await store.put('config', config);
-      // Forget gone marks for friends who are no longer in the list.
-      const ids = new Set(config.friends.map((f) => f.id));
-      await store.put('gone', ((await store.get('gone')) ?? []).filter((id) => ids.has(id)));
+      await serially(async () => {
+        await store.put('config', config);
+        // Forget gone marks for friends who are no longer in the list.
+        const ids = new Set(config.friends.map((f) => f.id));
+        const gone = (await store.get('gone')) ?? {};
+        await store.put('gone', Object.fromEntries(Object.entries(gone).filter(([id]) => ids.has(id))));
+      });
       return { response: empty(204) };
     }
     if (url.pathname === '/config' && request.method === 'DELETE') {
-      await Promise.all(['config', 'gone', 'last'].map((k) => store.delete(k)));
+      await serially(() => Promise.all(['config', 'gone', 'last'].map((k) => store.delete(k))));
       return { response: empty(204) };
     }
     if (url.pathname === '/status' && request.method === 'GET') {
@@ -168,7 +208,7 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
         response: json({
           configured: Boolean(config),
           enabled: Boolean(config?.enabled),
-          gone: (await store.get('gone')) ?? [],
+          gone: Object.keys((await store.get('gone')) ?? {}),
           last: (await store.get('last')) ?? null,
         }),
       };

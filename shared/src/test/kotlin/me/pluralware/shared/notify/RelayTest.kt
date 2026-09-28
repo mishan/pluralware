@@ -63,9 +63,35 @@ class RelayTest {
     }
 
     @Test
-    fun `the relay taking over stops the watch sending`() {
-        assertTrue(sharing.relaySends)
-        assertTrue(!sharing.copy(relay = sharing.relay!!.copy(enabled = false)).relaySends)
+    fun `the watch sends unless the relay has taken over`() {
+        assertTrue(!sharing.watchSends)
+        assertTrue(sharing.copy(relay = sharing.relay!!.copy(enabled = false)).watchSends)
+        assertTrue(!SharingConfig().watchSends) // nobody to tell
+    }
+
+    @Test
+    fun `the watch's copy keeps whether the relay sends, and none of its secrets`() {
+        val onWatch = sharing.forWatch().relay!!
+        assertTrue(onWatch.enabled)
+        assertEquals("", onWatch.adminSecret)
+        assertEquals("", onWatch.url)
+        assertEquals("", onWatch.webhookPath)
+        assertNull(onWatch.signingToken)
+        assertTrue(!sharing.forWatch().watchSends)
+        assertEquals(sharing.friends, sharing.forWatch().friends)
+    }
+
+    @Test
+    fun `orphaned relays survive a sign-out's clear`() = runTest {
+        val store = InMemorySharingStore(sharing)
+        store.addOrphan(sharing.relay!!)
+        store.addOrphan(sharing.relay!!)
+
+        store.clear()
+
+        assertEquals(listOf(sharing.relay!!), store.orphanedRelays.value)
+        store.removeOrphan(sharing.relay!!)
+        assertTrue(store.orphanedRelays.value.isEmpty())
     }
 
     @Test
