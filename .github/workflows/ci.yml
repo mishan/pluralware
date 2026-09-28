@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch or PR supersedes a run still in flight.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Caches Gradle and checks the committed wrapper jar against Gradle's
+      # published checksums before anything runs it.
+      - uses: gradle/actions/setup-gradle@v6
+
+      # `build` is the whole gate: compile, unit tests and lint for every
+      # module, debug and release (R8) variants. The runner image ships the
+      # Android SDK and sets ANDROID_HOME, so no local.properties is needed.
+      - run: ./gradlew build --console=plain
+
+      - name: Upload test and lint reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: |
+            */build/reports/
+            */build/test-results/
+          if-no-files-found: ignore

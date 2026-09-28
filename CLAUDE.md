@@ -12,7 +12,8 @@ companion app** handles PluralKit token entry and hands the token to the watch.
 
 Gradle wrapper is committed; use `./gradlew`.
 
-- Build everything: `./gradlew build`
+- Build everything: `./gradlew build` — this is exactly what CI runs (`.github/workflows/ci.yml`,
+  on every PR and every push to `main`): unit tests, lint, and debug + release builds of each module.
 - Assemble a debug APK: `./gradlew :wear:assembleDebug` / `./gradlew :mobile:assembleDebug`
 - Run all unit tests: `./gradlew test`
 - Run one module's unit tests: `./gradlew :shared:testDebugUnitTest`
