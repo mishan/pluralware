@@ -1,144 +1,136 @@
 # PluralWare
 
-PluralWare is a small constellation of PluralKit clients sharing one core.
-The first surface is a **Wear OS app** for setting your fronter from your
-wrist; a companion phone app handles token entry and handoff.
+Set who's fronting from your wrist. PluralWare is a Wear OS app for
+[PluralKit](https://pluralkit.me) systems, with a companion phone app for
+signing in and for letting friends know when you switch.
 
-## Status
+It's free, open source (AGPL-3.0) and early: it's being tested with plural
+folks now. Bug reports and ideas are welcome in
+[Issues](https://github.com/mishan/pluralware/issues).
 
-Skeleton with polished UI built against mock data. The watch app builds and
-runs end-to-end against `MockPluralKitClient`. The production HTTP client is
-written and unit-tested; wiring it into the activity is gated on the
-phone→watch token-handoff path landing.
+## What it does
+
+**On your watch**
+
+- See who's fronting and for how long.
+- Change fronters: pick one or more members, or switch out.
+- Browse recent switches, and tap one to switch back to it.
+- Add a **complication** showing the current fronter to your watch face, or
+  a **tile** you can swipe to.
+
+**On your phone**
+
+- Connect your PluralKit account and send it to your watch.
+- **Share with friends**: when you switch, friends you choose get a
+  notification. You decide which members may be named; anyone else shows up
+  as "someone else".
+- **Following**: get notified when friends' systems switch.
+
+## What you need
+
+- A watch running **Wear OS 3 or later**, paired with an **Android phone**
+  (Android 8.0 or later). iPhones can't pair with Wear OS watches.
+- A PluralKit system.
 
 ## Install
 
-PluralWare is published as [GitHub Releases](https://github.com/mishan/pluralware/releases).
-Each release has a phone APK and a watch APK, and both must come from the same
-release.
+PluralWare isn't on the Play Store. Each
+[release](https://github.com/mishan/pluralware/releases) has a phone app
+and a watch app. Install both from the same release.
 
-**Phone**, with [Obtainium](https://github.com/ImranR98/Obtainium), which keeps
-it updated:
+**Phone**: use [Obtainium](https://github.com/ImranR98/Obtainium), which
+keeps it up to date.
 
 1. In Obtainium, tap **Add App** and enter `https://github.com/mishan/pluralware`.
 2. Under **Filter APKs by regular expression**, enter `pluralware-mobile`, so
-   Obtainium ignores the watch APK.
+   Obtainium ignores the watch app.
 3. Tap **Add**, then install.
 
 **Watch**: download `pluralware-wear-X.Y.Z.apk` from the same release and
-install it over wireless debugging, with a Wear OS installer app or `adb`:
+install it over wireless debugging, with a Wear OS installer app or `adb`
+on a computer:
 
-1. On the watch, turn on **Developer options** (tap **Build number** in
-   Settings → System → About, sometimes under Versions, seven times), then
-   **Wireless debugging**. The watch and the phone or computer must be on
-   the same Wi-Fi.
-2. From a computer: `adb pair IP:PORT` with the pairing code the watch shows,
-   then `adb connect IP:PORT` and `adb install pluralware-wear-X.Y.Z.apk`.
+1. On the watch, turn on **Developer options**: in Settings → System →
+   About (sometimes under Versions), tap **Build number** seven times. Then
+   turn on **Wireless debugging**. The watch and your phone or computer must
+   be on the same Wi-Fi.
+2. From a computer: `adb pair IP:PORT` with the pairing code the watch
+   shows, then `adb connect IP:PORT` and `adb install pluralware-wear-X.Y.Z.apk`.
 3. Turn **Wireless debugging** off again when you're done.
 
-Each release's notes list the signing certificate's SHA-256 fingerprint, for
-checking the APKs with a tool such as AppVerifier.
+Each release's notes list the signing certificate's SHA-256 fingerprint,
+for checking the apps with a tool such as AppVerifier.
 
-## Modules
+## Get started
 
-- **`:shared`** — Android library. Domain models, `PluralKitClient` interface,
-  the production `RetrofitPluralKitClient` (over OkHttp + kotlinx-serialization),
-  `MockPluralKitClient`, the repository, token storage abstraction, and
-  `PreviewData` for previews/tests.
-- **`:wear`** — the Wear OS app. Three screens (Fronters, Picker, History),
-  proper ViewModels, loading/error/empty states, custom theme with PluralKit
-  amber, member colour identity stripes, relative timestamps. Wired to the
-  mock client today; swap to the production client once the token store is
-  populated.
-- **`:mobile`** — companion phone app. Stub; token entry + Wearable Data Layer
-  handoff comes in the next phase.
+1. Get your PluralKit token: in any channel the PluralKit bot can see, or in
+   a DM with it, send `pk;token`. PluralKit DMs you the token.
+2. Open PluralWare on your phone, paste the token and tap **Connect & send
+   to watch**.
+3. Open PluralWare on your watch. It shows your current fronters.
 
-## Stack
+If the phone can't reach the watch, keep them near each other and tap
+**Resend to watch**.
 
-- Kotlin 2.0 + Compose / Compose for Wear (Wear OS 3+, API 30+).
-- **Hand-rolled PluralKit v2 client** — Retrofit + OkHttp + kotlinx-serialization.
-  We previously planned to use [Plural.kt](https://github.com/The-ProxyFox-Group/Plural.kt),
-  but that project was archived in March 2024 and its Maven server
-  (`maven.proxyfox.dev`) has been taken down. The five endpoints we need
-  (system, members, fronters, switch history, log switch) are a small enough
-  surface that owning the client beats inheriting an unmaintained dependency.
-- AndroidX Security for the API token; Wearable Data Layer for handoff.
+To sign out, tap **Disconnect** on the phone. That signs the watch out too.
+If you regenerate your PluralKit token, the watch asks you to connect again
+from your phone.
 
-## What works in this build
+## Letting friends know when you switch
 
-- Home screen: shows current fronter(s), member colour stripes, relative time
-  since the switch, switch-out state, empty state for no-history systems.
-- Picker: multi-select with checkmarks, disabled-until-selected confirm,
-  switch-out shortcut, ~700ms confirmation flash before nav-back.
-- History: recent switches as rows with member badges (truncated past 3),
-  tap any past switch to "switch back" to that configuration.
-- Theme: warm amber primary, deep neutral surface, AMOLED-friendly black
-  background, scale tuned for arm's-length glanceability.
-- All screens have loading and error states with retry.
-- `@Preview`s for round-large and round-small Wear devices.
-- Unit tests covering the repository and the `RetrofitPluralKitClient`
-  DTO↔domain mapping (incl. 204 handling and orphan-member resolution).
+On your phone, open **Share with friends**, choose **Who may be named**, then
+add friends in one of two ways.
 
-## Build order
+**Private (encrypted)**, recommended. Only your friend can read the
+notifications.
 
-1. ~~Project skeleton + mock data~~
-2. ~~UI polish on mocks~~
-3. ~~Hand-rolled `RetrofitPluralKitClient` + tests~~
-4. ~~Companion app: token entry → Wearable Data Layer → encrypted storage on
-   watch, with sign-out from either side. Watch on the production client.~~
-5. Real-user testing with plural folks. ← we are here
-6. ~~Complication for current fronter~~ — plus a launcher complication.
-7. ~~Tile showing the current fronter~~. Quick-switch from the tile itself is still open.
-8. Pre-launch: privacy policy, Data Safety form, store listing, Play Store
-   internal testing track.
-9. Friend notifications (`docs/notifications-design.md`): end-to-end
-   encrypted switch notifications to friends, or plain ntfy messages. Sending
-   from the watch, receiving in the phone app, and the web receiver
-   (`web-receiver/`, for iPhone and desktop) are built, and so is an optional
-   relay (`relay/`) that also catches switches made in Discord or elsewhere.
+1. Tap **Invite a friend** and have them scan the QR code, or send them the
+   link.
+2. They open it in a browser, which works on iPhones and computers too, or
+   paste it into **Following** in their own PluralWare.
+3. They send you back a **follow code**. Paste it under **Add a friend
+   (private)**.
 
-## API client
+**Simple (ntfy)**, for friends who already use the
+[ntfy](https://ntfy.sh) app. You enter an ntfy server and send your friend
+the topic to subscribe to. Whoever runs that ntfy server can read the
+messages.
 
-`me.pluralware.shared.api.PluralKitClient` is the only thing the app code
-should depend on. Implementations:
+By default, friends hear about switches you make **on your watch**. To
+include switches made in Discord, on the dashboard or in other apps, you can
+host a small [relay](relay/README.md) and connect it under **Share with
+friends → Relay**. That takes some technical setup.
 
-- **`RetrofitPluralKitClient`** — production. Construct via
-  `PluralKitClientFactory.create(token, appVersion)`. Talks to `https://api.pluralkit.me/v2/`.
-- **`MockPluralKitClient`** — in-memory fake with injectable latency. Used
-  by previews and ViewModel tests.
+## Following friends
 
-Notable client behaviours:
+**On Android**: open **Following** in PluralWare and paste your friend's
+invite. You need a push app to receive notifications; the
+[ntfy](https://ntfy.sh) app works. PluralWare gives you a follow code to
+send back to your friend.
 
-- `getCurrentFronters` returns `null` when PluralKit replies 204 (system with
-  no registered switches) — that's a documented success state, not an error.
-- `getRecentSwitches` resolves the member-ID list PluralKit returns against
-  the member list in one call; an orphaned ID (deleted member) is dropped
-  rather than rendered broken.
-- The `Authorization` header carries the raw token, with no `Bearer` prefix —
-  that's PluralKit's documented format.
-- `User-Agent` is `PluralWare/<version> (+https://github.com/mishan/pluralware)`
-  — PluralKit asks consumers to be contactable.
-- Every non-success response is a `PluralKitHttpException`, whichever endpoint
-  it came from. A 401 means the token was revoked or regenerated: the watch
-  stops showing stale fronters and offers a sign-out. A 429 pauses the home
-  screen's polling for the server's `Retry-After` (a minute if it doesn't say).
+**On iPhone or a computer**: open the invite link in your browser and follow
+the steps. On an iPhone or iPad (iOS 16.4 or later), add the page to your
+Home Screen first, as the page explains; only Home Screen web apps can
+receive notifications.
 
-## Design notes
+## Privacy
 
-- **Member colour as identity stripe**: a 4dp-wide vertical stripe on the
-  leading edge of each member chip. Keeps the label on a neutral surface
-  so it stays legible across any colour PluralKit returns.
-- **Relative time, not absolute**: "3h ago" beats "11:42 AM" on a watch.
-  Past a week we show "Nw ago" and stop — for older history a user will
-  reach for the dashboard.
-- **No font import yet**: legibility on tiny screens is hard-won. Using the
-  system default until we have a concrete reason to change.
-- **Skipping "current" in the history list**: the most recent switch is the
-  home screen's job. Showing it again on the history screen wastes space.
+- Your PluralKit token is stored encrypted on your phone and watch. It goes
+  from your phone to your watch and to PluralKit, and nowhere else. There
+  are no accounts, ads or analytics, and nothing is sent to the developers.
+- Private notifications are end-to-end encrypted. The push service that
+  delivers them can't read them.
+- Simple (ntfy) notifications can be read by whoever runs the ntfy server.
+- A relay, if you host one, holds your friends' follow codes and the names
+  of the members you chose to share. It never holds your PluralKit token.
+- Sharing tells friends who's fronting even if your front is private in
+  PluralKit. Only the friends you add hear anything.
 
-## Notes
+## For developers
 
-- `applicationId = "me.pluralware"` is set on `:wear` — that's the Play
-  Store identity. Don't change post-publish.
-- Run `./gradlew :shared:test` after touching the client to keep the
-  DTO mapping honest.
+Building, the code layout and design notes are in
+[docs/development.md](docs/development.md).
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE)
