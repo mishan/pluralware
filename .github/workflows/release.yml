@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a vX.Y.Z tag builds both apps, signs them with the release key and
 # publishes a GitHub Release. Obtainium follows these releases for the phone
-# app. docs/releasing.md covers the key, the secrets and cutting a release.
+# app. It needs the RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD and
+# RELEASE_KEY_ALIAS repository secrets.
 on:
   push:
     tags: ['v*']
