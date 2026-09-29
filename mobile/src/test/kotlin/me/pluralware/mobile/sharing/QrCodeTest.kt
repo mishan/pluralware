@@ -1,6 +1,7 @@
 package me.pluralware.mobile.sharing
 
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
@@ -28,6 +29,11 @@ class QrCodeTest {
         }
         val bitmap = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(side, side, pixels)))
 
-        assertEquals(link, QRCodeReader().decode(bitmap).text)
+        // PURE_BARCODE reads the modules straight off the clean render. Without it,
+        // ZXing's finder-pattern detector misses about 1 in 60 of these codes (the
+        // key is random, so the pattern changes every run), although the codes
+        // themselves are valid. The check here is on the encoding, not the detector.
+        val hints = mapOf(DecodeHintType.PURE_BARCODE to true)
+        assertEquals(link, QRCodeReader().decode(bitmap, hints).text)
     }
 }

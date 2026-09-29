@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "me.pluralware.shared"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // Lowest of the consuming apps (mobile is API 26). Watch app pins its own

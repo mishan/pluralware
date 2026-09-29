@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,9 @@ class MainActivity : ComponentActivity() {
     private var screen by mutableStateOf(SCREEN_HOME)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 15+ draws behind the system bars regardless; this keeps their
+        // icons legible on older versions too. Each screen's Scaffold pads for them.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         screen = savedInstanceState?.getString(EXTRA_SCREEN) ?: intent.screen() ?: SCREEN_HOME
         val tokenStore = EncryptedTokenStore.get(applicationContext)

@@ -14,14 +14,14 @@ plugins {
 
 android {
     namespace = "me.pluralware.wear"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "me.pluralware"
         minSdk = 30 // Wear OS 3 (API 30) per project decision.
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        targetSdk = 36
+        versionCode = rootProject.extra["wearVersionCode"] as Int
+        versionName = rootProject.extra["appVersionName"] as String
         // BENCHMARK is off in production builds. The baselineprofile plugin
         // generates a `nonMinifiedRelease` variant that the profile producer
         // runs against; we flip BENCHMARK on for just that variant below so
@@ -30,8 +30,23 @@ android {
         buildConfigField("boolean", "BENCHMARK", "false")
     }
 
+    // Release signing comes from PLURALWARE_KEYSTORE (an absolute path),
+    // PLURALWARE_KEYSTORE_PASSWORD and PLURALWARE_KEY_ALIAS. Both apps
+    // must use the same key, or the Data Layer won't connect them. Without it,
+    // release builds come out unsigned instead of failing.
+    val keystore = providers.environmentVariable("PLURALWARE_KEYSTORE").orNull
+    if (keystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(keystore)
+            storePassword = providers.environmentVariable("PLURALWARE_KEYSTORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("PLURALWARE_KEY_ALIAS").get()
+            keyPassword = storePassword
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
