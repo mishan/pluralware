@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.SharingHandoff
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.repository.EncryptedTokenStore
@@ -24,6 +25,9 @@ import me.pluralware.wear.complication.FronterSurfaces
  *    DataItem is deleted, like the token.
  *  - app settings ([SettingsHandoff.PATH]) — persisted and *kept* (latest-wins
  *    state the watch should retain across syncs and reboots).
+ *  - the phone's current switch ([SwitchSync.PATH]) — handed to the open app,
+ *    if any, and used to refresh the complication and tile. Kept: it's the
+ *    phone's latest state, and holds no names or secrets.
  *
  * Wear OS binds to this service whenever a relevant DataItem changes. The
  * callback runs on a worker thread, so blocking I/O via [runBlocking] is fine.
@@ -40,7 +44,10 @@ class WatchDataListenerService : WearableListenerService() {
         val tokenItems = changed.filter { (uri, _) -> uri.path == TokenHandoff.PATH }
         val settingsItems = changed.filter { (uri, _) -> uri.path == SettingsHandoff.PATH }
         val sharingItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.PATH }
-        if (tokenItems.isEmpty() && settingsItems.isEmpty() && sharingItems.isEmpty()) return
+        val switchItems = changed.filter { (uri, _) -> uri.path == SwitchSync.PATH }
+        if (tokenItems.isEmpty() && settingsItems.isEmpty() && sharingItems.isEmpty() && switchItems.isEmpty()) {
+            return
+        }
 
         runBlocking {
             if (tokenItems.isNotEmpty()) {
@@ -72,6 +79,13 @@ class WatchDataListenerService : WearableListenerService() {
                     EncryptedSharingStore.get(applicationContext).set(it)
                 }
                 sharingItems.forEach { (uri, _) -> runCatching { dataClient.deleteDataItems(uri).await() } }
+            }
+            if (switchItems.isNotEmpty()) {
+                val items = switchItems.map { (uri, item) -> uri.host to item.dataMap }
+                SwitchSync.fromOtherDevice(applicationContext, items).forEach { notice ->
+                    SwitchSync.deliver(notice)
+                    FronterSurfaces.onRemoteSwitch(applicationContext, notice)
+                }
             }
             if (settingsItems.isNotEmpty()) {
                 // Latest-wins: apply the most recent settings item; keep the DataItem.

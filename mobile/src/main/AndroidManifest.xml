@@ -25,6 +25,24 @@
         </activity>
 
         <!--
+            Receives the watch's current switch over the Wearable Data Layer, so
+            an open app follows switches made on the watch. Filtered by path;
+            `exported="true"` is required for the Wear framework to bind to it.
+            Never bound on a phone without Wear OS.
+        -->
+        <service
+            android:name=".watch.PhoneDataListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/switch" />
+            </intent-filter>
+        </service>
+
+        <!--
             Receives pushes for systems this person follows, via whichever
             UnifiedPush distributor they use (e.g. the ntfy app). Only the
             connector library, inside this app, binds to it.

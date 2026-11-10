@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.preview.PreviewData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,5 +93,27 @@ class WatchLinkTest {
         link.check()
 
         assertEquals(WatchState.Sent("Pixel Watch"), link.state.value)
+    }
+
+    @Test
+    fun `sharing a switch without Wear OS tries once`() = runTest(UnconfinedTestDispatcher()) {
+        var tries = 0
+        val link = WatchLink(
+            scope = backgroundScope,
+            connectedWatches = noWear,
+            pushToken = {},
+            pushSettings = {},
+            pushSignOut = {},
+            pushSwitch = { _, _ ->
+                tries++
+                throw ApiException(Status(CommonStatusCodes.API_NOT_CONNECTED))
+            },
+        )
+
+        link.shareSwitch(PreviewData.currentSwitch, token)
+        link.shareSwitch(PreviewData.currentSwitch, token)
+
+        assertEquals(1, tries)
+        assertEquals(WatchState.Unsupported, link.state.value)
     }
 }

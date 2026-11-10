@@ -58,16 +58,17 @@ class FrontersViewModel(
     init {
         load()
         // Picker → home: when the picker registers a new switch, the repo
-        // pushes the new value into currentFronters. We watch for *uuid*
-        // changes (not value changes) to avoid re-loading on our own writes,
-        // and only react once initial content has settled so we don't race
-        // with the inflight load.
+        // pushes the new value into currentFronters. We watch for a different
+        // switch (uuid, or start time: a moved switch keeps its uuid) rather
+        // than any new value, to avoid re-loading on our own writes, and only
+        // react once initial content has settled so we don't race with the
+        // inflight load.
         repository.currentFronters
             .onEach { incoming ->
                 val current = _state.value
-                if (current is UiState.Content &&
-                    incoming?.uuid != current.value.switch?.uuid) {
-                    refresh()
+                if (current is UiState.Content) {
+                    val shown = current.value.switch
+                    if (incoming?.uuid != shown?.uuid || incoming?.timestamp != shown?.timestamp) refresh()
                 }
             }
             .launchIn(viewModelScope)

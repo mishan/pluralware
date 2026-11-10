@@ -1,5 +1,6 @@
 package me.pluralware.shared.api
 
+import java.security.MessageDigest
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
@@ -48,4 +49,13 @@ interface PluralKitClient {
 @JvmInline
 value class PluralKitToken(val raw: String) {
     init { require(raw.isNotBlank()) { "PluralKit token must not be blank" } }
+
+    /**
+     * Names the token without revealing it: a truncated SHA-256. Caches and
+     * sync notices record it, so data from one system is never taken for
+     * another's.
+     */
+    val fingerprint: String
+        get() = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
+            .take(16).joinToString("") { "%02x".format(it) }
 }

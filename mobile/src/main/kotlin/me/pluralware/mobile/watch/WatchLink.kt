@@ -15,7 +15,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SettingsHandoff
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.handoff.TokenHandoff
+import me.pluralware.shared.model.Switch
 import me.pluralware.shared.settings.SettingsStore
 
 /** What the phone knows about a watch, for the settings screen. */
@@ -55,6 +57,7 @@ class WatchLink(
     private val pushToken: suspend (PluralKitToken) -> Unit,
     private val pushSettings: suspend () -> Unit,
     private val pushSignOut: suspend () -> Unit,
+    private val pushSwitch: suspend (Switch, PluralKitToken) -> Unit = { _, _ -> },
 ) {
     private val _state = MutableStateFlow<WatchState>(WatchState.Checking)
     val state: StateFlow<WatchState> = _state.asStateFlow()
@@ -112,6 +115,24 @@ class WatchLink(
         }
     }
 
+    /**
+     * Tells a watch about the phone's current switch ([SwitchSync]). Tries
+     * once on a phone without Wear OS, then stays quiet. Throws otherwise, for
+     * [SwitchSync.keepInSync] to ignore.
+     */
+    suspend fun shareSwitch(switch: Switch, token: PluralKitToken) {
+        if (_state.value == WatchState.Unsupported) return
+        try {
+            pushSwitch(switch, token)
+        } catch (e: Exception) {
+            if (e !is CancellationException && e.isWearUnsupported()) {
+                _state.value = WatchState.Unsupported
+                return
+            }
+            throw e
+        }
+    }
+
     /** Pushes changed settings; best-effort, and silent without a watch. */
     fun settingsChanged() {
         scope.launch { runCatching { pushSettings() } }
@@ -155,6 +176,7 @@ class WatchLink(
                 pushToken = { TokenHandoff.push(appContext, it) },
                 pushSettings = { SettingsHandoff.push(appContext, settingsStore.getSettings()) },
                 pushSignOut = { TokenHandoff.pushSignOut(appContext) },
+                pushSwitch = { switch, token -> SwitchSync.push(appContext, switch, token) },
             )
         }
     }

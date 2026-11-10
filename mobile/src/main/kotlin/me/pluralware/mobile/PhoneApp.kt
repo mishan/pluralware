@@ -8,9 +8,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraphBuilder
@@ -29,6 +32,7 @@ import me.pluralware.mobile.ui.SettingsViewModel
 import me.pluralware.mobile.ui.screens.FrontersScreen
 import me.pluralware.mobile.ui.screens.HistoryScreen
 import me.pluralware.mobile.ui.screens.PickerScreen
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.session.Session
 import me.pluralware.shared.session.SessionHolder
 
@@ -71,6 +75,17 @@ fun PhoneApp(graph: AppGraph, requestedRoute: String?, onRequestHandled: () -> U
             SideEffect { signedOut.reset() }
             session = sessions.sessionFor(current) { graph.newRepository(current) }
             owner = session
+        }
+        if (session != null) {
+            // While the app is showing, keep a watch on the same switch, both ways.
+            val lifecycleOwner = LocalLifecycleOwner.current
+            LaunchedEffect(session, lifecycleOwner) {
+                lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
+                        graph.watchLink.shareSwitch(switch, session.token)
+                    })
+                }
+            }
         }
         CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             val nav = rememberNavController()
