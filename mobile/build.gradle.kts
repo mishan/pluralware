@@ -53,6 +53,9 @@ android {
         buildConfig = true
     }
 
+    // Robolectric UI tests need the app's resources (strings, themes).
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -96,4 +99,12 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockk)
     testImplementation(libs.okhttp.mockwebserver)
+
+    // UI tests (src/testDebug): the real screens, rendered on the JVM by
+    // Robolectric. Debug only, since they need the test activity that
+    // ui-test-manifest adds to the debug manifest.
+    testDebugImplementation(platform(libs.androidx.compose.bom))
+    testDebugImplementation(libs.robolectric)
+    testDebugImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

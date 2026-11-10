@@ -116,4 +116,91 @@ class WatchLinkTest {
         assertEquals(1, tries)
         assertEquals(WatchState.Unsupported, link.state.value)
     }
+
+    @Test
+    fun `a failed send says why and can be retried`() = runTest(UnconfinedTestDispatcher()) {
+        var fail = true
+        val link = WatchLink(
+            scope = backgroundScope,
+            connectedWatches = { listOf("Pixel Watch") },
+            pushToken = { if (fail) error("Data Layer unavailable") else pushed += it },
+            pushSettings = {},
+            pushSignOut = {},
+        )
+
+        link.send(token)
+        assertEquals(WatchState.Failed("Data Layer unavailable"), link.state.value)
+
+        fail = false
+        link.send(token)
+        assertEquals(WatchState.Sent("Pixel Watch"), link.state.value)
+    }
+
+    @Test
+    fun `a watch lookup that fails isn't mistaken for no Wear OS`() = runTest(UnconfinedTestDispatcher()) {
+        val link = link { error("Binder died") }
+
+        link.check()
+
+        assertEquals(WatchState.Failed("Binder died"), link.state.value)
+    }
+
+    @Test
+    fun `settings go before the token, and their failure doesn't stop it`() = runTest(UnconfinedTestDispatcher()) {
+        val order = mutableListOf<String>()
+        val link = WatchLink(
+            scope = backgroundScope,
+            connectedWatches = { listOf("Pixel Watch") },
+            pushToken = { order += "token" },
+            pushSettings = {
+                order += "settings"
+                error("settings failed")
+            },
+            pushSignOut = {},
+        )
+
+        link.send(token)
+
+        assertEquals(listOf("settings", "token"), order)
+        assertEquals(WatchState.Sent("Pixel Watch"), link.state.value)
+    }
+
+    @Test
+    fun `signing out tells the watch and starts over`() = runTest(UnconfinedTestDispatcher()) {
+        var signedOut = 0
+        val link = WatchLink(
+            scope = backgroundScope,
+            connectedWatches = { listOf("Pixel Watch") },
+            pushToken = {},
+            pushSettings = {},
+            pushSignOut = { signedOut++ },
+        )
+        link.send(token)
+
+        link.signOut()
+
+        assertEquals(1, signedOut)
+        assertEquals(WatchState.Checking, link.state.value)
+    }
+
+    @Test
+    fun `a switch is shared with a watch, and a failure is left to the caller`() = runTest(UnconfinedTestDispatcher()) {
+        val shared = mutableListOf<String>()
+        var fail = false
+        val link = WatchLink(
+            scope = backgroundScope,
+            connectedWatches = { listOf("Pixel Watch") },
+            pushToken = {},
+            pushSettings = {},
+            pushSignOut = {},
+            pushSwitch = { switch, _ -> if (fail) error("out of reach") else shared += switch.uuid },
+        )
+
+        link.shareSwitch(PreviewData.currentSwitch, token)
+        assertEquals(listOf(PreviewData.currentSwitch.uuid), shared)
+
+        fail = true
+        val thrown = runCatching { link.shareSwitch(PreviewData.currentSwitch, token) }.exceptionOrNull()
+        assertEquals("out of reach", thrown?.message)
+    }
 }
