@@ -1,4 +1,4 @@
-package me.pluralware.wear
+package me.pluralware.shared.session
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider

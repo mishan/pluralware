@@ -64,9 +64,9 @@ class RelayTest {
 
     @Test
     fun `the watch sends unless the relay has taken over`() {
-        assertTrue(!sharing.watchSends)
-        assertTrue(sharing.copy(relay = sharing.relay!!.copy(enabled = false)).watchSends)
-        assertTrue(!SharingConfig().watchSends) // nobody to tell
+        assertTrue(!sharing.appSends)
+        assertTrue(sharing.copy(relay = sharing.relay!!.copy(enabled = false)).appSends)
+        assertTrue(!SharingConfig().appSends) // nobody to tell
     }
 
     @Test
@@ -77,7 +77,7 @@ class RelayTest {
         assertEquals("", onWatch.url)
         assertEquals("", onWatch.webhookPath)
         assertNull(onWatch.signingToken)
-        assertTrue(!sharing.forWatch().watchSends)
+        assertTrue(!sharing.forWatch().appSends)
         assertEquals(sharing.friends, sharing.forWatch().friends)
     }
 

@@ -1,10 +1,10 @@
-package me.pluralware.wear.ui
+package me.pluralware.shared.ui
 
 import java.time.Duration
 import java.time.Instant
 
 /**
- * Pluralkit's switch timestamps benefit from a glanceable relative format on watch screens.
+ * PluralKit's switch timestamps, in a glanceable relative format.
  *
  * - <1 min  → "just now"
  * - <1 hour → "12m ago"
@@ -12,8 +12,8 @@ import java.time.Instant
  * - <1 week → "2d ago"
  * - else    → "3w ago"
  *
- * Months and years aren't useful contexts for fronting history on a watch;
- * if a user wants to look that far back they'll use the dashboard.
+ * Months and years aren't useful contexts for recent fronting history; if a
+ * user wants to look that far back they'll use the dashboard.
  */
 fun Instant.relativeTo(now: Instant = Instant.now()): String {
     val d = Duration.between(this, now)

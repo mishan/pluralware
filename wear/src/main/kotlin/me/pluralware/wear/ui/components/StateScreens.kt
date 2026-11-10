@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import me.pluralware.wear.ui.state.UiState
+import me.pluralware.shared.ui.state.UiState
 
 @Composable
 fun LoadingScreen() {

@@ -104,7 +104,7 @@ class SharingViewModelTest {
         eventually("the error") { vm.state.value.relayError != null }
 
         assertFalse(store.configFlow.value.relaySends)
-        assertTrue(store.configFlow.value.watchSends)
+        assertTrue(store.configFlow.value.appSends)
     }
 
     @Test
@@ -116,7 +116,7 @@ class SharingViewModelTest {
         eventually("enabled") { store.configFlow.value.relaySends }
 
         assertTrue(puts.last().contains("\"enabled\":true"))
-        assertFalse(pushedToWatch.last().watchSends)
+        assertFalse(pushedToWatch.last().appSends)
     }
 
     @Test

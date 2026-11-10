@@ -35,9 +35,9 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
 import me.pluralware.wear.ui.components.MemberChip
-import me.pluralware.wear.ui.state.PickerState
-import me.pluralware.wear.ui.state.UiState
-import me.pluralware.wear.ui.viewmodel.PickerViewModel
+import me.pluralware.shared.ui.state.PickerState
+import me.pluralware.shared.ui.state.UiState
+import me.pluralware.shared.ui.viewmodel.PickerViewModel
 
 @Composable
 fun MemberPickerScreen(

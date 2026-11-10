@@ -48,12 +48,12 @@ import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
 import me.pluralware.wear.ui.components.MemberChip
-import me.pluralware.wear.ui.elapsedSince
-import me.pluralware.wear.ui.relativeTo
-import me.pluralware.wear.ui.state.FronterStreak
-import me.pluralware.wear.ui.state.FrontersState
-import me.pluralware.wear.ui.state.UiState
-import me.pluralware.wear.ui.viewmodel.FrontersViewModel
+import me.pluralware.shared.ui.elapsedSince
+import me.pluralware.shared.ui.relativeTo
+import me.pluralware.shared.ui.state.FronterStreak
+import me.pluralware.shared.ui.state.FrontersState
+import me.pluralware.shared.ui.state.UiState
+import me.pluralware.shared.ui.viewmodel.FrontersViewModel
 
 @Composable
 fun FrontersScreen(

@@ -31,15 +31,18 @@ import kotlinx.coroutines.launch
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
+import me.pluralware.shared.handoff.SharingHandoff
 import me.pluralware.shared.notify.EncryptedSharingStore
+import me.pluralware.shared.notify.SwitchAnnouncer
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.repository.InMemoryTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.TokenStore
+import me.pluralware.shared.session.Session
+import me.pluralware.shared.session.SessionHolder
 import me.pluralware.shared.settings.LocalSettingsStore
 import me.pluralware.shared.settings.SettingsStore
 import me.pluralware.wear.complication.FronterSurfaces
-import me.pluralware.wear.sharing.WatchSharing
 import me.pluralware.wear.ui.PluralWareApp
 
 class MainActivity : ComponentActivity() {
@@ -100,10 +103,16 @@ private fun newRepository(token: PluralKitToken, appContext: Context): PluralKit
         )
     }
     // Friends hear about each switch this repository registers (never ones it
-    // only observes); see WatchSharing.
+    // only observes); see SwitchAnnouncer.
     return PluralKitRepository(client) { switch ->
-        if (!BuildConfig.BENCHMARK) WatchSharing.onSwitchRegistered(appContext, switch)
+        if (!BuildConfig.BENCHMARK) announcer.onSwitchRegistered(appContext, switch)
     }
+}
+
+// Process-wide, like the sends it runs. Friends who stopped receiving are
+// reported to the phone, so its sharing screen can say who.
+private val announcer = SwitchAnnouncer(BuildConfig.VERSION_NAME) { context, gone ->
+    SharingHandoff.pushStatus(context, gone)
 }
 
 @Composable
