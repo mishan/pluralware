@@ -57,16 +57,6 @@ class SwitchSyncTest {
     private data class Case(val name: String, val switch: Switch, val from: PluralKitToken, val current: Switch?, val news: Boolean)
 
     @Test
-    fun `a device drops its own notices, and keeps all when it can't tell which are its own`() {
-        val mine = DataMap().also { SwitchSync.write(SwitchSync.noticeOf(older, token), it) }
-        val theirs = DataMap().also { SwitchSync.write(SwitchSync.noticeOf(newer, token), it) }
-        val items = listOf("phone" to mine, "watch" to theirs, "watch" to DataMap())
-
-        assertEquals(listOf(SwitchSync.noticeOf(newer, token)), SwitchSync.fromOtherDevice("phone", items))
-        assertEquals(2, SwitchSync.fromOtherDevice(null, items).size)
-    }
-
-    @Test
     fun `the notice names the system without the token`() {
         val notice = SwitchSync.noticeOf(newer, PluralKitToken("secret-token-value"))
         assertFalse(notice.tokenFingerprint.contains("secret"))

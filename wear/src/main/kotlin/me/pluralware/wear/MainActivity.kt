@@ -113,8 +113,8 @@ private fun newRepository(token: PluralKitToken, appContext: Context): PluralKit
     }
 }
 
-// Process-wide, like the sends it runs. Friends who stopped receiving are
-// reported to the phone, so its sharing screen can say who.
+// Process-wide, like the sends it runs. Friends this watch finds gone are
+// reported to the phone, which skips them too and shows who stopped receiving.
 private val announcer = SwitchAnnouncer(BuildConfig.VERSION_NAME) { context, gone ->
     SharingHandoff.pushStatus(context, gone)
 }

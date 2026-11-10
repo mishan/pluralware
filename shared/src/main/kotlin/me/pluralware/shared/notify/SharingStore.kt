@@ -12,15 +12,21 @@ import kotlinx.coroutines.withContext
 import me.pluralware.shared.repository.EncryptedPrefs
 
 /**
- * Where a device keeps its [SharingConfig], plus — on the watch — the friends
- * whose push subscriptions have gone away ([goneFlow]: friend id → when it was
- * last found gone, epoch millis). Those are the watch's own findings: they
- * survive the phone's next config push, except for friends the phone has since
- * removed. [GoneFriends] decides when to try one again.
+ * Where a device keeps its [SharingConfig], and the friends whose push
+ * subscriptions have gone away (friend id → when found gone, epoch millis).
+ *
+ * [goneFlow] holds this device's own findings, from its own sends.
+ * [peerGoneFlow] holds the other device's, as it last reported them
+ * ([setPeerGone]). They're kept apart so a device only ever reports its own:
+ * nothing it learned from the other comes back to it, and a friend the other
+ * device clears stays cleared. Both survive the phone's next config push,
+ * except for friends the phone has since removed. [GoneFriends] decides when
+ * to try one again, across both.
  */
 interface SharingStore {
     val configFlow: StateFlow<SharingConfig>
     val goneFlow: StateFlow<Map<String, Long>>
+    val peerGoneFlow: StateFlow<Map<String, Long>>
 
     /**
      * Relays the phone let go of (removed, replaced, or disconnected from) but
@@ -33,6 +39,9 @@ interface SharingStore {
     suspend fun set(config: SharingConfig)
     suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long)
     suspend fun clearGone(friendIds: Set<String>)
+
+    /** Replaces the other device's gone friends with what it reported now. */
+    suspend fun setPeerGone(gone: Map<String, Long>)
     suspend fun addOrphan(relay: RelaySettings)
     suspend fun removeOrphan(relay: RelaySettings)
     suspend fun clear()
@@ -50,6 +59,10 @@ object GoneFriends {
     fun toSkip(gone: Map<String, Long>, nowEpochMillis: Long): Set<String> =
         gone.filterValues { nowEpochMillis - it in 0 until RETRY_AFTER_MILLIS }.keys
 
+    /** Both devices' marks, keeping the later one where both marked a friend. */
+    fun merged(own: Map<String, Long>, peer: Map<String, Long>): Map<String, Long> =
+        own + peer.mapValues { (id, at) -> own[id]?.let { maxOf(it, at) } ?: at }
+
     /** Only marks for friends still in [config]; shared by both stores. */
     internal fun retain(gone: Map<String, Long>, config: SharingConfig): Map<String, Long> {
         val ids = config.friends.mapTo(HashSet()) { it.id }
@@ -60,10 +73,15 @@ object GoneFriends {
 class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingStore {
     private val _config = MutableStateFlow(initial)
     private val _gone = MutableStateFlow(emptyMap<String, Long>())
+    private val _peerGone = MutableStateFlow(emptyMap<String, Long>())
     private val _orphans = MutableStateFlow(emptyList<RelaySettings>())
     override val configFlow: StateFlow<SharingConfig> = _config.asStateFlow()
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
+    override val peerGoneFlow: StateFlow<Map<String, Long>> = _peerGone.asStateFlow()
     override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
+    override suspend fun setPeerGone(gone: Map<String, Long>) {
+        _peerGone.value = GoneFriends.retain(gone, _config.value)
+    }
     override suspend fun addOrphan(relay: RelaySettings) {
         if (relay !in _orphans.value) _orphans.value = _orphans.value + relay
     }
@@ -71,6 +89,7 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
     override suspend fun set(config: SharingConfig) {
         _config.value = config
         _gone.value = GoneFriends.retain(_gone.value, config)
+        _peerGone.value = GoneFriends.retain(_peerGone.value, config)
     }
     override suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long) {
         _gone.value = _gone.value + friendIds.associateWith { atEpochMillis }
@@ -80,6 +99,7 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
         // Like the real store: orphaned relays outlive a sign-out.
         _config.value = SharingConfig()
         _gone.value = emptyMap()
+        _peerGone.value = emptyMap()
     }
 }
 
@@ -90,10 +110,12 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
     private val prefs: SharedPreferences = EncryptedPrefs.open(appContext, PREFS_FILE)
 
     private val _config = MutableStateFlow(readConfig())
-    private val _gone = MutableStateFlow(readGone())
+    private val _gone = MutableStateFlow(readGone(KEY_GONE))
+    private val _peerGone = MutableStateFlow(readGone(KEY_PEER_GONE))
     private val _orphans = MutableStateFlow(readOrphans())
     override val configFlow: StateFlow<SharingConfig> = _config.asStateFlow()
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
+    override val peerGoneFlow: StateFlow<Map<String, Long>> = _peerGone.asStateFlow()
     override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
 
     override suspend fun addOrphan(relay: RelaySettings) =
@@ -113,9 +135,15 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
 
     override suspend fun set(config: SharingConfig) = write {
         val gone = GoneFriends.retain(_gone.value, config)
-        prefs.edit().putString(KEY_CONFIG, config.toJson()).putStringSet(KEY_GONE, gone.encoded()).commit()
+        val peerGone = GoneFriends.retain(_peerGone.value, config)
+        prefs.edit()
+            .putString(KEY_CONFIG, config.toJson())
+            .putStringSet(KEY_GONE, gone.encoded())
+            .putStringSet(KEY_PEER_GONE, peerGone.encoded())
+            .commit()
         _config.value = config
         _gone.value = gone
+        _peerGone.value = peerGone
     }
 
     override suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long) =
@@ -128,20 +156,22 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
         _gone.value = gone
     }
 
-    /** Stored as "id@millis" strings: a string set is what SharedPreferences offers. */
-    private fun Map<String, Long>.encoded(): Set<String> = mapTo(HashSet()) { (id, at) -> "$id@$at" }
+    override suspend fun setPeerGone(gone: Map<String, Long>) = write {
+        val kept = GoneFriends.retain(gone, _config.value)
+        prefs.edit().putStringSet(KEY_PEER_GONE, kept.encoded()).commit()
+        _peerGone.value = kept
+    }
 
-    private fun readGone(): Map<String, Long> =
-        prefs.getStringSet(KEY_GONE, null).orEmpty().mapNotNull { entry ->
-            val at = entry.substringAfterLast('@', "").toLongOrNull() ?: return@mapNotNull null
-            entry.substringBeforeLast('@') to at
-        }.toMap()
+    private fun Map<String, Long>.encoded(): Set<String> = GoneMarks.encode(this).toHashSet()
+
+    private fun readGone(key: String): Map<String, Long> = GoneMarks.decode(prefs.getStringSet(key, null).orEmpty())
 
     override suspend fun clear() = write {
         // Orphaned relays outlive a sign-out: they're exactly what it leaves behind.
-        prefs.edit().remove(KEY_CONFIG).remove(KEY_GONE).commit()
+        prefs.edit().remove(KEY_CONFIG).remove(KEY_GONE).remove(KEY_PEER_GONE).commit()
         _config.value = SharingConfig()
         _gone.value = emptyMap()
+        _peerGone.value = emptyMap()
     }
 
     // Writes use commit(), not apply(): they already run on IO, and the watch
@@ -159,6 +189,7 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
         private const val PREFS_FILE = "pluralware_sharing"
         private const val KEY_CONFIG = "config"
         private const val KEY_GONE = "gone_friends"
+        private const val KEY_PEER_GONE = "peer_gone_friends"
         private const val KEY_ORPHANS = "orphaned_relays"
         private val orphansJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
         private val orphansSerializer = kotlinx.serialization.builtins.ListSerializer(RelaySettings.serializer())
@@ -170,4 +201,19 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
                 instance ?: EncryptedSharingStore(context.applicationContext).also { instance = it }
             }
     }
+}
+
+/**
+ * Gone marks as "id@millis" strings: what SharedPreferences and the Data
+ * Layer both carry easily. Entries that don't parse are dropped.
+ */
+object GoneMarks {
+    fun encode(gone: Map<String, Long>): List<String> = gone.map { (id, at) -> "$id@$at" }
+
+    fun decode(entries: Collection<String>): Map<String, Long> =
+        entries.mapNotNull { entry ->
+            val at = entry.substringAfterLast('@', "").toLongOrNull() ?: return@mapNotNull null
+            val id = entry.substringBeforeLast('@').takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            id to at
+        }.toMap()
 }

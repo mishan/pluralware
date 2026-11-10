@@ -216,8 +216,10 @@ what's built. In short:
   an encrypted store and pushes it to the watch on `/pluralware/sharing`.
 - Each app sends after each switch **it registers**, via `PluralKitRepository`'s
   `onSwitchRegistered` and its own `SwitchAnnouncer`, so no switch goes out twice. It sends either
-  encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends found gone are
-  recorded in each device's `SharingStore`; the watch also reports them to the phone.
+  encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends a device finds gone
+  are recorded in its `SharingStore` and reported to the other device on
+  `/pluralware/sharing-status`, which keeps them apart (`peerGoneFlow`) and skips them too. Each
+  device reports only its own findings, so nothing echoes.
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
   `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
   `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.

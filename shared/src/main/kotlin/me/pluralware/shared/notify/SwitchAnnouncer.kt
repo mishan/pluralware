@@ -20,13 +20,14 @@ import me.pluralware.shared.model.Switch
  * doesn't cancel it, and it never holds up the switch itself. Nothing is queued
  * across restarts — Private mode's TTL covers friends who are offline.
  *
- * [onGoneChanged] hears the new set of friends who stopped receiving, whenever
- * it changes. The watch forwards it to the phone; the phone's sharing screen
- * reads its own store, so it needs nothing.
+ * Friends either device found gone are skipped for a while
+ * ([GoneFriends.toSkip]). [onGoneChanged] hears this device's own gone friends
+ * whenever they change, for reporting to the other device; it never hears the
+ * other's, so nothing echoes.
  */
 class SwitchAnnouncer(
     appVersion: String,
-    private val onGoneChanged: suspend (Context, Set<String>) -> Unit = { _, _ -> },
+    private val onGoneChanged: suspend (Context, Map<String, Long>) -> Unit = { _, _ -> },
 ) {
     // The handler is the last line of defense: SwitchSharer already turns
     // per-friend errors into outcomes, but nothing here may crash the app.
@@ -42,7 +43,7 @@ class SwitchAnnouncer(
         scope.launch {
             val store = EncryptedSharingStore.get(appContext)
             val changed = announce(store, sharer, switch, System.currentTimeMillis())
-            if (changed) runCatching { onGoneChanged(appContext, store.goneFlow.value.keys) }
+            if (changed) runCatching { onGoneChanged(appContext, store.goneFlow.value) }
         }
     }
 
@@ -50,8 +51,9 @@ class SwitchAnnouncer(
         private const val TAG = "SwitchAnnouncer"
 
         /**
-         * Sends [switch] to every friend not recently gone, and records who has
-         * gone or come back. Returns whether the set of gone friends changed.
+         * Sends [switch] to every friend not recently found gone, here or on the
+         * other device, and records who has gone or come back. Records only
+         * this device's findings. Returns whether they changed.
          */
         suspend fun announce(
             store: SharingStore,
@@ -63,7 +65,8 @@ class SwitchAnnouncer(
             // With the relay on, it tells friends about every switch, this one included.
             if (!config.appSends) return false
             val before = store.goneFlow.value
-            val outcomes = sharer.announce(config, switch, skipFriendIds = GoneFriends.toSkip(before, now))
+            val skip = GoneFriends.toSkip(GoneFriends.merged(before, store.peerGoneFlow.value), now)
+            val outcomes = sharer.announce(config, switch, skipFriendIds = skip)
             outcomes.forEach { (_, outcome) ->
                 if (outcome is SendOutcome.Failed) Log.w(TAG, "Couldn't notify a friend: ${outcome.reason}")
             }
@@ -73,7 +76,7 @@ class SwitchAnnouncer(
                 .mapTo(HashSet()) { it.id }.filterTo(HashSet()) { it in before }
             if (gone.isNotEmpty()) store.markGone(gone, now)
             if (back.isNotEmpty()) store.clearGone(back)
-            return store.goneFlow.value.keys != before.keys
+            return store.goneFlow.value != before
         }
     }
 }

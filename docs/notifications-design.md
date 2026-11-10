@@ -462,8 +462,12 @@ Differences from the plan above:
 - Both formats are `pluralware-invite:` / `pluralware-follow:` plus base64url JSON, and the parsers
   find them anywhere in a message or a link.
 - **Gone friends:**
-  - The phone learns about them by reading a status DataItem the watch writes
-    (`/pluralware/sharing-status`) when the sharing screen opens.
+  - Each device that sends writes its own status DataItem (`/pluralware/sharing-status`) with the
+    friends **it** found gone, and when. The other device stores those apart from its own
+    (`SharingStore.peerGoneFlow`) and skips them too, so a friend gone on one device isn't retried
+    from the other. A device only ever reports its own findings, so marks can't echo, and a friend
+    one device clears stays cleared once its next report replaces the last.
+  - The phone's sharing screen shows both devices' marks, and the relay's.
   - A gone mark isn't permanent. The friend is retried once a day (`GoneFriends`), and a delivery
     clears the mark, so one misattributed 404 doesn't mute someone for good.
 - **A changed endpoint is loud.** When a follower's distributor moves them to a new endpoint, their
