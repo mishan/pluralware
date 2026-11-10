@@ -14,7 +14,7 @@ folks now. Bug reports and ideas are welcome in
 
 - See who's fronting and for how long.
 - Change fronters: pick one or more members, or switch out.
-- Browse recent switches, and tap one to switch back to it.
+- Browse recent switches.
 - Add a **complication** showing the current fronter to your watch face, or
   a **tile** you can swipe to.
 

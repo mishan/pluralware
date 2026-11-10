@@ -48,7 +48,6 @@ fun PluralWareApp(
             composable(Routes.HISTORY) {
                 HistoryScreen(
                     repository = repository,
-                    onDone = { navController.popBackStack(Routes.FRONTERS, inclusive = false) },
                     onSignOut = onSignOut,
                 )
             }
