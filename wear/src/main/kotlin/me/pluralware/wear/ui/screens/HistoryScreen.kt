@@ -25,6 +25,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.wear.ui.LocalClock
 import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
@@ -117,7 +118,7 @@ private fun SwitchRow(switch: Switch) {
             }
         }
         Text(
-            text = switch.timestamp.relativeTo(),
+            text = switch.timestamp.relativeTo(LocalClock.current.instant()),
             style = MaterialTheme.typography.caption2,
             color = MaterialTheme.colors.onSurfaceVariant,
         )

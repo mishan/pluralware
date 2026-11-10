@@ -23,20 +23,26 @@ object PreviewData {
 
     val system = SystemInfo("smplx", "uuid-system", "Sample System", "| Sample")
 
-    private val anchor: Instant = Instant.parse("2026-01-15T14:30:00Z")
+    /**
+     * The moment the sample data is "now" at: every switch is timed back from
+     * it. The README's screenshots stop the clock here.
+     */
+    val anchor: Instant = Instant.parse("2026-01-15T14:30:00Z")
 
+    /** Alex and Dani, for two hours; Dani was already fronting with Bea before. */
     val currentSwitch = Switch(
         uuid = "switch-current",
-        timestamp = anchor.minus(45, ChronoUnit.MINUTES),
+        timestamp = anchor.minus(2, ChronoUnit.HOURS),
         members = listOf(members[0], members[3]),
     )
 
-    val switchOut = Switch("switch-out", anchor.minus(2, ChronoUnit.HOURS), emptyList())
+    val switchOut = Switch("switch-out", anchor.minus(1, ChronoUnit.DAYS), emptyList())
 
+    /** Newest first, as PluralKit lists them. */
     val historyRecent: List<Switch> = listOf(
         currentSwitch,
-        Switch("s2", anchor.minus(3, ChronoUnit.HOURS), listOf(members[1])),
-        Switch("s3", anchor.minus(8, ChronoUnit.HOURS), listOf(members[2], members[4])),
+        Switch("s2", anchor.minus(5, ChronoUnit.HOURS), listOf(members[1], members[3])),
+        Switch("s3", anchor.minus(9, ChronoUnit.HOURS), listOf(members[2], members[4])),
         switchOut,
         Switch("s5", anchor.minus(2, ChronoUnit.DAYS), listOf(members[5])),
         Switch("s6", anchor.minus(5, ChronoUnit.DAYS), listOf(members[0])),

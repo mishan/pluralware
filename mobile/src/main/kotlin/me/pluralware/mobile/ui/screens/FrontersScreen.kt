@@ -34,6 +34,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import me.pluralware.mobile.ui.LocalClock
 import me.pluralware.mobile.ui.components.ErrorView
 import me.pluralware.mobile.ui.components.LoadingView
 import me.pluralware.mobile.ui.components.MemberLine
@@ -153,7 +154,7 @@ internal fun FrontersContent(
                             )
                             Text(
                                 text = (if (switch.isSwitchOut) "Switched out " else "Since ") +
-                                    switch.timestamp.relativeTo(),
+                                    switch.timestamp.relativeTo(LocalClock.current.instant()),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -186,7 +187,8 @@ internal fun FrontersContent(
  */
 @Composable
 private fun FronterCard(member: Member, streak: FronterStreak?) {
-    val fronting = streak?.let { "fronting for " + (if (it.truncated) ">" else "") + it.since.elapsedSince() }
+    val now = LocalClock.current.instant()
+    val fronting = streak?.let { "fronting for " + (if (it.truncated) ">" else "") + it.since.elapsedSince(now) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),

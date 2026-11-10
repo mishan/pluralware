@@ -152,4 +152,21 @@ dependencies {
     testDebugImplementation(libs.robolectric)
     testDebugImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // README screenshots (see tools/screenshots.sh).
+    testDebugImplementation(libs.roborazzi)
+    testDebugImplementation(libs.roborazzi.compose)
+}
+
+// README screenshots: `-Pscreenshots=DIR` has the screenshot scenes (in
+// src/testDebug, skipped otherwise) render into DIR. Run them through
+// tools/screenshots.sh, which fixes the clock they show.
+val screenshotsDir = providers.gradleProperty("screenshots").map { rootProject.file(it).absolutePath }
+tasks.withType<Test>().configureEach {
+    screenshotsDir.orNull?.let { dir ->
+        systemProperty("pluralware.screenshots", dir)
+        systemProperty("roborazzi.test.record", "true")
+        // The pictures are the point, and they're written outside the task's outputs.
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+    }
 }
