@@ -2,11 +2,16 @@ package me.pluralware.mobile.sharing
 
 import android.content.Context
 import io.mockk.mockk
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.SystemInfo
@@ -73,8 +78,14 @@ class SharingViewModelTest {
         )
     }
 
+    private val created = mutableListOf<SharingViewModel>()
+
     @After fun tearDown() {
+        // Stop each ViewModel's work and let any relay call in flight finish
+        // before Main goes away; otherwise it resumes into the next test.
+        val jobs = created.map { it.viewModelScope.coroutineContext.job.apply { cancel() } }
         relayServer.shutdown()
+        runBlocking { withTimeout(5_000) { jobs.joinAll() } }
         Dispatchers.resetMain()
     }
 
@@ -86,7 +97,7 @@ class SharingViewModelTest {
         relayClient = RelayClient.create("test"),
         pushToWatch = { pushedToWatch += it },
         readWatchStatus = { emptySet() },
-    )
+    ).also { created += it }
 
     /** The relay calls run on OkHttp's threads; wait for them in real time. */
     private fun eventually(what: String, check: () -> Boolean) {

@@ -35,7 +35,8 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * The phone's side of sharing switches with friends
  * (docs/notifications-design.md). It owns the [SharingConfig]: every change
- * is saved here and pushed to the watch, which does the sending.
+ * is saved here and pushed to the watch. Each app tells friends about the
+ * switches it registers ([me.pluralware.shared.notify.SwitchAnnouncer]).
  */
 class SharingViewModel(
     private val tokenStore: TokenStore,
@@ -53,7 +54,7 @@ class SharingViewModel(
         val loadError: String? = null,
         val system: SystemInfo? = null,
         val members: List<Member> = emptyList(),
-        /** Friends the watch reports as no longer subscribed. */
+        /** Friends this phone, the watch or the relay found no longer subscribed. */
         val goneFriendIds: Set<String> = emptySet(),
         val followCodeError: String? = null,
         /** Set after adding a Simple-mode friend, so the screen can show what to send them. */
@@ -108,7 +109,7 @@ class SharingViewModel(
             }
             _state.update {
                 it.copy(
-                    goneFriendIds = watchGone + relayStatus?.gone.orEmpty(),
+                    goneFriendIds = watchGone + sharingStore.goneFlow.value.keys + relayStatus?.gone.orEmpty(),
                     relayConfigured = relayStatus?.configured == true,
                 )
             }
@@ -206,9 +207,9 @@ class SharingViewModel(
     }
 
     /**
-     * Hands sending to the relay, or back to the watch. Turning it on waits
-     * for the relay to accept the change, and only then tells the watch to
-     * stop; otherwise nobody would send. Turning it off tells the watch first,
+     * Hands sending to the relay, or back to the apps. Turning it on waits
+     * for the relay to accept the change, and only then tells the apps to
+     * stop; otherwise nobody would send. Turning it off tells them first,
      * for the same reason.
      */
     fun setRelayEnabled(enabled: Boolean) {
