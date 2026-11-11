@@ -22,7 +22,9 @@ else
   dir=${1:-$ref}
 fi
 mkdir -p "$dir"
-rm -f "$dir"/*.png
+# Clear out pictures of scenes since removed, but only in the folders this
+# script owns: a DIR given to it may hold other pictures.
+if [ -n "$check" ] || [ "$dir" = "$ref" ]; then rm -f "$dir"/*.png; fi
 
 # Gradle keeps its caches in the usual place, and the toolchain and any
 # proxy come through; everything else in the environment is the session's.
