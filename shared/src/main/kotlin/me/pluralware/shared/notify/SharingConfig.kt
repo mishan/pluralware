@@ -30,11 +30,11 @@ data class SharingConfig(
 ) {
     val isSharing: Boolean get() = friends.isNotEmpty()
 
-    /** The relay sends instead of the watch, so friends never get a switch twice (§7). */
+    /** The relay sends instead of the apps, so friends never get a switch twice (§7). */
     val relaySends: Boolean get() = relay?.enabled == true
 
-    /** Whether the watch tells friends about its switches. */
-    val watchSends: Boolean get() = isSharing && !relaySends
+    /** Whether the app, on the watch or the phone, tells friends about the switches it registers. */
+    val appSends: Boolean get() = isSharing && !relaySends
 
     /**
      * The copy the watch gets: everything it sends with, but of the relay only

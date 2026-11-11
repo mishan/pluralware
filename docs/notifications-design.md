@@ -439,7 +439,8 @@ Where the code lives:
   switch out to every friend. Also the receiving side's `Following` store.
 - `PluralKitRepository`'s `onSwitchRegistered` hook fires only for switches the repository
   registers, which is how "observed switches are never sent" is enforced (and tested).
-- Watch: `WatchSharing` sends from a process-wide scope. `WatchDataListenerService` stores the
+- Watch and phone: each app's `SwitchAnnouncer` sends the switches it registers, from a
+  process-wide scope; the watch reports friends who stopped receiving to the phone. `WatchDataListenerService` stores the
   config the phone pushes, then deletes the DataItem. Either side's sign-out clears it.
 - Phone: **Share with friends** (`sharing/`) and **Following** (`following/`, with
   `FollowPushService` as the UnifiedPush receiver).

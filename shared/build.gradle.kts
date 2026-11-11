@@ -31,6 +31,10 @@ dependencies {
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
 
+    // The screen ViewModels both apps share (ui/viewmodel) are AndroidX
+    // ViewModels, so their type is part of this module's API.
+    api(libs.androidx.lifecycle.viewmodel.ktx)
+
     // Hand-rolled PluralKit v2 HTTP client.
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization.converter)

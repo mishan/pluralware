@@ -23,8 +23,8 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
 
-Unit tests live in `:shared` (client, repository, handoff) and `:wear` (ViewModels, with
-`MainDispatcherRule` standing in for the main dispatcher). They're plain JVM tests (JUnit4 + MockK +
+Unit tests live mostly in `:shared` (client, repository, handoff, and the screen ViewModels, with
+`MainDispatcherRule` standing in for the main dispatcher); `:wear` tests the complication logic. They're plain JVM tests (JUnit4 + MockK +
 Turbine + `kotlinx-coroutines-test`) and need no device. Run `./gradlew test` after touching either.
 
 `local.properties` (git-ignored) must point `sdk.dir` at an Android SDK. Source lives under
@@ -35,10 +35,11 @@ Turbine + `kotlinx-coroutines-test`) and need no device. Run `./gradlew test` af
 Three Gradle modules; dependency versions are centralized in `gradle/libs.versions.toml`.
 
 - **`:shared`** (`com.android.library`, namespace `me.pluralware.shared`, `minSdk 26`) — all
-  domain logic, the PluralKit client, the repository, token storage, and phone↔watch handoff.
+  domain logic, the PluralKit client, the repository, token storage, phone↔watch handoff, and
+  the screens' ViewModels and UI state (`ui/`), which each app renders in its own Compose.
   Consumed by both apps. `minSdk` is the lowest of the consumers (mobile); wear pins its own 30.
 - **`:wear`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 30` for Wear OS 3) —
-  the watch app: Compose-for-Wear UI, ViewModels, the token listener service.
+  the watch app: Compose-for-Wear UI, the token listener service.
 - **`:mobile`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 26`) — phone
   companion: token entry screen + push to watch.
 
@@ -111,7 +112,7 @@ End-to-end pairing flow:
    back to the phone, bounding how long cleartext sits on disk.
 4. Watch `MainActivity` observes `tokenStore.tokenFlow`: `null` → "Pair with phone" screen;
    non-null → `ConnectedApp` inside **`key(token.raw)`**, with a `Session` from the
-   activity-scoped `SessionHolder`: one `PluralKitRepository` per token, plus the `ViewModelStore`
+   activity-scoped `SessionHolder` (both in `:shared`'s `session/`): one `PluralKitRepository` per token, plus the `ViewModelStore`
    the screens' ViewModels live in (provided as `LocalViewModelStoreOwner`). The repository and
    the screens survive configuration changes together. A token swap or sign-out clears the old
    store, which releases the old screens' ViewModels along with their repository and token.
@@ -165,14 +166,14 @@ what's built. In short:
 - The phone owns a `SharingConfig` (friends, shared members, VAPID key, ntfy server). It keeps it in
   an encrypted store and pushes it to the watch on `/pluralware/sharing`.
 - The watch sends after each switch **it registers**, via `PluralKitRepository`'s
-  `onSwitchRegistered`. It sends either encrypted Web Push (`Friend.Private`) or ntfy messages
-  (`Friend.Simple`).
+  `onSwitchRegistered` and `SwitchAnnouncer`. It sends either encrypted Web Push
+  (`Friend.Private`) or ntfy messages (`Friend.Simple`).
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
   `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
   `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.
 - `relay/` is the optional server that turns PluralKit's dispatch webhook into notifications
   (Cloudflare Worker or Node, no dependencies; `npm test` there). The phone uploads a `RelayConfig`
-  to it. When `RelaySettings.enabled` is on, the watch stops sending (`SharingConfig.watchSends`).
+  to it. When `RelaySettings.enabled` is on, the apps stop sending (`SharingConfig.appSends`).
   The phone turns that on only after the relay confirms the upload. The watch's copy comes from
   `forWatch()`, without relay secrets. Relays that couldn't be reached when let go of are kept in
   `SharingStore.orphanedRelays` until a delete succeeds.

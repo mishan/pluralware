@@ -29,9 +29,9 @@ import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
 import me.pluralware.wear.ui.components.MemberBadge
-import me.pluralware.wear.ui.relativeTo
-import me.pluralware.wear.ui.state.UiState
-import me.pluralware.wear.ui.viewmodel.HistoryViewModel
+import me.pluralware.shared.ui.relativeTo
+import me.pluralware.shared.ui.state.UiState
+import me.pluralware.shared.ui.viewmodel.HistoryViewModel
 
 @Composable
 fun HistoryScreen(

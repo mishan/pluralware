@@ -1,4 +1,4 @@
-package me.pluralware.wear.ui.viewmodel
+package me.pluralware.shared.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
-import me.pluralware.wear.ui.state.PickerState
-import me.pluralware.wear.ui.state.UiState
-import me.pluralware.wear.ui.state.toUiError
+import me.pluralware.shared.ui.state.PickerState
+import me.pluralware.shared.ui.state.UiState
+import me.pluralware.shared.ui.state.toUiError
 
 class PickerViewModel(
     private val repository: PluralKitRepository,

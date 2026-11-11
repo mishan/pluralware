@@ -1,4 +1,4 @@
-package me.pluralware.wear.util
+package me.pluralware.shared.util
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

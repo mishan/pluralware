@@ -1,4 +1,4 @@
-package me.pluralware.wear.ui.state
+package me.pluralware.shared.ui.state
 
 import java.time.Instant
 import me.pluralware.shared.api.PluralKitHttpException
@@ -25,7 +25,7 @@ private fun Throwable.userMessage(fallback: String): String {
     val http = this as? PluralKitHttpException
     return when {
         http?.isUnauthorized == true ->
-            "PluralKit no longer accepts this token. Sign out, then connect again from your phone."
+            "PluralKit no longer accepts this token. Sign out, then connect again."
         http?.isRateLimited == true -> "PluralKit is busy. Try again in a minute."
         else -> message ?: fallback
     }

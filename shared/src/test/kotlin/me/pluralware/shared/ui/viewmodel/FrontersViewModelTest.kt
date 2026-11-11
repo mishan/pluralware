@@ -1,4 +1,4 @@
-package me.pluralware.wear.ui.viewmodel
+package me.pluralware.shared.ui.viewmodel
 
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -10,8 +10,8 @@ import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.InMemorySettingsStore
-import me.pluralware.wear.ui.state.UiState
-import me.pluralware.wear.util.MainDispatcherRule
+import me.pluralware.shared.ui.state.UiState
+import me.pluralware.shared.util.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
