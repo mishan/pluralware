@@ -155,18 +155,32 @@ class AccountTest {
         relayAnswer.complete(true)
 
         assertEquals("uuid-sys", owner.get())
-        assertTrue(pushedSharing.isEmpty())
+        assertTrue(pushedSharing.none { it.isSharing })
     }
 
     @Test
-    fun `the first connection claims the sharing there is`() = runTest(UnconfinedTestDispatcher()) {
-        owner.set(null)
+    fun `sharing saved before owners were recorded is claimed for its token's system`() =
+        runTest(UnconfinedTestDispatcher()) {
+            owner.set(null)
 
-        account().connected(system)
+            account().claimUnowned { token -> if (token.raw == "token") system else other }
 
-        assertEquals(sharing, sharingStore.configFlow.value)
-        assertEquals("uuid-sys", owner.get())
-    }
+            assertEquals("uuid-sys", owner.get())
+            assertEquals(sharing, sharingStore.configFlow.value)
+        }
+
+    @Test
+    fun `sharing whose system couldn't be checked isn't given to the next system to connect`() =
+        runTest(UnconfinedTestDispatcher()) {
+            owner.set(null)
+            val account = account()
+            account.claimUnowned { error("token rejected") }
+
+            account.connected(other)
+
+            assertEquals(SharingConfig(), sharingStore.configFlow.value)
+            assertEquals("uuid-other", owner.get())
+        }
 
     @Test
     fun `nothing to share sends nothing to the watch`() = runTest(UnconfinedTestDispatcher()) {

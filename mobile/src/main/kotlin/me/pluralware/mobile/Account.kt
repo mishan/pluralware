@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
@@ -48,8 +49,9 @@ class Account(
     /** Called with the system a token was just validated for, before it's saved. */
     suspend fun connected(system: SystemInfo) = lifecycle.withLock {
         val previous = owner.get()
-        if (previous != null && previous != system.uuid) {
-            // Another system's friends must not hear about this one's switches.
+        if (previous != system.uuid) {
+            // Another system's friends (or unowned ones, which may be another
+            // system's) must not hear about this one's switches.
             forgetSharing()
             // The watch may still have it: the new token replaces a sign-out
             // it hasn't received yet.
@@ -59,6 +61,28 @@ class Account(
         // A watch signed out since has dropped its copy; give it back.
         val config = sharingStore.configFlow.value
         if (config.isSharing) step("send sharing to the watch") { pushSharingToWatch(config.forWatch()) }
+    }
+
+    /**
+     * Sharing saved before its owner was recorded (0.1.0) belongs to the system
+     * of the token it was saved under: [lookUp] asks PluralKit which that is.
+     * If it can't say, the sharing stays unowned, and [connected] drops it.
+     */
+    suspend fun claimUnowned(lookUp: suspend (PluralKitToken) -> SystemInfo) {
+        if (owner.get() != null || !sharingStore.configFlow.value.isSharing) return
+        val token = tokenStore.getToken() ?: return
+        val system = try {
+            lookUp(token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { Log.w(TAG, "Couldn't look up whose sharing this is", e) }
+            return
+        }
+        // Not held during the lookup, so a slow network can't hold up connecting.
+        lifecycle.withLock {
+            if (owner.get() == null && tokenStore.getToken() == token) owner.set(system.uuid)
+        }
     }
 
     /** The user's Disconnect: forget this system entirely, here and on the watch. */

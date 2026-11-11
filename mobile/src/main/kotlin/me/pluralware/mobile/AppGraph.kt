@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import me.pluralware.mobile.watch.WatchLink
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
@@ -61,6 +62,18 @@ class AppGraph private constructor(context: Context) {
         signOutWatch = watchLink::signOut,
         pushSharingToWatch = { config -> runCatching { SharingHandoff.push(appContext, config) } },
     )
+
+    init {
+        scope.launch {
+            account.claimUnowned { token ->
+                PluralKitClientFactory.create(
+                    token = token,
+                    appVersion = BuildConfig.VERSION_NAME,
+                    enableLogging = BuildConfig.DEBUG,
+                ).getOwnSystem()
+            }
+        }
+    }
 
     companion object {
         @Volatile private var instance: AppGraph? = null
