@@ -51,6 +51,9 @@ class Account(
         if (previous != null && previous != system.uuid) {
             // Another system's friends must not hear about this one's switches.
             forgetSharing()
+            // The watch may still have it: the new token replaces a sign-out
+            // it hasn't received yet.
+            step("clear the watch's sharing") { pushSharingToWatch(SharingConfig()) }
         }
         owner.set(system.uuid)
         // A watch signed out since has dropped its copy; give it back.

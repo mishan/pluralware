@@ -125,7 +125,7 @@ class AccountTest {
         }
 
     @Test
-    fun `connecting a different system drops the last one's sharing`() = runTest(UnconfinedTestDispatcher()) {
+    fun `connecting a different system drops the last one's sharing, on the watch too`() = runTest(UnconfinedTestDispatcher()) {
         val account = account()
         account.signOutRejected()
 
@@ -134,7 +134,7 @@ class AccountTest {
         assertEquals(SharingConfig(), sharingStore.configFlow.value)
         assertTrue("relay" in events)
         assertEquals("uuid-other", owner.get())
-        assertTrue(pushedSharing.isEmpty())
+        assertEquals(listOf(SharingConfig()), pushedSharing)
     }
 
     @Test
