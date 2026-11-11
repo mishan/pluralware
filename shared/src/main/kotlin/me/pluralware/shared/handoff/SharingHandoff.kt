@@ -69,7 +69,8 @@ object SharingHandoff {
      * as that device's marks. This device's own report is ignored.
      */
     suspend fun receiveStatus(context: Context, items: List<Pair<String?, DataMap>>) {
-        val reports = OtherDevice.payloads(context, items)
+        // Taking its own report as the other's would replace the other's marks.
+        val reports = OtherDevice.knownPayloads(context, items)
         if (reports.isEmpty()) return
         val now = System.currentTimeMillis()
         EncryptedSharingStore.get(context).setPeerGone(readStatus(reports.last(), now))

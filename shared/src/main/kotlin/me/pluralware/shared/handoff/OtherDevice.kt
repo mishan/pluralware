@@ -14,10 +14,17 @@ object OtherDevice {
     /**
      * The payloads of [items] (each with its source node) that came from the
      * other device. If this device's node can't be looked up, all are kept:
-     * every caller copes with seeing its own state again.
+     * for callers that cope with seeing their own state again.
      */
     suspend fun <T> payloads(context: Context, items: List<Pair<String?, T>>): List<T> =
         payloads(localNode(context), items)
+
+    /**
+     * As [payloads], but none when this device's node can't be looked up: for
+     * state a device mustn't mistake its own for the other's.
+     */
+    suspend fun <T> knownPayloads(context: Context, items: List<Pair<String?, T>>): List<T> =
+        localNode(context)?.let { payloads(it, items) }.orEmpty()
 
     internal fun <T> payloads(localNode: String?, items: List<Pair<String?, T>>): List<T> =
         items.filter { (node, _) -> localNode == null || node != localNode }.map { it.second }
