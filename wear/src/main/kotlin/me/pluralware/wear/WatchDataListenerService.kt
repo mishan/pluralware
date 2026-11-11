@@ -80,18 +80,20 @@ class WatchDataListenerService : WearableListenerService() {
                 }
                 sharingItems.forEach { (uri, _) -> runCatching { dataClient.deleteDataItems(uri).await() } }
             }
+            if (settingsItems.isNotEmpty()) {
+                // Latest-wins: apply the most recent settings item; keep the DataItem.
+                val (_, item) = settingsItems.last()
+                LocalSettingsStore.get(applicationContext)
+                    .setRefreshInterval(SettingsHandoff.read(item).refreshInterval)
+            }
+            // Last: it reads encrypted stores, and a throw there mustn't cost
+            // the items above, which the Data Layer won't deliver again.
             if (switchItems.isNotEmpty()) {
                 val items = switchItems.map { (uri, item) -> uri.host to item.dataMap }
                 SwitchSync.fromOtherDevice(applicationContext, items).forEach { notice ->
                     SwitchSync.deliver(notice)
                     FronterSurfaces.onRemoteSwitch(applicationContext, notice)
                 }
-            }
-            if (settingsItems.isNotEmpty()) {
-                // Latest-wins: apply the most recent settings item; keep the DataItem.
-                val (_, item) = settingsItems.last()
-                LocalSettingsStore.get(applicationContext)
-                    .setRefreshInterval(SettingsHandoff.read(item).refreshInterval)
             }
         }
     }
