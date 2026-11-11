@@ -61,6 +61,6 @@ private fun MemberPickerScreenPreview() {
 @Composable
 private fun HistoryScreenPreview() {
     PluralWareTheme {
-        HistoryScreen(repository = previewRepository(), onDone = {}, onSignOut = {})
+        HistoryScreen(repository = previewRepository(), onSignOut = {})
     }
 }

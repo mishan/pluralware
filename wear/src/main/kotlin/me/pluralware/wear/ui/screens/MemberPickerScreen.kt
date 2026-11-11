@@ -104,6 +104,21 @@ private fun PickerContent(
             )
         }
 
+        item {
+            Chip(
+                onClick = onDeselectAll,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = anySelected && !state.submitting,
+                label = {
+                    Text(
+                        text = "Deselect all",
+                        style = MaterialTheme.typography.button,
+                    )
+                },
+                colors = ChipDefaults.secondaryChipColors(),
+            )
+        }
+
         items(members, key = { it.uuid }) { member ->
             val position = state.selectedUuids.indexOf(member.uuid)
             val isSelected = position >= 0
@@ -137,21 +152,6 @@ private fun PickerContent(
                     )
                 },
                 colors = ChipDefaults.primaryChipColors(),
-            )
-        }
-
-        item {
-            Chip(
-                onClick = onDeselectAll,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = anySelected && !state.submitting,
-                label = {
-                    Text(
-                        text = "Deselect all",
-                        style = MaterialTheme.typography.button,
-                    )
-                },
-                colors = ChipDefaults.secondaryChipColors(),
             )
         }
     }
