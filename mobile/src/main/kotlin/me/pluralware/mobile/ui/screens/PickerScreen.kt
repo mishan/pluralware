@@ -168,7 +168,11 @@ private fun MemberList(
         if (shown.isEmpty()) {
             item {
                 Text(
-                    text = "No members match “${query.trim()}”.",
+                    text = if (query.isBlank()) {
+                        "No members yet. Add them in PluralKit."
+                    } else {
+                        "No members match “${query.trim()}”."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp),

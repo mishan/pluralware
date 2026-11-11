@@ -1,5 +1,7 @@
 package me.pluralware.mobile
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -132,6 +134,27 @@ class AccountTest {
         assertEquals(SharingConfig(), sharingStore.configFlow.value)
         assertTrue("relay" in events)
         assertEquals("uuid-other", owner.get())
+        assertTrue(pushedSharing.isEmpty())
+    }
+
+    @Test
+    fun `connecting during a disconnect waits for its cleanup`() = runTest(UnconfinedTestDispatcher()) {
+        val relayAnswer = CompletableDeferred<Boolean>()
+        val account = Account(
+            scope = backgroundScope,
+            tokenStore = tokens,
+            sharingStore = sharingStore,
+            owner = owner,
+            clearRelay = { relayAnswer.await() },
+            signOutWatch = {},
+            pushSharingToWatch = { pushedSharing += it },
+        )
+        account.disconnect()
+
+        launch { account.connected(system) }
+        relayAnswer.complete(true)
+
+        assertEquals("uuid-sys", owner.get())
         assertTrue(pushedSharing.isEmpty())
     }
 

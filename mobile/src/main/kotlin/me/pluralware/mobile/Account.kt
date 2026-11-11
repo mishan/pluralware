@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
@@ -39,8 +41,12 @@ class Account(
     private val _signingOut = MutableStateFlow(false)
     val signingOut: StateFlow<Boolean> = _signingOut.asStateFlow()
 
+    // A connection made while a sign-out is still cleaning up would have its
+    // sharing and owner wiped by that cleanup.
+    private val lifecycle = Mutex()
+
     /** Called with the system a token was just validated for, before it's saved. */
-    suspend fun connected(system: SystemInfo) {
+    suspend fun connected(system: SystemInfo) = lifecycle.withLock {
         val previous = owner.get()
         if (previous != null && previous != system.uuid) {
             // Another system's friends must not hear about this one's switches.
@@ -66,13 +72,15 @@ class Account(
         _signingOut.value = true
         scope.launch {
             try {
-                step("clear the token") { tokenStore.clear() }
-                // Best-effort: with no watch in reach, the Data Layer delivers
-                // it on the next sync.
-                step("sign the watch out") { signOutWatch() }
-                if (!keepSharing) {
-                    forgetSharing()
-                    step("forget the owner") { owner.set(null) }
+                lifecycle.withLock {
+                    step("clear the token") { tokenStore.clear() }
+                    // Best-effort: with no watch in reach, the Data Layer delivers
+                    // it on the next sync.
+                    step("sign the watch out") { signOutWatch() }
+                    if (!keepSharing) {
+                        forgetSharing()
+                        step("forget the owner") { owner.set(null) }
+                    }
                 }
             } finally {
                 _signingOut.value = false
@@ -90,6 +98,7 @@ class Account(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                runCatching { Log.w(TAG, "Couldn't clear the relay", e) }
                 false
             }
             if (!cleared) step("remember the relay") { sharingStore.addOrphan(relay) }
