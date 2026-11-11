@@ -41,8 +41,11 @@ class SharingViewModelTest {
         override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse = when (request.method) {
             "GET" -> MockResponse().setBody("""{"configured":true,"enabled":false,"gone":[]}""")
             "PUT" -> {
+                // Before recording it: a test that waits for this PUT and then
+                // queues a status means that status for the next one.
+                val status = putStatuses.poll() ?: 204
                 puts += request.body.readUtf8()
-                MockResponse().setResponseCode(putStatuses.poll() ?: 204)
+                MockResponse().setResponseCode(status)
             }
             "DELETE" -> MockResponse().setResponseCode(deleteStatuses.poll() ?: 204)
             else -> MockResponse().setResponseCode(404)
@@ -50,7 +53,7 @@ class SharingViewModelTest {
     }
     private val system = SystemInfo("sys", "uuid-sys", "Sample", null)
     private val alex = Member("alex", "uuid-alex", "Alex", null, null, null, null)
-    private val pushedToWatch = mutableListOf<SharingConfig>()
+    private val pushedToWatch = java.util.concurrent.CopyOnWriteArrayList<SharingConfig>()
     private lateinit var store: InMemorySharingStore
 
     @Before fun setUp() {
@@ -113,10 +116,11 @@ class SharingViewModelTest {
         eventually("initial sync") { puts.size == 1 }
 
         vm.setRelayEnabled(true)
-        eventually("enabled") { store.configFlow.value.relaySends }
+        // The watch is told after the store is saved, so wait for that.
+        eventually("the watch told") { pushedToWatch.lastOrNull()?.appSends == false }
 
+        assertTrue(store.configFlow.value.relaySends)
         assertTrue(puts.last().contains("\"enabled\":true"))
-        assertFalse(pushedToWatch.last().appSends)
     }
 
     @Test
