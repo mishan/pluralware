@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SettingsHandoff
@@ -57,6 +59,12 @@ class WatchLink(
     private val _state = MutableStateFlow<WatchState>(WatchState.Checking)
     val state: StateFlow<WatchState> = _state.asStateFlow()
 
+    // A send waits to find the watch before writing its token. A sign-out in
+    // the meantime counts here, under the same lock as the writes, so the
+    // send's token can't land after the sign-out and undo it.
+    private val writes = Mutex()
+    @Volatile private var signOuts = 0
+
     /** Looks for a watch again, unless a send is underway or has reported. */
     fun check() {
         scope.launch {
@@ -74,6 +82,7 @@ class WatchLink(
 
     /** Sends [token], and the current settings, to the watch if there is one. */
     fun send(token: PluralKitToken) {
+        val signOutsBefore = signOuts
         scope.launch {
             _state.value = WatchState.Sending
             val names = when (val found = find()) {
@@ -88,9 +97,12 @@ class WatchLink(
                 is Found.Watches -> found.names
             }
             _state.value = try {
-                // Settings first, so a freshly paired watch starts in sync.
-                runCatching { pushSettings() }
-                pushToken(token)
+                writes.withLock {
+                    if (signOuts != signOutsBefore) return@launch
+                    // Settings first, so a freshly paired watch starts in sync.
+                    runCatching { pushSettings() }
+                    pushToken(token)
+                }
                 names.firstOrNull()?.let { WatchState.Sent(it) } ?: WatchState.NotConnected(queued = true)
             } catch (e: CancellationException) {
                 throw e
@@ -110,7 +122,10 @@ class WatchLink(
      * Layer holds the write and delivers it on the next sync.
      */
     suspend fun signOut() {
-        runCatching { pushSignOut() }
+        writes.withLock {
+            signOuts++
+            runCatching { pushSignOut() }
+        }
         _state.value = WatchState.Checking
     }
 

@@ -100,7 +100,8 @@ class Account(
         scope.launch {
             try {
                 lifecycle.withLock {
-                    step("clear the token") { tokenStore.clear() }
+                    // Still signed in, so leave the rest for Disconnect to try again.
+                    if (!step("clear the token") { tokenStore.clear() }) return@withLock
                     // Best-effort: with no watch in reach, the Data Layer delivers
                     // it on the next sync.
                     step("sign the watch out") { signOutWatch() }
@@ -133,15 +134,16 @@ class Account(
         step("clear sharing") { sharingStore.clear() }
     }
 
-    private suspend fun step(what: String, block: suspend () -> Unit) {
+    private suspend fun step(what: String, block: suspend () -> Unit): Boolean =
         try {
             block()
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             runCatching { Log.w(TAG, "Couldn't $what", e) }
+            false
         }
-    }
 
     private companion object {
         const val TAG = "Account"

@@ -12,6 +12,7 @@ import me.pluralware.shared.notify.InMemorySharingStore
 import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
 import me.pluralware.shared.repository.InMemoryTokenStore
+import me.pluralware.shared.repository.TokenStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -101,6 +102,29 @@ class AccountTest {
         assertNull(tokens.getToken())
         assertEquals(SharingConfig(), sharingStore.configFlow.value)
     }
+
+    @Test
+    fun `a token that can't be cleared leaves everything else for another try`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val account = Account(
+                scope = backgroundScope,
+                tokenStore = object : TokenStore by tokens {
+                    override suspend fun clear() = error("keystore")
+                },
+                sharingStore = sharingStore,
+                owner = owner,
+                clearRelay = { true },
+                signOutWatch = { events += "watch" },
+                pushSharingToWatch = {},
+            )
+
+            account.disconnect()
+
+            assertTrue(events.isEmpty())
+            assertEquals(sharing, sharingStore.configFlow.value)
+            assertEquals("uuid-sys", owner.get())
+            assertFalse(account.signingOut.value)
+        }
 
     @Test
     fun `a token PluralKit rejected signs out but keeps sharing`() = runTest(UnconfinedTestDispatcher()) {

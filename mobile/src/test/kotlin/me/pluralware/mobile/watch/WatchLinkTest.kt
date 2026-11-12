@@ -3,6 +3,7 @@ package me.pluralware.mobile.watch
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -15,13 +16,17 @@ class WatchLinkTest {
 
     private val token = PluralKitToken("token")
     private val pushed = mutableListOf<PluralKitToken>()
+    private val writes = mutableListOf<String>()
 
     private fun TestScope.link(watches: suspend () -> List<String>) = WatchLink(
         scope = backgroundScope,
         connectedWatches = watches,
-        pushToken = { pushed += it },
+        pushToken = {
+            pushed += it
+            writes += "token"
+        },
         pushSettings = {},
-        pushSignOut = {},
+        pushSignOut = { writes += "sign-out" },
     )
 
     private val noWear: suspend () -> List<String> = {
@@ -56,6 +61,18 @@ class WatchLinkTest {
 
         assertEquals(WatchState.NotConnected(queued = true), link.state.value)
         assertEquals(listOf(token), pushed)
+    }
+
+    @Test
+    fun `a send still looking for the watch doesn't undo a sign-out`() = runTest(UnconfinedTestDispatcher()) {
+        val watches = CompletableDeferred<List<String>>()
+        val link = link { watches.await() }
+        link.send(token)
+
+        link.signOut()
+        watches.complete(listOf("Pixel Watch"))
+
+        assertEquals(listOf("sign-out"), writes)
     }
 
     @Test
