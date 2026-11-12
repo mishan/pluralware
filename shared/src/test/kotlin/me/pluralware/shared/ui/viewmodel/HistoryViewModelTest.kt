@@ -38,4 +38,24 @@ class HistoryViewModelTest {
 
         assertTrue(vm.state.value is UiState.Error)
     }
+
+    @Test
+    fun `retrying after a failed load shows the switches`() = runTest {
+        coEvery { client.getRecentSwitches(any()) } throws java.io.IOException("offline")
+        val vm = HistoryViewModel(repository)
+
+        coEvery { client.getRecentSwitches(any()) } returns PreviewData.historyRecent
+        vm.load()
+
+        assertEquals(UiState.Content(PreviewData.historyRecent), vm.state.value)
+    }
+
+    @Test
+    fun `a rejected token offers sign-out`() = runTest {
+        coEvery { client.getRecentSwitches(any()) } throws PluralKitHttpException(401, "Unauthorized")
+
+        val state = HistoryViewModel(repository).state.value
+
+        assertTrue((state as UiState.Error).unauthorized)
+    }
 }

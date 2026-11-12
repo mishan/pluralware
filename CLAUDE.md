@@ -24,9 +24,21 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
 
-Unit tests live mostly in `:shared` (client, repository, handoff, and the screen ViewModels, with
-`MainDispatcherRule` standing in for the main dispatcher); `:wear` tests the complication logic. They're plain JVM tests (JUnit4 + MockK +
-Turbine + `kotlinx-coroutines-test`) and need no device. Run `./gradlew test` after touching either.
+Tests are all JVM tests that need no device (JUnit4 + MockK + Turbine + `kotlinx-coroutines-test`):
+
+- `:shared` holds most of the logic tests: client, repository, handoff and switch sync, friend
+  sharing, and the screen ViewModels, with `MainDispatcherRule` standing in for the main dispatcher.
+- `:wear` and `:mobile` `src/test` cover each app's own logic (the complication and tile source;
+  `Account`, `WatchLink` and the phone's ViewModels).
+- `:wear` and `:mobile` `src/testDebug` are **UI tests**: Robolectric renders the real Compose
+  screens, which tests drive through `compose-ui-test`. They're debug-only because the test activity
+  comes from `ui-test-manifest` in the debug manifest. `robolectric.properties` there sets the screen
+  (a phone; a small round watch) and native graphics, so text is really measured. Phone tests render
+  each screen's stateless `…Content` composable; watch tests drive whole screens through a fake
+  `PluralKitClient`.
+
+Run `./gradlew test` after touching any of them. Robolectric downloads an Android framework jar
+from Maven Central the first time it runs.
 
 `local.properties` (git-ignored) must point `sdk.dir` at an Android SDK. Source lives under
 `src/main/kotlin/`, not `src/main/java/`.
@@ -161,7 +173,7 @@ in, one keyed on the token, with a `Session` from the same `SessionHolder`, and 
 `pick`, `history`, `settings`, `sharing`, `following`. The signed-out screens' ViewModels live in
 `SignedOutStore`, emptied on sign-in. `AppGraph` holds the process-wide pieces (stores, `WatchLink`,
 sign-out, the phone's `SwitchAnnouncer`). Each screen has a stateless `…Content` composable taking
-UI state, which is what previews render. The theme is PluralKit amber in
+UI state, which is what previews and the UI tests render. The theme is PluralKit amber in
 light and dark, with member colors as a leading stripe, as on the watch.
 
 ### Wear UI
