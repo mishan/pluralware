@@ -71,9 +71,11 @@ class WatchLink(
     /** Looks for a watch again, unless a send is underway or has reported. */
     fun check() {
         scope.launch {
-            val current = _state.value
-            if (current is WatchState.Sending || current is WatchState.Sent) return@launch
-            _state.value = when (val found = find()) {
+            if (sendUnderway()) return@launch
+            val found = find()
+            // A send may have started, or finished, while this looked.
+            if (sendUnderway()) return@launch
+            _state.value = when (found) {
                 Found.Unsupported -> WatchState.Unsupported
                 is Found.Failed -> WatchState.Failed(found.message)
                 is Found.Watches -> found.names.firstOrNull()
@@ -103,7 +105,7 @@ class WatchLink(
                 writes.withLock {
                     if (signOuts != signOutsBefore) return@launch
                     // Settings first, so a freshly paired watch starts in sync.
-                    runCatching { pushSettings() }
+                    bestEffort { pushSettings() }
                     pushToken(token)
                 }
                 names.firstOrNull()?.let { WatchState.Sent(it) } ?: WatchState.NotConnected(queued = true)
@@ -145,9 +147,22 @@ class WatchLink(
     suspend fun signOut() {
         writes.withLock {
             signOuts++
-            runCatching { pushSignOut() }
+            bestEffort { pushSignOut() }
         }
         _state.value = WatchState.Checking
+    }
+
+    private fun sendUnderway() = _state.value.let { it is WatchState.Sending || it is WatchState.Sent }
+
+    // Unlike runCatching, lets a cancelled send or sign-out stop here.
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
     }
 
     private sealed interface Found {

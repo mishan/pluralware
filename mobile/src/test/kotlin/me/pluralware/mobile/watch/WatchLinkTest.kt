@@ -4,6 +4,9 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -19,14 +22,18 @@ class WatchLinkTest {
     private val pushed = mutableListOf<PluralKitToken>()
     private val writes = mutableListOf<String>()
 
-    private fun TestScope.link(watches: suspend () -> List<String>) = WatchLink(
-        scope = backgroundScope,
+    private fun TestScope.link(
+        scope: CoroutineScope = backgroundScope,
+        pushSettings: suspend () -> Unit = {},
+        watches: suspend () -> List<String>,
+    ) = WatchLink(
+        scope = scope,
         connectedWatches = watches,
         pushToken = {
             pushed += it
             writes += "token"
         },
-        pushSettings = {},
+        pushSettings = pushSettings,
         pushSignOut = { writes += "sign-out" },
     )
 
@@ -36,7 +43,7 @@ class WatchLinkTest {
 
     @Test
     fun `a phone without Wear OS sends nothing and says so quietly`() = runTest(UnconfinedTestDispatcher()) {
-        val link = link(noWear)
+        val link = link(watches = noWear)
 
         link.send(token)
 
@@ -74,6 +81,30 @@ class WatchLinkTest {
         watches.complete(listOf("Pixel Watch"))
 
         assertEquals(listOf("sign-out"), writes)
+    }
+
+    @Test
+    fun `a check still looking for the watch leaves a send's result alone`() = runTest(UnconfinedTestDispatcher()) {
+        val firstLookup = CompletableDeferred<List<String>>()
+        var lookups = 0
+        val link = link { if (lookups++ == 0) firstLookup.await() else listOf("Pixel Watch") }
+        link.check()
+        link.send(token)
+
+        firstLookup.complete(emptyList())
+
+        assertEquals(WatchState.Sent("Pixel Watch"), link.state.value)
+    }
+
+    @Test
+    fun `a cancelled send writes no token`() = runTest(UnconfinedTestDispatcher()) {
+        val sends = CoroutineScope(backgroundScope.coroutineContext + Job())
+        val link = link(scope = sends, pushSettings = { CompletableDeferred<Unit>().await() }) { listOf("Pixel Watch") }
+        link.send(token)
+
+        sends.cancel()
+
+        assertTrue(pushed.isEmpty())
     }
 
     @Test
