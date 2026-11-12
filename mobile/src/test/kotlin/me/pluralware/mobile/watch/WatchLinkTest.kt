@@ -85,15 +85,25 @@ class WatchLinkTest {
 
     @Test
     fun `a check still looking for the watch leaves a send's result alone`() = runTest(UnconfinedTestDispatcher()) {
-        val firstLookup = CompletableDeferred<List<String>>()
-        var lookups = 0
-        val link = link { if (lookups++ == 0) firstLookup.await() else listOf("Pixel Watch") }
-        link.check()
-        link.send(token)
+        // Whatever the send came to: sent, queued for a watch out of reach, or failed.
+        val cases = listOf(
+            listOf("Pixel Watch") to WatchState.Sent("Pixel Watch"),
+            emptyList<String>() to WatchState.NotConnected(queued = true),
+            null to WatchState.Failed("no watch API"),
+        )
+        for ((watchesAtSend, sendResult) in cases) {
+            val firstLookup = CompletableDeferred<List<String>>()
+            var lookups = 0
+            val link = link {
+                if (lookups++ == 0) firstLookup.await() else watchesAtSend ?: error("no watch API")
+            }
+            link.check()
+            link.send(token)
 
-        firstLookup.complete(emptyList())
+            firstLookup.complete(listOf("Pixel Watch"))
 
-        assertEquals(WatchState.Sent("Pixel Watch"), link.state.value)
+            assertEquals(sendResult, link.state.value)
+        }
     }
 
     @Test

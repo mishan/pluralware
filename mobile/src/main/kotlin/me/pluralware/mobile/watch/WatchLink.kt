@@ -68,13 +68,17 @@ class WatchLink(
     private val writes = Mutex()
     @Volatile private var signOuts = 0
 
+    // Whatever a send comes to is newer than what a check that began before it finds.
+    @Volatile private var sends = 0
+
     /** Looks for a watch again, unless a send is underway or has reported. */
     fun check() {
+        val sendsBefore = sends
         scope.launch {
-            if (sendUnderway()) return@launch
+            val current = _state.value
+            if (current is WatchState.Sending || current is WatchState.Sent) return@launch
             val found = find()
-            // A send may have started, or finished, while this looked.
-            if (sendUnderway()) return@launch
+            if (sends != sendsBefore) return@launch
             _state.value = when (found) {
                 Found.Unsupported -> WatchState.Unsupported
                 is Found.Failed -> WatchState.Failed(found.message)
@@ -88,6 +92,7 @@ class WatchLink(
     /** Sends [token], and the current settings, to the watch if there is one. */
     fun send(token: PluralKitToken) {
         val signOutsBefore = signOuts
+        sends++
         scope.launch {
             _state.value = WatchState.Sending
             val names = when (val found = find()) {
@@ -151,8 +156,6 @@ class WatchLink(
         }
         _state.value = WatchState.Checking
     }
-
-    private fun sendUnderway() = _state.value.let { it is WatchState.Sending || it is WatchState.Sent }
 
     // Unlike runCatching, lets a cancelled send or sign-out stop here.
     private suspend fun bestEffort(block: suspend () -> Unit) {
