@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a vX.Y.Z tag builds both apps, signs them with the release key and
 # publishes a GitHub Release. Obtainium follows these releases for the phone
-# app. It needs the RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD and
+# app. A vX.Y.Z-beta.N tag is published as a prerelease, which Obtainium skips
+# unless told to include them, so only testers get it. It needs the RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD and
 # RELEASE_KEY_ALIAS repository secrets.
 on:
   push:
@@ -84,7 +85,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          case "$VERSION" in *-beta.*) prerelease=--prerelease ;; *) prerelease= ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* $prerelease \
             --title "PluralWare $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --generate-notes
