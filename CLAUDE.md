@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PluralWare is a constellation of [PluralKit](https://pluralkit.me) clients sharing one core.
-The primary surface is a **Wear OS app** for setting your fronter from your wrist; a **phone
-companion app** handles PluralKit token entry and hands the token to the watch.
+Two apps with the same features: a **Wear OS app** for setting your fronter from your wrist, and
+a **phone app** that does the same on its own. The watch is optional. When there is one, the phone
+signs it in by handing it the PluralKit token.
 
 ## Commands
 
@@ -40,8 +41,9 @@ Three Gradle modules; dependency versions are centralized in `gradle/libs.versio
   Consumed by both apps. `minSdk` is the lowest of the consumers (mobile); wear pins its own 30.
 - **`:wear`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 30` for Wear OS 3) —
   the watch app: Compose-for-Wear UI, the token listener service.
-- **`:mobile`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 26`) — phone
-  companion: token entry screen + push to watch.
+- **`:mobile`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 26`) — the
+  phone app: the same fronters/picker/history screens in Material 3, plus connecting, settings,
+  sharing and following, and the push to a watch if there is one.
 
 **Both apps share `applicationId = "me.pluralware"` and this is load-bearing, not an accident.**
 The Wearable Data Layer scopes `DataItem`s by package name — if the two diverge, the watch never
@@ -100,8 +102,10 @@ the `WatchDataListenerService` and `MainActivity` share one in-memory `tokenFlow
 the service live-updates the activity's UI with no manual reload.
 
 End-to-end pairing flow:
-1. Phone `TokenEntryViewModel.connect()` validates the token via `GET /systems/@me`, saves it to the
-   phone's `EncryptedTokenStore`, then calls `TokenHandoff.push(...)`.
+1. Phone `ConnectViewModel.connect()` validates the token via `GET /systems/@me`, hands it to
+   `WatchLink.send`, then saves it to the phone's `EncryptedTokenStore`. `WatchLink` runs in the
+   process-wide `AppGraph.scope`, because saving the token swaps the phone's UI to the signed-in
+   screens. Without Wear OS on the phone (`API_NOT_CONNECTED`) it sends nothing and says nothing.
 2. `TokenHandoff` (in `:shared`) writes a `DataItem` to path `/pluralware/token` on the Wearable Data
    Layer. It stamps a timestamp into the payload because the Data Layer dedupes on payload hash —
    without it, re-pushing the same token would be a silent no-op. `DataClient` (not `MessageClient`)
@@ -112,22 +116,36 @@ End-to-end pairing flow:
    back to the phone, bounding how long cleartext sits on disk.
 4. Watch `MainActivity` observes `tokenStore.tokenFlow`: `null` → "Pair with phone" screen;
    non-null → `ConnectedApp` inside **`key(token.raw)`**, with a `Session` from the
-   activity-scoped `SessionHolder` (both in `:shared`'s `session/`): one `PluralKitRepository` per token, plus the `ViewModelStore`
-   the screens' ViewModels live in (provided as `LocalViewModelStoreOwner`). The repository and
+   activity-scoped `SessionHolder` (both in `:shared`'s `session/`): one `PluralKitRepository` per
+   token, plus the `ViewModelStore` the screens' ViewModels live in (provided as
+   `LocalViewModelStoreOwner`). The repository and
    the screens survive configuration changes together. A token swap or sign-out clears the old
    store, which releases the old screens' ViewModels along with their repository and token.
 
-Signing out: the phone's **Disconnect** calls `TokenHandoff.pushSignOut`, which overwrites the same
-`/pluralware/token` item with a sign-out marker — superseding any token the watch hasn't collected
-yet — and the watch clears its store on receipt. The watch can also sign itself out from the error
-screen a rejected token (401) produces.
+Signing out on the phone goes through `Account` (in `AppGraph`). It clears the token first, then
+calls `TokenHandoff.pushSignOut`, which overwrites the same `/pluralware/token` item with a sign-out
+marker — superseding any token the watch hasn't collected yet — and the watch clears its store on
+receipt. **Disconnect** also forgets friend sharing and the relay's copy. The **Sign out** a rejected
+token (401) offers keeps sharing, since the same system usually reconnects with a refreshed token;
+`Account.connected` drops it if a different system connects, and gives the watch its copy back
+otherwise. The watch can also sign itself out from the error screen a 401 produces.
 
 Neither app backs up or transfers its data (`allowBackup="false"` plus `data_extraction_rules.xml`):
 the token store is encrypted under a Keystore key that stays on the device, so a transferred copy
 is unreadable. If one turns up anyway, `EncryptedTokenStore` discards it rather than crash.
 
-Push success is surfaced independently of save success: emulators without a paired watch throw
-`API_NOT_CONNECTED`, so the phone UI lets the user retry the push alone via "Resend to watch".
+The phone's settings screen shows `WatchLink.state`: nothing at all on a phone without Wear OS,
+otherwise whether a watch is connected and the last send, with a button to send again.
+
+### Phone UI
+
+`PhoneApp` mirrors the watch: signed out, a `NavHost` with **Connect** and **Following**; signed
+in, one keyed on the token, with a `Session` from the same `SessionHolder`, and routes `home`,
+`pick`, `history`, `settings`, `sharing`, `following`. The signed-out screens' ViewModels live in
+`SignedOutStore`, emptied on sign-in. `AppGraph` holds the process-wide pieces (stores, `WatchLink`,
+sign-out, the phone's `SwitchAnnouncer`). Each screen has a stateless `…Content` composable taking
+UI state, which is what previews render. The theme is PluralKit amber in
+light and dark, with member colors as a leading stripe, as on the watch.
 
 ### Wear UI
 
@@ -155,7 +173,7 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
   of the token, so a stale fetch can't cross systems) and requests updates; token changes (pairing,
   either side's sign-out) go through `FronterSurfaces.onTokenChanged`, which clears the cache.
   Anything that changes fronters or the token must keep reaching one of these two.
-- **Polling is only the backstop** for switches made off the watch: the complication's 30-minute
+- **Polling is only the backstop** for switches made off the watch (the phone app included): the complication's 30-minute
   `UPDATE_PERIOD_SECONDS` and the tile's 10-minute freshness interval.
 
 ### Friend notifications
@@ -165,9 +183,10 @@ what's built. In short:
 
 - The phone owns a `SharingConfig` (friends, shared members, VAPID key, ntfy server). It keeps it in
   an encrypted store and pushes it to the watch on `/pluralware/sharing`.
-- The watch sends after each switch **it registers**, via `PluralKitRepository`'s
-  `onSwitchRegistered` and `SwitchAnnouncer`. It sends either encrypted Web Push
-  (`Friend.Private`) or ntfy messages (`Friend.Simple`).
+- Each app sends after each switch **it registers**, via `PluralKitRepository`'s
+  `onSwitchRegistered` and its own `SwitchAnnouncer`, so no switch goes out twice. It sends either
+  encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends found gone are
+  recorded in each device's `SharingStore`; the watch also reports them to the phone.
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
   `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
   `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.

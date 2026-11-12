@@ -1,8 +1,9 @@
 # PluralWare
 
-Set who's fronting from your wrist. PluralWare is a Wear OS app for
-[PluralKit](https://pluralkit.me) systems, with a companion phone app for
-signing in and for letting friends know when you switch.
+See and set who's fronting from your phone or your wrist. PluralWare is an
+Android and Wear OS app for [PluralKit](https://pluralkit.me) systems. The
+watch is optional: the phone app does everything on its own, and lets friends
+know when you switch.
 
 It's free, open source (AGPL-3.0) and early: it's being tested with plural
 folks now. Bug reports and ideas are welcome in
@@ -10,17 +11,20 @@ folks now. Bug reports and ideas are welcome in
 
 ## What it does
 
-**On your watch**
+**On your phone, and on your watch if you have one**
 
 - See who's fronting and for how long.
 - Change fronters: pick one or more members, or switch out.
 - Browse recent switches.
+
+**On your watch**
+
 - Add a **complication** showing the current fronter to your watch face, or
   a **tile** you can swipe to.
 
 **On your phone**
 
-- Connect your PluralKit account and send it to your watch.
+- Connect your PluralKit account, and send it to your watch if you have one.
 - **Share with friends**: when you switch, friends you choose get a
   notification. You decide which members may be named; anyone else shows up
   as "someone else".
@@ -28,15 +32,16 @@ folks now. Bug reports and ideas are welcome in
 
 ## What you need
 
-- A watch running **Wear OS 3 or later**, paired with an **Android phone**
-  (Android 8.0 or later). iPhones can't pair with Wear OS watches.
+- An **Android phone** (Android 8.0 or later).
+- Optionally, a watch running **Wear OS 3 or later**, paired with that phone.
+  iPhones can't pair with Wear OS watches.
 - A PluralKit system.
 
 ## Install
 
 PluralWare isn't on the Play Store. Each
 [release](https://github.com/mishan/pluralware/releases) has a phone app
-and a watch app. Install both from the same release.
+and a watch app. If you use both, install them from the same release.
 
 **Phone**: use [Obtainium](https://github.com/ImranR98/Obtainium), which
 keeps it up to date.
@@ -46,7 +51,7 @@ keeps it up to date.
    Obtainium ignores the watch app.
 3. Tap **Add**, then install.
 
-**Watch**: download `pluralware-wear-X.Y.Z.apk` from the same release and
+**Watch** (optional): download `pluralware-wear-X.Y.Z.apk` from the same release and
 install it over wireless debugging, with a Wear OS installer app or `adb`
 on a computer:
 
@@ -65,14 +70,16 @@ for checking the apps with a tool such as AppVerifier.
 
 1. Get your PluralKit token: in any channel the PluralKit bot can see, or in
    a DM with it, send `pk;token`. PluralKit DMs you the token.
-2. Open PluralWare on your phone, paste the token and tap **Connect & send
-   to watch**.
-3. Open PluralWare on your watch. It shows your current fronters.
+2. Open PluralWare on your phone, paste the token and tap **Connect**. It
+   shows your current fronters.
+3. If you have a watch, open PluralWare on it. The phone sent it your token,
+   so it shows your fronters too.
 
-If the phone can't reach the watch, keep them near each other and tap
-**Resend to watch**.
+If your watch didn't get the token, keep it near your phone and tap **Send
+to watch** under **Settings → Watch** on the phone.
 
-To sign out, tap **Disconnect** on the phone. That signs the watch out too.
+To sign out, tap **Disconnect** in the phone's settings. That signs the watch
+out too.
 If you regenerate your PluralKit token, the watch asks you to connect again
 from your phone.
 
@@ -96,7 +103,8 @@ notifications.
 the topic to subscribe to. Whoever runs that ntfy server can read the
 messages.
 
-By default, friends hear about switches you make **on your watch**. To
+By default, friends hear about switches you make **in PluralWare**, on your
+phone or your watch. To
 include switches made in Discord, on the dashboard or in other apps, you can
 host a small [relay](relay/README.md) and connect it under **Share with
 friends → Relay**. That takes some technical setup.
@@ -115,8 +123,9 @@ receive notifications.
 
 ## Privacy
 
-- Your PluralKit token is stored encrypted on your phone and watch. It goes
-  from your phone to your watch and to PluralKit, and nowhere else. There
+- Your PluralKit token is stored encrypted on your phone, and on your watch
+  if you have one. It goes from your phone to your watch and to PluralKit,
+  and nowhere else. There
   are no accounts, ads or analytics, and nothing is sent to the developers.
 - Private notifications are end-to-end encrypted. The push service that
   delivers them can't read them.

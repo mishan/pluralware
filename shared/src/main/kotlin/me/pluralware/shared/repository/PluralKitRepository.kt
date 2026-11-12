@@ -10,6 +10,7 @@ import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
+import me.pluralware.shared.model.SystemInfo
 
 /**
  * UI-facing wrapper around a [PluralKitClient].
@@ -56,6 +57,9 @@ class PluralKitRepository(
             client.getOwnMembers().also { membersCache = it }
         }
     }
+
+    /** The system this token belongs to. Not cached: it's for showing who's signed in. */
+    suspend fun ownSystem(): PkResult<SystemInfo> = runCatchingPk { client.getOwnSystem() }
 
     suspend fun refreshFronters(): PkResult<Switch?> = runCatchingPk {
         client.getCurrentFronters().also(::setFronters)

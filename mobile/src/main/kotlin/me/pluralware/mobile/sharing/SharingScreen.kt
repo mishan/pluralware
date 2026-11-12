@@ -63,7 +63,7 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("← Back") }
             Text("Share with friends", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "When you switch on your watch, friends you add here get a notification. " +
+                "When you switch in PluralWare, friends you add here get a notification. " +
                     "Only members you choose are named; anyone else in front shows as \"someone\".",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -359,7 +359,7 @@ private fun RelaySection(
     var token by remember(relay?.signingToken) { mutableStateOf(relay?.signingToken.orEmpty()) }
     Section(title = "Relay (optional)") {
         Text(
-            "Without one, friends hear about switches you make on your watch. A relay you host also " +
+            "Without one, friends hear about switches you make in PluralWare. A relay you host also " +
                 "catches switches made in Discord or anywhere else. Setup is in the relay's README.",
             style = MaterialTheme.typography.bodySmall,
         )
@@ -407,7 +407,7 @@ private fun RelaySection(
                 Text("  Send through the relay")
             }
             Text(
-                "3. Once PluralKit confirms the webhook, turn this on. The watch stops sending while it's on, " +
+                "3. Once PluralKit confirms the webhook, turn this on. The app stops sending while it's on, " +
                     "so friends never get a switch twice.",
                 style = MaterialTheme.typography.bodySmall,
             )
