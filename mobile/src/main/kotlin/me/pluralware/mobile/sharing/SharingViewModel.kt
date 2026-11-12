@@ -109,7 +109,8 @@ class SharingViewModel(
             }
             _state.update {
                 it.copy(
-                    goneFriendIds = watchGone + sharingStore.goneFlow.value.keys + relayStatus?.gone.orEmpty(),
+                    goneFriendIds = watchGone + sharingStore.goneFlow.value.keys +
+                        sharingStore.peerGoneFlow.value.keys + relayStatus?.gone.orEmpty(),
                     relayConfigured = relayStatus?.configured == true,
                 )
             }

@@ -39,8 +39,11 @@ class AppGraph private constructor(context: Context) {
     val watchLink = WatchLink.create(appContext, settingsStore, scope)
 
     // Friends hear about switches made on this phone; the watch announces its
-    // own. The phone's sharing screen reads gone friends from its own store.
-    private val announcer = SwitchAnnouncer(BuildConfig.VERSION_NAME)
+    // own. Friends this phone finds gone are reported to the watch, which
+    // skips them too; without Wear OS the report fails quietly.
+    private val announcer = SwitchAnnouncer(BuildConfig.VERSION_NAME) { context, gone ->
+        SharingHandoff.pushStatus(context, gone)
+    }
 
     fun newRepository(token: PluralKitToken): PluralKitRepository {
         val client = PluralKitClientFactory.create(

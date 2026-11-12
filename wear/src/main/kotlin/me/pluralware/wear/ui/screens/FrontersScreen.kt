@@ -44,6 +44,7 @@ import kotlinx.coroutines.isActive
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.SettingsStore
+import me.pluralware.wear.ui.LocalClock
 import me.pluralware.wear.ui.components.EmptyScreen
 import me.pluralware.wear.ui.components.ErrorScreen
 import me.pluralware.wear.ui.components.LoadingScreen
@@ -155,7 +156,7 @@ private fun FrontersContent(
         if (switch.isSwitchOut) {
             item {
                 Text(
-                    text = "Switched out " + switch.timestamp.relativeTo(),
+                    text = "Switched out " + switch.timestamp.relativeTo(LocalClock.current.instant()),
                     style = MaterialTheme.typography.body2,
                     color = MaterialTheme.colors.onBackground,
                     textAlign = TextAlign.Center,
@@ -169,7 +170,7 @@ private fun FrontersContent(
             }
             item {
                 Text(
-                    text = "Since " + switch.timestamp.relativeTo(),
+                    text = "Since " + switch.timestamp.relativeTo(LocalClock.current.instant()),
                     style = MaterialTheme.typography.caption2,
                     color = MaterialTheme.colors.onSurfaceVariant,
                 )
@@ -228,7 +229,7 @@ private fun CyclingFronterChip(member: Member, streak: FronterStreak) {
     // members without pronouns show name-only on the default view.
     val slots: List<String?> = listOf(
         null,
-        "Fronting for $durationPrefix${streak.since.elapsedSince()}",
+        "Fronting for $durationPrefix${streak.since.elapsedSince(LocalClock.current.instant())}",
     )
     var index by remember(member.uuid, streak) { mutableIntStateOf(0) }
     MemberChip(

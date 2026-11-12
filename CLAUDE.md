@@ -23,6 +23,9 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test class: `./gradlew :shared:testDebugUnitTest --tests "me.pluralware.shared.PluralKitRepositoryTest"`
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
+- README screenshots: `tools/screenshots.sh` renders them into `docs/screenshots`;
+  `tools/screenshots.sh --check` renders them afresh and compares (CI's `screenshots.yml`). Needs
+  [shotbox](https://github.com/mishan/shotbox) (`pip install shotbox`) and bubblewrap.
 
 Tests are all JVM tests that need no device (JUnit4 + MockK + Turbine + `kotlinx-coroutines-test`):
 
@@ -39,6 +42,17 @@ Tests are all JVM tests that need no device (JUnit4 + MockK + Turbine + `kotlinx
 
 Run `./gradlew test` after touching any of them. Robolectric downloads an Android framework jar
 from Maven Central the first time it runs.
+
+### Screenshots
+
+The README's pictures are the real screens, rendered by Robolectric the same way: the
+`ReadmeScreenshots` scenes in each app's `src/testDebug/.../screenshots`, captured by Roborazzi.
+They're skipped unless `-Pscreenshots=DIR` is given, which `tools/screenshots.sh` does inside
+`shotbox exec` (a HOME, locale and time zone of its own). They show `PreviewData`, with the
+screens' clock stopped at `PreviewData.anchor`, so they come out the same, to the pixel, on every
+run. `screenshots.yml` renders them again on every PR and fails if any differs, uploading the new
+ones; **a UI change that shows in them must commit the new pictures** (from that artifact, or by
+running the script). The watch pictures are masked to a circle in the scene itself.
 
 `local.properties` (git-ignored) must point `sdk.dir` at an Android SDK. Source lives under
 `src/main/kotlin/`, not `src/main/java/`.
@@ -176,6 +190,10 @@ sign-out, the phone's `SwitchAnnouncer`). Each screen has a stateless `…Conten
 UI state, which is what previews and the UI tests render. The theme is PluralKit amber in
 light and dark, with member colors as a leading stripe, as on the watch.
 
+Both apps' screens tell time by `LocalClock` (a `java.time.Clock`, the system's by default), never
+`Instant.now()`: "2h ago", streaks, and History's dates and zone. That's what lets the screenshots
+fix it.
+
 ### Wear UI
 
 `PluralWareApp` hosts a `SwipeDismissableNavHost` with three routes (`fronters`, `pick`, `history`).
@@ -216,8 +234,10 @@ what's built. In short:
   an encrypted store and pushes it to the watch on `/pluralware/sharing`.
 - Each app sends after each switch **it registers**, via `PluralKitRepository`'s
   `onSwitchRegistered` and its own `SwitchAnnouncer`, so no switch goes out twice. It sends either
-  encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends found gone are
-  recorded in each device's `SharingStore`; the watch also reports them to the phone.
+  encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends a device finds gone
+  are recorded in its `SharingStore` and reported to the other device on
+  `/pluralware/sharing-status`, which keeps them apart (`peerGoneFlow`) and skips them too. Each
+  device reports only its own findings, so nothing echoes.
 - The phone's **Following** screen is the receiving side, through UnifiedPush (`FollowPushService`).
   `web-receiver/` is the same for browsers: static, no dependencies, published to GitHub Pages by
   `.github/workflows/pages.yml`. Test it with `node --test 'web-receiver/test/*.test.mjs'`.

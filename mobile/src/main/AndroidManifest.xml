@@ -26,7 +26,8 @@
 
         <!--
             Receives the watch's current switch over the Wearable Data Layer, so
-            an open app follows switches made on the watch. Filtered by path;
+            an open app follows switches made on the watch, and the friends the
+            watch found no longer receiving. Filtered by path;
             `exported="true"` is required for the Wear framework to bind to it.
             Never bound on a phone without Wear OS.
         -->
@@ -39,6 +40,10 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/pluralware/switch" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/sharing-status" />
             </intent-filter>
         </service>
 

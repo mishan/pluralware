@@ -25,6 +25,8 @@ import me.pluralware.wear.complication.FronterSurfaces
  *    DataItem is deleted, like the token.
  *  - app settings ([SettingsHandoff.PATH]) — persisted and *kept* (latest-wins
  *    state the watch should retain across syncs and reboots).
+ *  - friends the phone found gone ([SharingHandoff.STATUS_PATH]) — stored
+ *    apart from the watch's own, so its sends skip them too. Kept.
  *  - the phone's current switch ([SwitchSync.PATH]) — handed to the open app,
  *    if any, and used to refresh the complication and tile. Kept: it's the
  *    phone's latest state, and holds no names or secrets.
@@ -44,10 +46,9 @@ class WatchDataListenerService : WearableListenerService() {
         val tokenItems = changed.filter { (uri, _) -> uri.path == TokenHandoff.PATH }
         val settingsItems = changed.filter { (uri, _) -> uri.path == SettingsHandoff.PATH }
         val sharingItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.PATH }
+        val statusItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.STATUS_PATH }
         val switchItems = changed.filter { (uri, _) -> uri.path == SwitchSync.PATH }
-        if (tokenItems.isEmpty() && settingsItems.isEmpty() && sharingItems.isEmpty() && switchItems.isEmpty()) {
-            return
-        }
+        if (listOf(tokenItems, settingsItems, sharingItems, statusItems, switchItems).all { it.isEmpty() }) return
 
         runBlocking {
             if (tokenItems.isNotEmpty()) {
@@ -79,6 +80,10 @@ class WatchDataListenerService : WearableListenerService() {
                     EncryptedSharingStore.get(applicationContext).set(it)
                 }
                 sharingItems.forEach { (uri, _) -> runCatching { dataClient.deleteDataItems(uri).await() } }
+            }
+            if (statusItems.isNotEmpty()) {
+                // After the config above, so marks for friends it removes are dropped.
+                SharingHandoff.receiveStatus(applicationContext, statusItems.map { (uri, item) -> uri.host to item.dataMap })
             }
             if (settingsItems.isNotEmpty()) {
                 // Latest-wins: apply the most recent settings item; keep the DataItem.

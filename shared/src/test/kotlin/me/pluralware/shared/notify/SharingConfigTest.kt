@@ -1,5 +1,6 @@
 package me.pluralware.shared.notify
 
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,5 +64,49 @@ class SharingConfigTest {
         store.set(SharingConfig(friends = listOf(sam)))
 
         assertEquals(emptyMap<String, Long>(), store.goneFlow.value)
+    }
+
+    @Test
+    fun `the other device's gone friends are kept apart, pruned and cleared like this one's`() = runTest {
+        val kit = Friend.Simple("s1", "Kit", "pw_kit")
+        val rue = Friend.Simple("s2", "Rue", "pw_rue")
+        val store = InMemorySharingStore(SharingConfig(friends = listOf(kit, rue)))
+
+        store.setPeerGone(mapOf("s1" to 5L, "unknown" to 6L))
+        assertEquals(mapOf("s1" to 5L), store.peerGoneFlow.value)
+        assertTrue(store.goneFlow.value.isEmpty())
+
+        store.set(SharingConfig(friends = listOf(rue)))
+        assertTrue(store.peerGoneFlow.value.isEmpty())
+
+        store.setPeerGone(mapOf("s2" to 7L))
+        store.clear()
+        assertTrue(store.peerGoneFlow.value.isEmpty())
+    }
+
+    @Test
+    fun `a new report replaces the old one, so a friend the other device clears is cleared`() = runTest {
+        val store = InMemorySharingStore(SharingConfig(friends = listOf(Friend.Simple("s1", "Kit", "pw_kit"))))
+        store.setPeerGone(mapOf("s1" to 5L))
+
+        store.setPeerGone(emptyMap())
+
+        assertTrue(store.peerGoneFlow.value.isEmpty())
+    }
+
+    @Test
+    fun `merged marks keep the later of the two`() {
+        assertEquals(
+            mapOf("a" to 5L, "b" to 9L, "c" to 3L),
+            GoneFriends.merged(own = mapOf("a" to 5L, "b" to 2L), peer = mapOf("b" to 9L, "c" to 3L)),
+        )
+    }
+
+    @Test
+    fun `gone marks survive encoding, and bad entries are dropped`() {
+        val gone = mapOf("f1" to 1L, "id@with@ats" to 2L)
+
+        assertEquals(gone, GoneMarks.decode(GoneMarks.encode(gone)))
+        assertEquals(emptyMap<String, Long>(), GoneMarks.decode(listOf("no-time", "@5", "f1@soon")))
     }
 }

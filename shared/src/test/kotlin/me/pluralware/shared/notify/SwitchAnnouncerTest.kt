@@ -3,6 +3,7 @@ package me.pluralware.shared.notify
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.preview.PreviewData
 import org.junit.Assert.assertEquals
@@ -66,5 +67,45 @@ class SwitchAnnouncerTest {
 
         assertFalse(changed)
         coVerify(exactly = 0) { sharer.announce(any(), any(), any()) }
+    }
+
+    @Test
+    fun `skips friends the other device found gone within the last day`() = runTest {
+        val store = InMemorySharingStore(config)
+        store.setPeerGone(mapOf("s2" to now - 1))
+        coEvery { sharer.announce(any(), any(), any()) } returns mapOf(kit to SendOutcome.Delivered)
+
+        val changed = SwitchAnnouncer.announce(store, sharer, switch, now)
+
+        coVerify { sharer.announce(config, switch, setOf("s2")) }
+        // The other device's findings are never recorded as this one's.
+        assertFalse(changed)
+        assertTrue(store.goneFlow.value.isEmpty())
+    }
+
+    @Test
+    fun `tries a friend the other device found gone over a day ago`() = runTest {
+        val store = InMemorySharingStore(config)
+        store.setPeerGone(mapOf("s2" to now - GoneFriends.RETRY_AFTER_MILLIS))
+        val skipped = slot<Set<String>>()
+        coEvery { sharer.announce(any(), any(), capture(skipped)) } returns
+            mapOf(kit to SendOutcome.Delivered, rue to SendOutcome.Delivered)
+
+        SwitchAnnouncer.announce(store, sharer, switch, now)
+
+        assertEquals(emptySet<String>(), skipped.captured)
+    }
+
+    @Test
+    fun `a friend found gone here again is a change to report`() = runTest {
+        val store = InMemorySharingStore(config)
+        store.markGone(setOf("s2"), now - GoneFriends.RETRY_AFTER_MILLIS)
+        coEvery { sharer.announce(any(), any(), any()) } returns
+            mapOf(kit to SendOutcome.Delivered, rue to SendOutcome.Gone)
+
+        val changed = SwitchAnnouncer.announce(store, sharer, switch, now)
+
+        assertTrue(changed)
+        assertEquals(mapOf("s2" to now), store.goneFlow.value)
     }
 }

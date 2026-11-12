@@ -87,28 +87,12 @@ object SwitchSync {
     /**
      * The other device's notices among changed DataItems, given as their
      * source node and payload, for a listener service. This device's own
-     * notices come back to it too and are dropped. If the local node can't be
-     * looked up they're kept: each is about the switch this device already
-     * has, so [Notice.differsFrom] turns it away anyway.
+     * notices come back to it too and are dropped; if they can't be told
+     * apart, [Notice.differsFrom] turns them away, being about the switch
+     * this device already has.
      */
     suspend fun fromOtherDevice(context: Context, items: List<Pair<String?, DataMap>>): List<Notice> =
-        fromOtherDevice(localNode(context), items)
-
-    internal fun fromOtherDevice(localNode: String?, items: List<Pair<String?, DataMap>>): List<Notice> =
-        items.filter { (node, _) -> localNode == null || node != localNode }
-            .mapNotNull { (_, map) -> read(map) }
-
-    // A device's node id doesn't change while the app runs.
-    @Volatile private var localNodeId: String? = null
-
-    private suspend fun localNode(context: Context): String? =
-        localNodeId ?: try {
-            Wearable.getNodeClient(context).localNode.await().id.also { localNodeId = it }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
+        OtherDevice.payloads(context, items).mapNotNull(::read)
 
     private val _incoming = MutableSharedFlow<Notice>(extraBufferCapacity = 8)
 

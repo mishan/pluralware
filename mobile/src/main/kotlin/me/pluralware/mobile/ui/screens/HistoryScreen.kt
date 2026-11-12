@@ -24,6 +24,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import me.pluralware.mobile.ui.LocalClock
 import me.pluralware.mobile.ui.components.BackTopBar
 import me.pluralware.mobile.ui.components.ErrorView
 import me.pluralware.mobile.ui.components.LoadingView
@@ -53,7 +54,7 @@ internal fun HistoryContent(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
-    zone: ZoneId = ZoneId.systemDefault(),
+    zone: ZoneId = LocalClock.current.zone,
 ) {
     Scaffold(topBar = { BackTopBar("Recent switches", onBack = onBack) }) { padding ->
         val modifier = Modifier.padding(padding)
@@ -107,7 +108,7 @@ private fun SwitchCard(switch: Switch, zone: ZoneId) {
                 }
             }
             Text(
-                text = switch.timestamp.relativeTo() + " · " + dateTime.format(switch.timestamp.atZone(zone)),
+                text = switch.timestamp.relativeTo(LocalClock.current.instant()) + " · " + dateTime.format(switch.timestamp.atZone(zone)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

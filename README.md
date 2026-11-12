@@ -5,6 +5,17 @@ Android and Wear OS app for [PluralKit](https://pluralkit.me) systems. The
 watch is optional: the phone app does everything on its own, and lets friends
 know when you switch.
 
+<p align="center">
+  <img src="docs/screenshots/phone-home.png" width="200" alt="The phone's home screen: Alex and Dani fronting, for 2 and 5 hours">
+  <img src="docs/screenshots/phone-picker.png" width="200" alt="Choosing fronters on the phone: Dani first, then Alex, with Deselect all at the top and Confirm switch at the bottom">
+  <img src="docs/screenshots/phone-history.png" width="200" alt="Recent switches on the phone, with how long ago and when">
+</p>
+<p align="center">
+  <img src="docs/screenshots/watch-home.png" width="170" alt="The watch's home screen: Alex and Dani currently fronting, since 2 hours ago">
+  <img src="docs/screenshots/watch-picker.png" width="170" alt="Choosing fronters on the watch, with Deselect all above the members">
+  <img src="docs/screenshots/watch-history.png" width="170" alt="Recent switches on the watch">
+</p>
+
 It's free, open source (AGPL-3.0) and early: it's being tested with plural
 folks now. Bug reports and ideas are welcome in
 [Issues](https://github.com/mishan/pluralware/issues).

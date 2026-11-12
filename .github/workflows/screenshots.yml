@@ -1,0 +1,46 @@
+name: Screenshots
+
+# The README's screenshots are rendered from the apps' own screens
+# (tools/screenshots.sh). This renders them again and fails if any differs
+# from the committed ones, so a UI change that changes them says so. When
+# one is meant to, commit the new pictures from the `screenshots` artifact a
+# failing run uploads (not the -diff, -ref or -new files beside them).
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "web-receiver/**", "relay/**"]
+  pull_request:
+    paths-ignore: ["**/*.md", "web-receiver/**", "relay/**"]
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: mishan/shotbox@v0.11.0
+
+      - run: tools/screenshots.sh --check
+
+      - name: Upload the new screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: build/screenshots
+          if-no-files-found: ignore
