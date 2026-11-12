@@ -1,7 +1,9 @@
 package me.pluralware.wear.complication
 
-import java.security.MessageDigest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
@@ -29,6 +31,7 @@ internal data class FronterDisplay(
  *
  * The app keeps the cache fresh by handing over every switch it sees
  * ([remember]), so after a switch the surfaces answer without a fetch of their own.
+ * A switch made on the phone [expire]s it instead, so the next request fetches.
  */
 internal class FronterSource(
     private val token: suspend () -> PluralKitToken?,
@@ -39,7 +42,7 @@ internal class FronterSource(
     suspend fun current(): FronterDisplay {
         val token = token() ?: return SETUP
         // A line fetched with another token belongs to another system.
-        val cached = cache.get()?.takeIf { it.tokenId == idOf(token) }
+        val cached = cache.get()?.takeIf { it.tokenId == token.fingerprint }
         if (cached != null && clock() - cached.fetchedAtEpochMillis in 0 until FRESH_FOR_MILLIS) {
             return cached.toDisplay(lastKnown = false)
         }
@@ -47,7 +50,7 @@ internal class FronterSource(
             is PkResult.Success -> {
                 val line = lineFor(result.value, token)
                 // Cache only if the token didn't change while we were fetching.
-                if (token() == token) cache.set(line)
+                if (token() == token) cacheLock.withLock { cache.set(line) }
                 line.toDisplay(lastKnown = false)
             }
             is PkResult.Failure -> when {
@@ -68,14 +71,41 @@ internal class FronterSource(
      */
     suspend fun remember(switch: Switch?, fetchedWith: PluralKitToken) {
         if (token() != fetchedWith) return
-        cache.set(lineFor(switch, fetchedWith))
+        cacheLock.withLock { cache.set(lineFor(switch, fetchedWith)) }
+    }
+
+    /**
+     * The phone reports [notice] as its current switch. If that's news to the
+     * cache (a different switch for this system, or nothing known yet), stop
+     * answering from it, so the next request fetches; the line stays as the
+     * "Last known" fallback. A notice about the switch already cached, such as
+     * the phone's echo of one this watch made, changes nothing. Returns whether
+     * the surfaces should be asked to update.
+     */
+    suspend fun expire(notice: SwitchSync.Notice): Boolean {
+        val token = token() ?: return false
+        val fingerprint = token.fingerprint
+        if (notice.tokenFingerprint != fingerprint) return false
+        return cacheLock.withLock {
+            val cached = cache.get()?.takeIf { it.tokenId == fingerprint }
+            when {
+                cached == null -> true
+                !notice.differsFrom(cached.switchUuid, cached.switchAtEpochMillis, fingerprint) -> false
+                else -> {
+                    cache.set(cached.copy(fetchedAtEpochMillis = 0L))
+                    true
+                }
+            }
+        }
     }
 
     private fun lineFor(switch: Switch?, token: PluralKitToken) = LastFronter(
         text = FronterComplicationFormatter.body(switch),
         description = FronterComplicationFormatter.contentDescription(switch),
         fetchedAtEpochMillis = clock(),
-        tokenId = idOf(token),
+        tokenId = token.fingerprint,
+        switchUuid = switch?.uuid,
+        switchAtEpochMillis = switch?.timestamp?.toEpochMilli(),
     )
 
     private fun LastFronter.toDisplay(lastKnown: Boolean) = if (lastKnown) {
@@ -85,10 +115,10 @@ internal class FronterSource(
     }
 
     companion object {
-        /** A token's cache key: a truncated SHA-256, so the token itself is never stored here. */
-        fun idOf(token: PluralKitToken): String =
-            MessageDigest.getInstance("SHA-256").digest(token.raw.toByteArray())
-                .take(16).joinToString("") { "%02x".format(it) }
+        // Process-wide: each request makes its own FronterSource, and a write
+        // must not land between another's read and write (expire's), or an
+        // older line could be put back over a newer one.
+        private val cacheLock = Mutex()
 
         /**
          * How long a cached line is answered without fetching. Shorter than the

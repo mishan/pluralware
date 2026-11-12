@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.EncryptedTokenStore
 import me.pluralware.shared.repository.PluralKitRepository
@@ -18,10 +19,10 @@ import me.pluralware.wear.tile.requestFronterTileUpdate
  * app tells them something changed.
  *
  * Every way the fronter can change on this watch reaches [publish]: the app
- * observes its repository's current fronters, which the picker, History's
- * switch-back and every refresh all go through. Switches made elsewhere
- * (Discord, the dashboard, another client) are caught by the complication's
- * update period and the tile's freshness interval.
+ * observes its repository's current fronters, which the picker and every
+ * refresh go through. Switches the phone makes or sees arrive through
+ * [onRemoteSwitch]. Others (Discord, the dashboard, another client) are
+ * caught by the complication's update period and the tile's freshness interval.
  */
 object FronterSurfaces {
 
@@ -44,6 +45,14 @@ object FronterSurfaces {
     suspend fun publish(context: Context, switch: Switch?, token: PluralKitToken) {
         source(context).remember(switch, token)
         requestUpdates(context)
+    }
+
+    /**
+     * The phone reports [notice] as its current switch: if it's news, refresh
+     * the surfaces from PluralKit, even with the app closed.
+     */
+    suspend fun onRemoteSwitch(context: Context, notice: SwitchSync.Notice) {
+        if (source(context).expire(notice)) requestUpdates(context)
     }
 
     /** The token was replaced or cleared: forget the old system's line and refresh. */

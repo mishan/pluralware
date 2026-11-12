@@ -87,8 +87,9 @@ Client behaviors that look like bugs but aren't:
 - Caches the member list (members change rarely).
 - Exposes `currentFronters` as a `StateFlow` — the one place every switch the app sees lands. After
   a successful `registerSwitch`, the new switch is pushed into that flow; the home ViewModel watches
-  for **uuid** changes (not value changes) to avoid re-loading on its own writes, and `MainActivity`
-  forwards every change to the complication and tile (see below).
+  for a **different switch** (uuid or start time), not any new value, to avoid re-loading on its own
+  writes, and the watch's `MainActivity` forwards every change to the complication and tile (see
+  below).
 
 It is deliberately **not** a singleton — apps wire it manually so tests can inject the mock.
 
@@ -137,6 +138,22 @@ is unreadable. If one turns up anyway, `EncryptedTokenStore` discards it rather 
 The phone's settings screen shows `WatchLink.state`: nothing at all on a phone without Wear OS,
 otherwise whether a watch is connected and the last send, with a button to send again.
 
+### Switch sync
+
+The phone and watch stay on the same switch through `SwitchSync` (`/pluralware/switch`), in both
+directions. While an app is showing, `SwitchSync.keepInSync` pushes each new current switch from
+its repository's `loadedFronters` (registered or merely fetched) as a `Notice`: switch uuid, start
+time and the token's `fingerprint`, with no names. The other side refreshes from PluralKit for a
+notice that `differsFrom` what it has, for the same system: different, not newer, so deleting the
+latest switch or moving its time reaches the other device too. Each node writes its own DataItem
+and the payload has no write timestamp, so re-pushing the same switch is a Data Layer no-op, and a
+device ignores a notice about the switch it already has; once both have refreshed, neither has
+anything new to say, so they don't echo. Listener services hand notices to the open app through
+`SwitchSync.incoming` (skipping their own node's), and the watch's also calls
+`FronterSurfaces.onRemoteSwitch`, whose cache remembers which switch it holds, so the complication
+and tile update with the app closed and the phone's echo of a watch switch costs no fetch.
+On a phone without Wear OS, `WatchLink.shareSwitch` tries once and then stays quiet.
+
 ### Phone UI
 
 `PhoneApp` mirrors the watch: signed out, a `NavHost` with **Connect** and **Following**; signed
@@ -172,9 +189,11 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
   `FronterSurfaces.publish`, along with the session's token. That caches the line (keyed by a hash
   of the token, so a stale fetch can't cross systems) and requests updates; token changes (pairing,
   either side's sign-out) go through `FronterSurfaces.onTokenChanged`, which clears the cache.
-  Anything that changes fronters or the token must keep reaching one of these two.
-- **Polling is only the backstop** for switches made off the watch (the phone app included): the complication's 30-minute
-  `UPDATE_PERIOD_SECONDS` and the tile's 10-minute freshness interval.
+  Switches from the phone go through `FronterSurfaces.onRemoteSwitch`, which expires it.
+  Anything that changes fronters or the token must keep reaching one of these.
+- **Polling is only the backstop** for switches made outside PluralWare (Discord, the dashboard)
+  while neither app is open: the complication's 30-minute `UPDATE_PERIOD_SECONDS` and the tile's
+  10-minute freshness interval.
 
 ### Friend notifications
 

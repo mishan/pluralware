@@ -34,12 +34,18 @@ interface LastFronterCache {
  * A formatted fronter line, its screen-reader text, when it was fetched
  * (epoch millis), and which token it was fetched with ([tokenId], a hash, never
  * the token itself). A line from another token is never shown.
+ *
+ * [switchUuid] and [switchAtEpochMillis] name the switch the line describes,
+ * when there is one, so a sync notice about that same switch can be told
+ * apart from news.
  */
 data class LastFronter(
     val text: String,
     val description: String,
     val fetchedAtEpochMillis: Long,
     val tokenId: String,
+    val switchUuid: String? = null,
+    val switchAtEpochMillis: Long? = null,
 )
 
 class InMemoryLastFronterCache(private var value: LastFronter? = null) : LastFronterCache {
@@ -71,6 +77,8 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             description = prefs.getString(KEY_DESCRIPTION, null) ?: text,
             fetchedAtEpochMillis = prefs.getLong(KEY_FETCHED_AT, 0L),
             tokenId = prefs.getString(KEY_TOKEN_ID, null) ?: return@withContext null,
+            switchUuid = prefs.getString(KEY_SWITCH_UUID, null),
+            switchAtEpochMillis = prefs.getLong(KEY_SWITCH_AT, -1L).takeIf { it >= 0 },
         )
     }
 
@@ -80,6 +88,8 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             .putString(KEY_DESCRIPTION, fronter.description)
             .putLong(KEY_FETCHED_AT, fronter.fetchedAtEpochMillis)
             .putString(KEY_TOKEN_ID, fronter.tokenId)
+            .putString(KEY_SWITCH_UUID, fronter.switchUuid)
+            .putLong(KEY_SWITCH_AT, fronter.switchAtEpochMillis ?: -1L)
             .apply()
     }
 
@@ -97,6 +107,8 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
         private const val KEY_DESCRIPTION = "last_fronter_description"
         private const val KEY_FETCHED_AT = "last_fronter_fetched_at"
         private const val KEY_TOKEN_ID = "last_fronter_token_id"
+        private const val KEY_SWITCH_UUID = "last_fronter_switch_uuid"
+        private const val KEY_SWITCH_AT = "last_fronter_switch_at"
 
         @Volatile private var instance: LastFronterStore? = null
 

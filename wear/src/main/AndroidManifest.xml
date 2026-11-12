@@ -33,8 +33,9 @@
 
         <!--
             Receives data the phone pushes over the Wearable Data Layer: the
-            PluralKit token, friend sharing and app settings. Filtered by path so unrelated
-            DataItem traffic doesn't wake the service. `exported="true"` is
+            PluralKit token, friend sharing, app settings and the phone's current
+            switch. Filtered by path so unrelated DataItem traffic doesn't wake
+            the service. `exported="true"` is
             required for the Wear framework to bind to it.
         -->
         <service
@@ -54,6 +55,10 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/pluralware/sharing" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/switch" />
             </intent-filter>
         </service>
 

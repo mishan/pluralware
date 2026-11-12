@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.MaterialTheme
@@ -32,6 +35,7 @@ import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.handoff.SharingHandoff
+import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.notify.SwitchAnnouncer
 import me.pluralware.shared.repository.EncryptedTokenStore
@@ -124,12 +128,22 @@ private fun ConnectedApp(
     // The screens' ViewModels (through the nav graph's back-stack entries)
     // live in the session's store, not the activity's.
     val appContext = LocalContext.current.applicationContext
-    // Every switch the app sees — from the picker, History's switch-back, or
-    // any refresh — lands in the repository; hand each change to the
+    // Every switch the app sees — from the picker, the phone, or any
+    // refresh — lands in the repository; hand each change to the
     // complication and tile, including "no switches yet".
     LaunchedEffect(session) {
         session.repository.loadedFronters.filterNotNull().collect {
             FronterSurfaces.publish(appContext, it.switch, session.token)
+        }
+    }
+    // While the app is showing, keep the phone on the same switch, both ways.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(session, lifecycleOwner) {
+        if (BuildConfig.BENCHMARK) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
+                SwitchSync.push(appContext, switch, session.token)
+            })
         }
     }
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
