@@ -52,7 +52,7 @@ class Account(
         if (previous != system.uuid) {
             // Another system's friends (or unowned ones, which may be another
             // system's) must not hear about this one's switches.
-            forgetSharing()
+            check(forgetSharing()) { "Couldn't clear the last system's sharing. Try again." }
             // The watch may still have it: the new token replaces a sign-out
             // it hasn't received yet.
             step("clear the watch's sharing") { pushSharingToWatch(SharingConfig()) }
@@ -116,7 +116,8 @@ class Account(
         }
     }
 
-    private suspend fun forgetSharing() {
+    /** False if sharing couldn't be cleared. */
+    private suspend fun forgetSharing(): Boolean {
         // The relay, if any, is told to forget its copy. Unreachable: keep its
         // admin details (orphans survive clear()) so the sharing screen can
         // delete from it later.
@@ -131,7 +132,7 @@ class Account(
             }
             if (!cleared) step("remember the relay") { sharingStore.addOrphan(relay) }
         }
-        step("clear sharing") { sharingStore.clear() }
+        return step("clear sharing") { sharingStore.clear() }
     }
 
     private suspend fun step(what: String, block: suspend () -> Unit): Boolean =

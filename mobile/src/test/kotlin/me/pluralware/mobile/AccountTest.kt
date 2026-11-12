@@ -2,6 +2,7 @@ package me.pluralware.mobile
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -11,11 +12,13 @@ import me.pluralware.shared.notify.Friend
 import me.pluralware.shared.notify.InMemorySharingStore
 import me.pluralware.shared.notify.RelaySettings
 import me.pluralware.shared.notify.SharingConfig
+import me.pluralware.shared.notify.SharingStore
 import me.pluralware.shared.repository.InMemoryTokenStore
 import me.pluralware.shared.repository.TokenStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -181,6 +184,27 @@ class AccountTest {
         assertEquals("uuid-sys", owner.get())
         assertTrue(pushedSharing.none { it.isSharing })
     }
+
+    @Test
+    fun `a different system can't connect while the last one's sharing can't be cleared`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val account = Account(
+                scope = backgroundScope,
+                tokenStore = tokens,
+                sharingStore = object : SharingStore by sharingStore {
+                    override suspend fun clear() = error("keystore")
+                },
+                owner = owner,
+                clearRelay = { true },
+                signOutWatch = {},
+                pushSharingToWatch = { pushedSharing += it },
+            )
+
+            assertThrows(Exception::class.java) { runBlocking { account.connected(other) } }
+
+            assertEquals("uuid-sys", owner.get())
+            assertTrue(pushedSharing.none { it.isSharing })
+        }
 
     @Test
     fun `sharing saved before owners were recorded is claimed for its token's system`() =
