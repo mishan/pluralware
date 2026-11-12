@@ -68,12 +68,18 @@ class WatchLink(
     private val writes = Mutex()
     @Volatile private var signOuts = 0
 
+    // Whatever a send comes to is newer than what a check that began before it finds.
+    @Volatile private var sends = 0
+
     /** Looks for a watch again, unless a send is underway or has reported. */
     fun check() {
+        val sendsBefore = sends
         scope.launch {
             val current = _state.value
             if (current is WatchState.Sending || current is WatchState.Sent) return@launch
-            _state.value = when (val found = find()) {
+            val found = find()
+            if (sends != sendsBefore) return@launch
+            _state.value = when (found) {
                 Found.Unsupported -> WatchState.Unsupported
                 is Found.Failed -> WatchState.Failed(found.message)
                 is Found.Watches -> found.names.firstOrNull()
@@ -86,6 +92,7 @@ class WatchLink(
     /** Sends [token], and the current settings, to the watch if there is one. */
     fun send(token: PluralKitToken) {
         val signOutsBefore = signOuts
+        sends++
         scope.launch {
             _state.value = WatchState.Sending
             val names = when (val found = find()) {
@@ -103,7 +110,7 @@ class WatchLink(
                 writes.withLock {
                     if (signOuts != signOutsBefore) return@launch
                     // Settings first, so a freshly paired watch starts in sync.
-                    runCatching { pushSettings() }
+                    bestEffort { pushSettings() }
                     pushToken(token)
                 }
                 names.firstOrNull()?.let { WatchState.Sent(it) } ?: WatchState.NotConnected(queued = true)
@@ -145,9 +152,20 @@ class WatchLink(
     suspend fun signOut() {
         writes.withLock {
             signOuts++
-            runCatching { pushSignOut() }
+            bestEffort { pushSignOut() }
         }
         _state.value = WatchState.Checking
+    }
+
+    // Unlike runCatching, lets a cancelled send or sign-out stop here.
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
     }
 
     private sealed interface Found {

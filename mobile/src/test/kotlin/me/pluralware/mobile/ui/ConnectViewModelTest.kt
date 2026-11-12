@@ -30,12 +30,28 @@ class ConnectViewModelTest {
 
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun viewModel(validate: suspend (PluralKitToken) -> SystemInfo = { system }) = ConnectViewModel(
+    private fun viewModel(
+        onConnected: suspend (SystemInfo) -> Unit = { steps += "connected:${it.uuid}" },
+        validate: suspend (PluralKitToken) -> SystemInfo = { system },
+    ) = ConnectViewModel(
         tokenStore = tokens,
         sendToWatch = { steps += "watch:${it.raw}" },
-        onConnected = { steps += "connected:${it.uuid}" },
+        onConnected = onConnected,
         validate = validate,
     )
+
+    @Test
+    fun `a connection the account can't take says so and saves nothing`() {
+        val vm = viewModel(onConnected = { error("Couldn't clear the last system's sharing.") })
+        vm.onInputChange("token")
+
+        vm.connect()
+
+        assertNull(tokens.tokenFlow.value)
+        assertTrue(steps.isEmpty())
+        assertEquals("Couldn't clear the last system's sharing.", vm.state.value.error)
+        assertFalse(vm.state.value.validating)
+    }
 
     @Test
     fun `a valid token is checked, claimed, sent on and saved, in that order`() {

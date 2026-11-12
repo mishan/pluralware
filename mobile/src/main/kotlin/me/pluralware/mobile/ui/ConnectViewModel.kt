@@ -56,15 +56,14 @@ class ConnectViewModel(
         _state.update { it.copy(validating = true, error = null) }
         viewModelScope.launch {
             val token = PluralKitToken(raw)
-            val system = try {
-                validate(token)
+            try {
+                onConnected(validate(token))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _state.update { it.copy(validating = false, error = e.toFriendlyValidationMessage()) }
                 return@launch
             }
-            onConnected(system)
             sendToWatch(token)
             tokenStore.setToken(token)
         }
