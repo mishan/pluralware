@@ -93,3 +93,6 @@ internal data class CreateSwitchRequest(
     val members: List<String>,
     val timestamp: String? = null,
 )
+
+@Serializable
+internal data class MoveSwitchRequest(val timestamp: String)

@@ -6,12 +6,16 @@ import io.mockk.coVerify
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.api.dto.CreateSwitchRequest
 import me.pluralware.shared.api.dto.MemberDto
 import me.pluralware.shared.api.dto.SwitchFullDto
 import me.pluralware.shared.api.dto.SwitchRefsDto
 import me.pluralware.shared.api.dto.SystemDto
+import me.pluralware.shared.model.MemberField
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
@@ -208,17 +212,104 @@ class RetrofitPluralKitClientTest {
 
     @Test
     fun `an error body that isn't PluralKit's leaves the code and field errors empty`() {
-        for (body in listOf(null, "", "<html>Bad gateway</html>", """{"message":"no code"}""", """{"code":"x"}""")) {
+        val bodies = listOf(
+            null, "", "<html>Bad gateway</html>", "[1,2]", "\"text\"", """{"message":"no code"}""", """{"code":"x"}""",
+            """{"code":{"value":40001},"message":{"text":"x"}}""",
+        )
+        for (body in bodies) {
             val parsed = parseErrorBody(body)
             assertNull(body, parsed.code)
             assertEquals(body, emptyMap<String, List<String>>(), parsed.fieldErrors)
         }
+        assertNull(parseErrorBody("""{"code":40001,"message":{"text":"x"}}""").message)
         assertEquals(20007, parseErrorBody("""{"code":20007,"message":"Switch not found."}""").code)
+    }
+
+    @Test
+    fun `field errors keep only messages PluralKit actually gave`() {
+        val cases = listOf(
+            """{"errors":{"name":"oops"}}""" to emptyMap(),
+            """{"errors":[{"message":"Bad."}]}""" to emptyMap(),
+            """{"errors":{"name":["oops", {"message":"Too long."}, {"other":1}, {"message":null}, {"message":{"x":1}}]}}""" to
+                mapOf("name" to listOf("Too long.")),
+            """{"errors":{"name":[{"other":1}], "color":[{"message":"Bad."}, {"message":"Worse."}]}}""" to
+                mapOf("color" to listOf("Bad.", "Worse.")),
+        )
+        for ((body, expected) in cases) assertEquals(body, expected, parseErrorBody(body).fieldErrors)
+        assertEquals("Switch not found.", parseErrorBody("""{"code":20007,"message":"Switch not found."}""").message)
+        assertNull(parseErrorBody("""{"code":20007}""").message)
+    }
+
+    @Test
+    fun `a member list fetched before an edit can't bring back the old name`() = runTest(UnconfinedTestDispatcher()) {
+        val api = mockk<PluralKitApi>()
+        val slowFetch = CompletableDeferred<Unit>()
+        var fetches = 0
+        val renamed = sampleMemberDto.copy(name = "Alexis")
+        coEvery { api.getOwnMembers() } coAnswers {
+            // The first fetch is under way when the edit happens; PluralKit had the old name then.
+            if (fetches++ == 0) { slowFetch.await(); listOf(sampleMemberDto) } else listOf(renamed)
+        }
+        coEvery { api.updateMember("uuid-alpha", any()) } returns renamed
+        coEvery { api.getRecentSwitches(any()) } returns
+            listOf(SwitchRefsDto(id = "sw", timestamp = "2026-11-13T14:00:00Z", members = listOf("alpha")))
+        val client = client(api)
+
+        launch { client.getOwnMembers() }
+        client.updateMember("uuid-alpha", mapOf(MemberField.Name to "Alexis"))
+        slowFetch.complete(Unit)
+
+        assertEquals(listOf("Alexis"), client.getRecentSwitches(10).single().members.map { it.name })
+    }
+
+    @Test
+    fun `a slow switch registration can't bring back a member's old name`() = runTest(UnconfinedTestDispatcher()) {
+        val api = mockk<PluralKitApi>()
+        val slowCreate = CompletableDeferred<Unit>()
+        val renamed = sampleMemberDto.copy(name = "Alexis")
+        coEvery { api.getOwnMembers() } returns listOf(sampleMemberDto)
+        // PluralKit answered the registration with the name it had then.
+        coEvery { api.createSwitch(any()) } coAnswers {
+            slowCreate.await()
+            SwitchFullDto(id = "sw", timestamp = "2026-11-13T14:00:00Z", members = listOf(sampleMemberDto))
+        }
+        coEvery { api.updateMember("uuid-alpha", any()) } returns renamed
+        coEvery { api.getRecentSwitches(any()) } returns
+            listOf(SwitchRefsDto(id = "sw", timestamp = "2026-11-13T14:00:00Z", members = listOf("alpha")))
+        val client = client(api)
+        client.getOwnMembers()
+
+        launch { client.registerSwitch(listOf("uuid-alpha")) }
+        client.updateMember("uuid-alpha", mapOf(MemberField.Name to "Alexis"))
+        slowCreate.complete(Unit)
+
+        assertEquals(listOf("Alexis"), client.getRecentSwitches(10).single().members.map { it.name })
+    }
+
+    @Test
+    fun `a member list fetch gives up waiting for edits to stop, after three tries`() = runTest {
+        val api = mockk<PluralKitApi>()
+        lateinit var client: PluralKitClient
+        var fetches = 0
+        coEvery { api.updateMember(any(), any()) } returns sampleMemberDto
+        coEvery { api.getOwnMembers() } coAnswers {
+            fetches++
+            // An edit lands during every fetch.
+            client.updateMember("uuid-alpha", mapOf(MemberField.Pronouns to "she/her"))
+            listOf(sampleMemberDto)
+        }
+        client = client(api)
+
+        val members = client.getOwnMembers()
+
+        assertEquals(listOf("Alex"), members.map { it.name })
+        assertEquals(3, fetches)
     }
 
     @Test
     fun `parseRetryAfter reads delta-seconds and ignores anything else`() {
         assertEquals(Duration.ofSeconds(30), parseRetryAfter(" 30 "))
+        assertEquals(Duration.ZERO, parseRetryAfter("0"))
         assertNull(parseRetryAfter(null))
         assertNull(parseRetryAfter("-1"))
         assertNull(parseRetryAfter("Wed, 21 Oct 2026 07:28:00 GMT"))

@@ -1,7 +1,9 @@
 package me.pluralware.shared.api
 
 import java.security.MessageDigest
+import java.time.Instant
 import me.pluralware.shared.model.Member
+import me.pluralware.shared.model.MemberField
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 
@@ -43,6 +45,22 @@ interface PluralKitClient {
      * @param memberUuids empty list = switch-out (nobody fronting).
      */
     suspend fun registerSwitch(memberUuids: List<String>): Switch
+
+    /**
+     * PATCH /members/{uuid} with only [changes]: PluralKit leaves a field it
+     * isn't sent alone and clears one sent as null. Build [changes] with
+     * [me.pluralware.shared.model.MemberEdit.changes]; nothing else should.
+     */
+    suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member
+
+    /** PATCH /systems/@me/switches/{uuid}: moves when the switch started. */
+    suspend fun moveSwitch(uuid: String, to: Instant): Switch
+
+    /** PATCH /systems/@me/switches/{uuid}/members: who the switch is, first as primary. */
+    suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): Switch
+
+    /** DELETE /systems/@me/switches/{uuid}. */
+    suspend fun deleteSwitch(uuid: String)
 }
 
 /** Auth marker. The token is otherwise an opaque string from `pk;token`. */

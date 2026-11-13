@@ -10,16 +10,19 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import me.pluralware.shared.api.dto.CreateSwitchRequest
 import me.pluralware.shared.api.dto.MemberDto
+import me.pluralware.shared.api.dto.MoveSwitchRequest
 import me.pluralware.shared.api.dto.SwitchFullDto
 import me.pluralware.shared.api.dto.SwitchRefsDto
 import me.pluralware.shared.api.dto.SystemDto
 import me.pluralware.shared.model.Member
+import me.pluralware.shared.model.MemberField
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import retrofit2.HttpException
 import retrofit2.Response
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /**
  * [PluralKitClient] backed by Retrofit + OkHttp + kotlinx-serialization.
@@ -55,14 +58,28 @@ class RetrofitPluralKitClient internal constructor(
     private val cacheMutex = Mutex()
     private var memberCache: Map<String, Member>? = null
 
+    // Counts edits written into memberCache. A member list fetched while one
+    // landed may predate it, so it's fetched again rather than cached.
+    private var cacheEdits = 0
+
     override suspend fun getOwnSystem(): SystemInfo = http { api.getOwnSystem() }.toDomain()
 
-    override suspend fun getOwnMembers(): List<Member> {
-        val members = http { api.getOwnMembers() }.map { it.toDomain() }
-        // Opportunistically warm the resolver cache — same network round-trip,
-        // saves a future fetch when getRecentSwitches() needs the lookup.
-        cacheMutex.withLock { memberCache = buildMemberLookup(members) }
-        return members
+    // Also warms the resolver cache: same network round-trip, and it saves a
+    // fetch when getRecentSwitches() needs the lookup.
+    override suspend fun getOwnMembers(): List<Member> = fetchMembers().first
+
+    private suspend fun fetchMembers(): Pair<List<Member>, Map<String, Member>> {
+        var attempt = 0
+        while (true) {
+            val editsBefore = cacheMutex.withLock { cacheEdits }
+            val members = http { api.getOwnMembers() }.map { it.toDomain() }
+            val lookup = buildMemberLookup(members)
+            cacheMutex.withLock {
+                // Edits that keep landing get the last fetch as an answer, and keep the cache.
+                if (cacheEdits == editsBefore) memberCache = lookup
+                if (cacheEdits == editsBefore || ++attempt == MEMBER_FETCH_ATTEMPTS) return members to lookup
+            }
+        }
     }
 
     override suspend fun getCurrentFronters(): Switch? {
@@ -95,19 +112,52 @@ class RetrofitPluralKitClient internal constructor(
     override suspend fun registerSwitch(memberUuids: List<String>): Switch {
         // PluralKit's POST accepts either short IDs or UUIDs. We send UUIDs
         // because the pickers track members by UUID — the stable identifier.
+        val editsBefore = cacheMutex.withLock { cacheEdits }
         val switch = http { api.createSwitch(CreateSwitchRequest(members = memberUuids)) }
             .toDomain()
         // Server returned full Member objects in the response; refresh the cache
         // so any newly-added members from the response are visible to history.
-        cacheMutex.withLock {
-            val merged = (memberCache ?: emptyMap()).toMutableMap()
-            switch.members.forEach { m ->
-                merged[m.uuid] = m
-                merged[m.id] = m
-            }
-            memberCache = merged
-        }
+        remember(switch.members, editsBefore)
         return switch
+    }
+
+    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member {
+        require(changes.isNotEmpty()) { "An edit that changes nothing isn't sent" }
+        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) })
+        // History resolves members from the lookup cache; keep the edit visible there.
+        return http { api.updateMember(uuid, body) }.toDomain().also { remember(listOf(it)) }
+    }
+
+    override suspend fun moveSwitch(uuid: String, to: Instant): Switch {
+        // PluralKit parses times with .NET, which takes at most seven fractional digits.
+        val at = to.truncatedTo(ChronoUnit.MILLIS).toString()
+        return http { api.moveSwitch(uuid, MoveSwitchRequest(at)) }.toDomain()
+    }
+
+    override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): Switch =
+        http { api.setSwitchMembers(uuid, memberUuids) }.toDomain()
+
+    override suspend fun deleteSwitch(uuid: String) {
+        // A Response<Unit> return reports errors in itself; Retrofit doesn't throw them.
+        val response = api.deleteSwitch(uuid)
+        if (!response.isSuccessful) throw response.toPluralKitException()
+    }
+
+    /**
+     * Writes [members] into the lookup cache. Given [editsBefore], taken when
+     * their request went out, they don't replace members an edit has written
+     * since: those are newer.
+     */
+    private suspend fun remember(members: List<Member>, editsBefore: Int? = null) = cacheMutex.withLock {
+        val merged = (memberCache ?: emptyMap()).toMutableMap()
+        val keepCached = editsBefore != null && editsBefore != cacheEdits
+        members.forEach { m ->
+            if (keepCached && m.uuid in merged) return@forEach
+            merged[m.uuid] = m
+            merged[m.id] = m
+        }
+        memberCache = merged
+        cacheEdits++
     }
 
     /** Runs one API call, translating Retrofit's [HttpException] into [PluralKitHttpException]. */
@@ -127,11 +177,7 @@ class RetrofitPluralKitClient internal constructor(
         return refreshMemberLookup()
     }
 
-    private suspend fun refreshMemberLookup(): Map<String, Member> {
-        val fresh = buildMemberLookup(http { api.getOwnMembers() }.map { it.toDomain() })
-        cacheMutex.withLock { memberCache = fresh }
-        return fresh
-    }
+    private suspend fun refreshMemberLookup(): Map<String, Member> = fetchMembers().second
 
     /**
      * The history endpoint returns member references by short ID (e.g. "abcde"),
@@ -204,6 +250,8 @@ class PluralKitHttpException(
 
     val isRateLimited: Boolean get() = statusCode == 429
 }
+
+private const val MEMBER_FETCH_ATTEMPTS = 3
 
 /** Every error from PluralKit, thrown by Retrofit or returned, becomes one of these the same way. */
 private fun Response<*>.toPluralKitException(cause: Throwable? = null): PluralKitHttpException {
