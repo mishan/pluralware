@@ -23,6 +23,8 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test class: `./gradlew :shared:testDebugUnitTest --tests "me.pluralware.shared.PluralKitRepositoryTest"`
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
+- Mutation-test member editing (or other `:shared` classes) with PIT: `tools/mutation.sh`. Needs Java 17+;
+  not in CI.
 - README screenshots: `tools/screenshots.sh` renders them into `docs/screenshots`;
   `tools/screenshots.sh --check` renders them afresh and compares (CI's `screenshots.yml`). Needs
   [shotbox](https://github.com/mishan/shotbox) (`pip install shotbox`) and bubblewrap.

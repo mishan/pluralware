@@ -188,7 +188,7 @@ different check that the retry is just repeating a success:
 |---|---|---|
 | Unit | `MemberEdit`: normalize, validate and changes, table-driven | The core of "never clobber" |
 | Property | Seeded random members and edits, including uppercase hex, `#` and edge whitespace: unchanged fields never appear in `changes`; applying `changes` to the original gives the normalized draft; `changes(m, draftOf(m))` is empty | Hand-picked cases miss odd strings |
-| Mutation | Pitest on `MemberEdit`, run on demand (critical-tier layer) | Proves the tests above would catch a quiet change to the diff |
+| Mutation | Pitest on `MemberEdit` with `tools/mutation.sh`, run by hand (critical-tier layer) | Proves the tests above would catch a quiet change to the diff |
 | Client | Exact request bodies and paths against a fake server: absent vs `null`, the three switch calls, error-body parsing | The wire format is where absent vs null goes wrong |
 | Repository | Fetch after every write; a stale fetch can't land after a write; `onFrontCorrected` fires only when the current front changed, decided from fresh data | Sections 4 and 6 |
 | Failure injection | The fake server fails mid-write: 500, a dropped connection after the request was sent, 429, and each "retry repeats a success" case | Section 9 |
