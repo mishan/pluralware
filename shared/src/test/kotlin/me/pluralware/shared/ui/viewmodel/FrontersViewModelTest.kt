@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import java.time.Duration
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
@@ -171,6 +172,49 @@ class FrontersViewModelTest {
         repository.refreshFronters()
 
         assertEquals(moved, (vm.state.value as UiState.Content).value.switch)
+    }
+
+    @Test
+    fun `an edit to the current switch's members reloads the screen though the switch is the same`() = runTest {
+        val current = PreviewData.currentSwitch
+        val first = current.members.first()
+        val edits = listOf(
+            "renamed" to current.copy(members = listOf(first.copy(name = "Renamed")) + current.members.drop(1)),
+            "new pronouns" to current.copy(members = listOf(first.copy(pronouns = "xe/xem")) + current.members.drop(1)),
+            "new color" to current.copy(members = listOf(first.copy(color = "123abc")) + current.members.drop(1)),
+            "different members" to current.copy(members = PreviewData.members.takeLast(1)),
+        )
+        for ((what, edited) in edits) {
+            coEvery { client.getCurrentFronters() } returns current
+            val repository = PluralKitRepository(client)
+            val vm = FrontersViewModel(repository, InMemorySettingsStore(), clock = { now })
+            assertEquals(what, current, (vm.state.value as UiState.Content).value.switch)
+            coEvery { client.getCurrentFronters() } returns edited
+
+            repository.refreshFronters()
+
+            assertEquals(what, edited, (vm.state.value as UiState.Content).value.switch)
+        }
+    }
+
+    @Test
+    fun `a change that arrives while the screen is loading isn't missed`() = runTest {
+        val current = PreviewData.currentSwitch
+        val edited = current.copy(members = PreviewData.members.takeLast(1))
+        coEvery { client.getCurrentFronters() } returns current
+        val repository = PluralKitRepository(client)
+        val vm = FrontersViewModel(repository, InMemorySettingsStore(), clock = { now })
+        val historyHeld = CompletableDeferred<Unit>()
+        coEvery { client.getRecentSwitches(any()) } coAnswers { historyHeld.await(); PreviewData.historyRecent }
+        vm.refresh()
+
+        // The screen has the front and is waiting on history when an edit lands.
+        coEvery { client.getCurrentFronters() } returns edited
+        repository.refreshFronters()
+        coEvery { client.getRecentSwitches(any()) } returns PreviewData.historyRecent
+        historyHeld.complete(Unit)
+
+        assertEquals(edited, (vm.state.value as UiState.Content).value.switch)
     }
 
     @Test
