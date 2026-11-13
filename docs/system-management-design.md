@@ -153,8 +153,9 @@ When an edit changes who's fronting now, the phone tells friends with the correc
 
 - **Members**, reached from the home screen: the system's members, searchable like the picker.
   Tapping one opens its editor.
-- **Edit member:** a form with the six fields, a color swatch beside the hex field, and the
-  avatar shown from its URL.
+- **Edit member:** a form with the six fields and a color swatch beside the hex field. Showing
+  the avatar from its URL needs an image-loading library the app doesn't have yet; it's left
+  for later.
   - Save is enabled only when something changed and everything is valid.
   - Leaving with unsaved changes asks first.
   - The draft **and the member as it was loaded** survive rotation and process death

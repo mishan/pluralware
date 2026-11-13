@@ -41,7 +41,7 @@ import me.pluralware.shared.ui.state.UiState
 @Composable
 fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
     TopAppBar(
-        title = { Text(title) },
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -181,3 +181,11 @@ fun MemberBadge(member: Member, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** Member lists show a search field from this many members on. */
+internal const val SEARCH_FROM = 8
+
+internal fun Member.matches(query: String): Boolean =
+    displayLabel.contains(query, ignoreCase = true) ||
+        name.contains(query, ignoreCase = true) ||
+        id.equals(query, ignoreCase = true)

@@ -41,8 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,6 +50,8 @@ import me.pluralware.mobile.ui.components.BackTopBar
 import me.pluralware.mobile.ui.components.ErrorView
 import me.pluralware.mobile.ui.components.LoadingView
 import me.pluralware.mobile.ui.components.MemberLine
+import me.pluralware.mobile.ui.components.SEARCH_FROM
+import me.pluralware.mobile.ui.components.matches
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.PickerState
@@ -263,10 +265,3 @@ private fun ConfirmBar(state: PickerState, onConfirm: () -> Unit) {
         }
     }
 }
-
-private const val SEARCH_FROM = 8
-
-private fun Member.matches(query: String): Boolean =
-    displayLabel.contains(query, ignoreCase = true) ||
-        name.contains(query, ignoreCase = true) ||
-        id.equals(query, ignoreCase = true)

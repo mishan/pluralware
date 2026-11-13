@@ -57,6 +57,7 @@ fun FrontersScreen(
     settingsStore: SettingsStore,
     onChangeFronters: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMembers: () -> Unit,
     onOpenSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -87,6 +88,7 @@ fun FrontersScreen(
         onRetry = vm::load,
         onChangeFronters = onChangeFronters,
         onOpenHistory = onOpenHistory,
+        onOpenMembers = onOpenMembers,
         onOpenSettings = onOpenSettings,
         onSignOut = onSignOut,
     )
@@ -100,6 +102,7 @@ internal fun FrontersContent(
     onRetry: () -> Unit,
     onChangeFronters: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMembers: () -> Unit,
     onOpenSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -173,6 +176,7 @@ internal fun FrontersContent(
                             }
                         }
                         item { WideOutlinedButton("Recent switches", onClick = onOpenHistory) }
+                        item { WideOutlinedButton("Members", onClick = onOpenMembers) }
                     }
                 }
             }
