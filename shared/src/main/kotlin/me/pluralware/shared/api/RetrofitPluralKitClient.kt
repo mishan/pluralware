@@ -245,6 +245,9 @@ class PluralKitHttpException(
     /** For a rejected model (40001): field name to PluralKit's messages for it. */
     val fieldErrors: Map<String, List<String>> = emptyMap(),
 ) : RuntimeException("PluralKit API returned HTTP $statusCode: $message", cause) {
+    /** What PluralKit said, or the HTTP reason when it said nothing: fit to show a person. */
+    val reason: String = message
+
     /** The token was rejected — revoked, regenerated with `pk;token refresh`, or mistyped. */
     val isUnauthorized: Boolean get() = statusCode == 401
 

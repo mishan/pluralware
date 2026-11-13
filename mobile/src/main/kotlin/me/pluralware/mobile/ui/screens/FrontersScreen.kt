@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -57,6 +58,7 @@ fun FrontersScreen(
     settingsStore: SettingsStore,
     onChangeFronters: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMembers: () -> Unit,
     onOpenSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -87,6 +89,7 @@ fun FrontersScreen(
         onRetry = vm::load,
         onChangeFronters = onChangeFronters,
         onOpenHistory = onOpenHistory,
+        onOpenMembers = onOpenMembers,
         onOpenSettings = onOpenSettings,
         onSignOut = onSignOut,
     )
@@ -100,6 +103,7 @@ internal fun FrontersContent(
     onRetry: () -> Unit,
     onChangeFronters: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenMembers: () -> Unit,
     onOpenSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -129,6 +133,7 @@ internal fun FrontersContent(
                         modifier = modifier,
                     ) {
                         Button(onClick = onChangeFronters) { Text("Log a switch") }
+                        OutlinedButton(onClick = onOpenMembers) { Text("Members") }
                     }
                     return@Scaffold
                 }
@@ -173,6 +178,7 @@ internal fun FrontersContent(
                             }
                         }
                         item { WideOutlinedButton("Recent switches", onClick = onOpenHistory) }
+                        item { WideOutlinedButton("Members", onClick = onOpenMembers) }
                     }
                 }
             }

@@ -74,7 +74,7 @@ class ReadmeScreenshots {
         ),
     )
 
-    @Test fun home() = shot("phone-home") { FrontersContent(home, {}, {}, {}, {}, {}, {}) }
+    @Test fun home() = shot("phone-home") { FrontersContent(home, {}, {}, {}, {}, {}, {}, {}) }
 
     @Test fun picker() = shot("phone-picker") {
         PickerContent(

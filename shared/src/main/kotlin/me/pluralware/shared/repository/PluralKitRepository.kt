@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.api.PluralKitClient
@@ -73,6 +74,15 @@ class PluralKitRepository(
      * switched (PluralKit's 204).
      */
     val loadedFronters: StateFlow<LoadedFronters?> = _loadedFronters.asStateFlow()
+
+    private val _memberEdits = MutableStateFlow(0)
+
+    /**
+     * Counts member edits that may have landed (all but those PluralKit
+     * refused), so a screen listing members can reload when it changes, even
+     * for an edit that finished after its editor closed.
+     */
+    val memberEdits: StateFlow<Int> = _memberEdits.asStateFlow()
 
     // Counts writes that succeeded. A fetch that was in flight while one did
     // may have read PluralKit from before it, so it doesn't replace what the
@@ -148,7 +158,10 @@ class PluralKitRepository(
     suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): PkResult<Member> = detached {
         val result = runCatchingPk { sent { client.updateMember(uuid, changes) } }
         // Unless PluralKit refused it, the edit may have landed: cached names may be old.
-        if (!result.refusedByPluralKit()) membersCacheMutex.withLock { membersCache = null }
+        if (!result.refusedByPluralKit()) {
+            membersCacheMutex.withLock { membersCache = null }
+            _memberEdits.update { it + 1 }
+        }
         if (result is PkResult.Success) afterWrite()
         result
     }

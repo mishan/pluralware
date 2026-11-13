@@ -28,6 +28,8 @@ import me.pluralware.mobile.sharing.SharingViewModel
 import me.pluralware.mobile.ui.ConnectScreen
 import me.pluralware.mobile.ui.ConnectViewModel
 import me.pluralware.mobile.ui.SettingsScreen
+import me.pluralware.mobile.ui.members.MemberEditorScreen
+import me.pluralware.mobile.ui.members.MembersScreen
 import me.pluralware.mobile.ui.SettingsViewModel
 import me.pluralware.mobile.ui.screens.FrontersScreen
 import me.pluralware.mobile.ui.screens.HistoryScreen
@@ -41,6 +43,10 @@ object Routes {
     const val HOME = "home"
     const val PICK = "pick"
     const val HISTORY = "history"
+    const val MEMBERS = "members"
+    const val EDIT_MEMBER = "members/{uuid}"
+
+    fun editMember(uuid: String) = "members/$uuid"
     const val SETTINGS = "settings"
     const val SHARING = "sharing"
     const val FOLLOWING = "following"
@@ -128,6 +134,7 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
             settingsStore = graph.settingsStore,
             onChangeFronters = { nav.navigate(Routes.PICK) },
             onOpenHistory = { nav.navigate(Routes.HISTORY) },
+            onOpenMembers = { nav.navigate(Routes.MEMBERS) },
             onOpenSettings = { nav.navigate(Routes.SETTINGS) },
             onSignOut = signOut,
         )
@@ -142,6 +149,28 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
     }
     composable(Routes.HISTORY) {
         HistoryScreen(repository = repository, onBack = { nav.popBackStack() }, onSignOut = signOut)
+    }
+    composable(Routes.MEMBERS) { entry ->
+        MembersScreen(
+            repository = repository,
+            onBack = { nav.popBackStack() },
+            // Only while it's the screen showing: a quick second tap would open a second editor.
+            onOpenMember = {
+                if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) nav.navigate(Routes.editMember(it))
+            },
+            onSignOut = signOut,
+        )
+    }
+    composable(Routes.EDIT_MEMBER) { entry ->
+        // Only while it's the screen showing: a save that lands as the user leaves mustn't pop Members too.
+        val back = { if (nav.currentBackStackEntry == entry) nav.popBackStack() }
+        MemberEditorScreen(
+            repository = repository,
+            uuid = entry.arguments?.getString("uuid").orEmpty(),
+            onBack = { back() },
+            onSaved = { back() },
+            onSignOut = signOut,
+        )
     }
     composable(Routes.SETTINGS) {
         SettingsScreen(

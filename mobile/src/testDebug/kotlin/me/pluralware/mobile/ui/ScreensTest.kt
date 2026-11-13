@@ -62,6 +62,7 @@ class ScreensTest {
             onRetry = { events += "retry" },
             onChangeFronters = { events += "change" },
             onOpenHistory = { events += "history" },
+            onOpenMembers = { events += "members" },
             onOpenSettings = { events += "settings" },
             onSignOut = { events += "signout" },
         )
@@ -94,9 +95,10 @@ class ScreensTest {
 
         compose.onNodeWithText("Change fronters").performClick()
         compose.onNodeWithText("Recent switches").performClick()
+        compose.onNodeWithText("Members").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
 
-        assertEquals(listOf("change", "history", "settings"), events)
+        assertEquals(listOf("change", "history", "members", "settings"), events)
     }
 
     @Test
@@ -115,7 +117,8 @@ class ScreensTest {
 
         compose.onNodeWithText("No switches yet").assertIsDisplayed()
         compose.onNodeWithText("Log a switch").performClick()
-        assertEquals(listOf("change"), events)
+        compose.onNodeWithText("Members").performClick()
+        assertEquals(listOf("change", "members"), events)
     }
 
     @Test
