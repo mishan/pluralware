@@ -1,14 +1,19 @@
 package me.pluralware.shared.repository
 
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
@@ -20,6 +25,8 @@ import java.io.IOException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -90,7 +97,11 @@ class PluralKitRepository(
         while (true) {
             val writesBefore = writes.get()
             val switch = client.getCurrentFronters()
-            if (writes.get() == writesBefore) return switch.also(::setFronters)
+            if (writes.get() == writesBefore) {
+                setFronters(switch)
+                while (true) pendingCorrections.poll()?.invoke(switch) ?: break
+                return switch
+            }
             if (++attempt == FETCH_ATTEMPTS) {
                 // Writes keep landing. Their own fetches came after this one: answer with theirs.
                 val loaded = _loadedFronters.value
@@ -111,71 +122,107 @@ class PluralKitRepository(
     /** Convenience: switch-out (empty switch). */
     suspend fun switchOut(): PkResult<Switch> = registerSwitch(emptyList())
 
-    // Each write below is safe to retry when its response was lost: when
-    // PluralKit refuses the retry, it's checked for having already applied it
+    // Each write below is safe to retry when its response was lost: a retry
+    // that finds the write already applied counts as a success
     // (docs/system-management-design.md section 9).
+    //
+    // Writes run in writeScope, not the caller's scope: a screen that goes
+    // away mid-write mustn't cut short what follows it (clearing caches,
+    // correcting the front). close() cancels them when the session ends.
 
     /** Sends a member edit ([MemberEdit.changes]), then fetches what it changed. */
-    suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): PkResult<Member> {
+    suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): PkResult<Member> = detached {
         val result = runCatchingPk { sent { client.updateMember(uuid, changes) } }
         // Unless PluralKit refused it, the edit may have landed: cached names may be old.
         if (!result.refusedByPluralKit()) membersCacheMutex.withLock { membersCache = null }
         if (result is PkResult.Success) afterWrite()
-        return result
+        result
     }
 
-    /** Moves when a switch started. The caller keeps it between its neighbors. */
-    suspend fun moveSwitch(uuid: String, to: Instant): PkResult<Unit> {
+    /**
+     * Moves when a switch started. It must stay between the switches either
+     * side of it, checked against PluralKit just before sending; otherwise
+     * the result is a [SwitchTimeOutOfRange] failure.
+     */
+    suspend fun moveSwitch(uuid: String, to: Instant): PkResult<Unit> = detached {
         val result = runCatchingPk {
-            try {
-                sent { client.moveSwitch(uuid, to) }
-            } catch (e: PluralKitHttpException) {
-                // Every switch's time is taken, its own included: an applied move refuses its retry.
-                if (e.code != TIME_TAKEN || !isAt(uuid, to)) throw e
+            val at = to.truncatedTo(ChronoUnit.MILLIS)
+            val recent = client.getRecentSwitches(MAX_SWITCHES)
+            val index = recent.indexOfFirst { it.uuid == uuid }
+            // Already there: a retry of a move whose response was lost.
+            if (index >= 0 && recent[index].timestamp == at) return@runCatchingPk Unit
+            if (index >= 0) {
+                val after = recent.getOrNull(index + 1)?.timestamp
+                val before = recent.getOrNull(index - 1)?.timestamp ?: Instant.now()
+                if ((after != null && !at.isAfter(after)) || !at.isBefore(before)) throw SwitchTimeOutOfRange(after, before)
             }
+            sent { client.moveSwitch(uuid, to) }
             Unit
         }
         if (result is PkResult.Success) afterWrite()
-        return result
+        result
     }
 
-    /** Sets a switch's members, first as primary. Callers don't send an unchanged list. */
-    suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): PkResult<Unit> {
+    /** Sets a switch's members, first as primary. An unchanged list is refused (40004). */
+    suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): PkResult<Unit> = detached {
+        // Only a retry of a fix whose response was lost may take "already those members" as done.
+        val retrying = unsettledFixes[uuid] == memberUuids
+        unsettledFixes[uuid] = memberUuids
         val result = runCatchingPk {
             try {
                 sent { client.setSwitchMembers(uuid, memberUuids) }
             } catch (e: PluralKitHttpException) {
-                // Already those members: an earlier try was applied.
-                if (e.code != SAME_MEMBERS) throw e
+                if (e.code != SAME_MEMBERS || !retrying) throw e
             }
             Unit
         }
-        if (result is PkResult.Success) afterWrite { if (it.switch?.uuid == uuid) onFrontCorrected(it.switch) }
-        return result
+        if (result is PkResult.Success || result.refusedByPluralKit()) unsettledFixes.remove(uuid)
+        if (result is PkResult.Success) afterWrite { front -> if (front?.uuid == uuid) onFrontCorrected(front) }
+        result
     }
 
-    suspend fun deleteSwitch(uuid: String): PkResult<Unit> {
+    /** Deletes a switch: [Deletion.AlreadyGone] if PluralKit no longer had it. */
+    suspend fun deleteSwitch(uuid: String): PkResult<Deletion> = detached {
+        val retrying = unsettledDeletes.containsKey(uuid)
         val result = runCatchingPk {
             // Asked fresh, not from a list on screen: someone may have switched since it loaded.
-            if (client.getCurrentFronters()?.uuid == uuid) frontDeletes += uuid
+            val isFront = client.getCurrentFronters()?.uuid == uuid
+            // A retry finds the front already handed back if the first try landed; remember it was the front.
+            unsettledDeletes[uuid] = unsettledDeletes[uuid] == true || isFront
             try {
                 sent { client.deleteSwitch(uuid) }
+                Deletion.Done
             } catch (e: PluralKitHttpException) {
-                // Already gone: an earlier try was applied.
-                if (e.statusCode != 404) throw e
+                if (e.code !in SWITCH_GONE) throw e
+                if (retrying) Deletion.Done else Deletion.AlreadyGone
             }
         }
-        if (result.refusedByPluralKit()) frontDeletes -= uuid
-        if (result !is PkResult.Success) return result
-        val wasFront = frontDeletes.remove(uuid)
-        afterWrite { if (wasFront) onFrontCorrected(it.switch) }
-        return result
+        val wasFront = unsettledDeletes[uuid] == true
+        if (result is PkResult.Success || result.refusedByPluralKit()) unsettledDeletes.remove(uuid)
+        if (result is PkResult.Success) afterWrite(if (wasFront) onFrontCorrected else null)
+        result
     }
 
-    // Deletes of the front whose outcome isn't settled. A retry of one whose
-    // response was lost finds the front already handed back, and must still
-    // tell friends.
-    private val frontDeletes: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+    /** Stops writes still under way, so nothing is announced for a session that has ended. */
+    fun close() {
+        writeScope.cancel()
+        pendingCorrections.clear()
+    }
+
+    private val writeScope = CoroutineScope(SupervisorJob())
+
+    // Writes whose response was lost, so it's not known whether they landed.
+    private val unsettledFixes = ConcurrentHashMap<String, List<String>>()
+    private val unsettledDeletes = ConcurrentHashMap<String, Boolean>()
+
+    // Corrections whose fetch after the write failed; the next fetch that works delivers them.
+    private val pendingCorrections = ConcurrentLinkedQueue<(Switch?) -> Unit>()
+
+    /** Runs [write] in [writeScope], on the caller's dispatcher. The caller can stop waiting; the write goes on. */
+    private suspend fun <T> detached(write: suspend () -> T): T {
+        val dispatcher = currentCoroutineContext()[ContinuationInterceptor] ?: EmptyCoroutineContext
+        return writeScope.async(dispatcher) { write() }.await()
+    }
 
     /**
      * Runs a write. It counts as landed unless PluralKit refused it: when the
@@ -194,23 +241,11 @@ class PluralKitRepository(
 
     private fun PkResult<*>.refusedByPluralKit() = this is PkResult.Failure && error is PluralKitHttpException
 
-    /** Whether switch [uuid] starts at [to]; false if that can't be told. */
-    private suspend fun isAt(uuid: String, to: Instant): Boolean = try {
-        val at = to.truncatedTo(ChronoUnit.MILLIS)
-        client.getRecentSwitches(MAX_SWITCHES).any { it.uuid == uuid && it.timestamp == at }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        false
-    }
-
-    /**
-     * Fetches the front after a write, then [correct]s with it. Finishes even
-     * if the caller goes away: the write is done, and friends must still hear
-     * of a corrected front.
-     */
-    private suspend fun afterWrite(correct: (LoadedFronters) -> Unit = {}) = withContext(NonCancellable) {
-        fetchAfterWrite()?.let(correct)
+    /** Fetches the front after a write and [correct]s with it, now or with the next fetch that works. */
+    private suspend fun afterWrite(correct: ((Switch?) -> Unit)? = null) {
+        val after = fetchAfterWrite()
+        if (correct == null) return
+        if (after != null) correct(after.switch) else pendingCorrections += correct
     }
 
     /**
@@ -239,7 +274,7 @@ class PluralKitRepository(
         const val RETRY_DELAY_MILLIS = 500L
         const val MAX_SWITCHES = 100
         const val SAME_MEMBERS = 40004
-        const val TIME_TAKEN = 40005
+        val SWITCH_GONE = setOf(20007, 20008)
     }
 
     private fun setFronters(switch: Switch?) {
@@ -256,6 +291,13 @@ class PluralKitRepository(
         PkResult.Failure(e)
     }
 }
+
+/** How a delete went: [AlreadyGone] when PluralKit no longer had the switch, deleted elsewhere. */
+enum class Deletion { Done, AlreadyGone }
+
+/** A switch can't move to a time outside its neighbors: after [after] (if any) and before [before]. */
+class SwitchTimeOutOfRange(val after: Instant?, val before: Instant) :
+    IllegalArgumentException("A switch's new time must fall between the switches either side of it")
 
 /** See [PluralKitRepository.loadedFronters]. */
 data class LoadedFronters(val switch: Switch?)

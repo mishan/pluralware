@@ -15,8 +15,10 @@ import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
 import me.pluralware.shared.model.Switch
+import me.pluralware.shared.repository.Deletion
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.repository.SwitchTimeOutOfRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -24,88 +26,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PluralKitRepositoryWritesTest {
-
-    /** The mock PluralKit, plus the failures a phone on a real network meets. */
-    private class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(artificialLatencyMillis = 0)) :
-        PluralKitClient by pk {
-        /** The next write is applied, then its response is lost. */
-        var loseNextResponse = false
-
-        /** The next write is refused with this, and not applied. */
-        var refuseNextWrite: Exception? = null
-
-        /** Run during each fronters fetch, as if something happened meanwhile. */
-        var duringFronterFetch: suspend () -> Unit = {}
-
-        /** Every fronters fetch fails with this while it's set. */
-        var fronterFetchError: Exception? = null
-        var recentSwitchesFail = false
-
-        /** PluralKit's refusals of the writes it was sent, by code. */
-        val refusals = mutableListOf<Int?>()
-        var fronterFetchFailures = 0
-        var fronterFetches = 0
-        var now: () -> Long = { 0 }
-        val fetchTimes = mutableListOf<Long>()
-
-        /** When set, a fronters fetch reads PluralKit's state, then waits for this before answering. */
-        var holdFronterFetch: CompletableDeferred<Unit>? = null
-        var holdMemberFetch: CompletableDeferred<Unit>? = null
-
-        private suspend fun <T> write(apply: suspend () -> T): T {
-            refuseNextWrite?.let {
-                refuseNextWrite = null
-                throw it
-            }
-            val result = try {
-                apply()
-            } catch (e: PluralKitHttpException) {
-                refusals += e.code
-                throw e
-            }
-            return lost(result)
-        }
-
-        private fun <T> lost(result: T): T {
-            if (loseNextResponse) {
-                loseNextResponse = false
-                throw IOException("Connection reset")
-            }
-            return result
-        }
-
-        override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>) =
-            write { pk.updateMember(uuid, changes) }
-        override suspend fun moveSwitch(uuid: String, to: Instant) = write { pk.moveSwitch(uuid, to) }
-        override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>) =
-            write { pk.setSwitchMembers(uuid, memberUuids) }
-        override suspend fun deleteSwitch(uuid: String) = write { pk.deleteSwitch(uuid) }
-
-        override suspend fun getCurrentFronters(): Switch? {
-            fronterFetches++
-            fetchTimes += now()
-            fronterFetchError?.let { throw it }
-            if (fronterFetchFailures > 0) {
-                fronterFetchFailures--
-                throw IOException("Network unreachable")
-            }
-            val answer = pk.getCurrentFronters()
-            duringFronterFetch()
-            holdFronterFetch?.also { holdFronterFetch = null }?.await()
-            return answer
-        }
-
-        override suspend fun getRecentSwitches(limit: Int): List<Switch> {
-            if (recentSwitchesFail) throw IOException("Network unreachable")
-            return pk.getRecentSwitches(limit)
-        }
-
-        override suspend fun getOwnMembers(): List<Member> {
-            val answer = pk.getOwnMembers()
-            holdMemberFetch?.also { holdMemberFetch = null }?.await()
-            return answer
-        }
-    }
 
     private val client = FlakyClient()
     private val corrected = mutableListOf<Switch?>()
@@ -261,7 +181,6 @@ class PluralKitRepositoryWritesTest {
     fun `PluralKit's refusals come back as failures with its code`() = runTest {
         val (latest, older) = history()
         val cases = listOf<Pair<Int, suspend () -> PkResult<*>>>(
-            40005 to { repository.moveSwitch(latest.uuid, older.timestamp) },
             20007 to { repository.moveSwitch("no-such-switch", Instant.now()) },
             40003 to { repository.setSwitchMembers(latest.uuid, listOf(members()[0].uuid, members()[0].uuid)) },
             20002 to { repository.setSwitchMembers(latest.uuid, listOf("no-such-member")) },
@@ -284,7 +203,6 @@ class PluralKitRepositoryWritesTest {
             // Already those members: 40004.
             "members fix" to { repository.setSwitchMembers(history()[1].uuid, listOf(members[5].uuid)) },
             // The switch already has that time, so PluralKit says it's taken: 40005.
-            "move" to { repository.moveSwitch(history()[1].uuid, history()[1].timestamp.minusSeconds(60)) },
         )
         for ((what, call) in cases) {
             client.loseNextResponse = true
@@ -297,17 +215,58 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
-    fun `retrying a lost move succeeds only if the switch really is at that time`() = runTest {
-        val (latest, older, oldest) = history()
+    fun `retrying a lost move finds it landed, and doesn't send it again`() = runTest {
+        val older = history()[1]
         val to = older.timestamp.minusSeconds(60)
         client.loseNextResponse = true
         assertTrue(repository.moveSwitch(older.uuid, to) is PkResult.Failure)
 
         assertTrue("the retry", repository.moveSwitch(older.uuid, to).isSuccess())
-        assertEquals(listOf<Int?>(40005), client.refusals)
-        // A time another switch has is still refused.
-        val clash = repository.moveSwitch(latest.uuid, oldest.timestamp)
-        assertEquals(40005, ((clash as PkResult.Failure).error as PluralKitHttpException).code)
+
+        assertEquals(to, history()[1].timestamp)
+        assertEquals("PluralKit wasn't asked again", emptyList<Int?>(), client.refusals)
+    }
+
+    @Test
+    fun `a move must stay between the switches either side of it, checked against PluralKit just before`() = runTest {
+        val (latest, older, oldest) = history()
+        val hour = 3_600L
+        val cases = listOf(
+            Triple(older, oldest.timestamp.plusSeconds(hour), true),
+            Triple(older, latest.timestamp.minusSeconds(60), true),
+            Triple(older, oldest.timestamp, false),
+            Triple(older, oldest.timestamp.minusSeconds(60), false),
+            Triple(older, latest.timestamp, false),
+            Triple(older, latest.timestamp.plusSeconds(60), false),
+            Triple(latest, Instant.now().minusSeconds(60), true),
+            Triple(latest, Instant.now().plusSeconds(hour), false),
+        )
+        for ((switch, to, allowed) in cases) {
+            val before = history()
+
+            val result = repository.moveSwitch(switch.uuid, to)
+
+            if (allowed) {
+                assertTrue("$to", result.isSuccess())
+                client.pk.moveSwitch(switch.uuid, switch.timestamp)
+            } else {
+                val refused = (result as PkResult.Failure).error as SwitchTimeOutOfRange
+                val index = before.indexOfFirst { it.uuid == switch.uuid }
+                assertEquals("$to", before.getOrNull(index + 1)?.timestamp, refused.after)
+                assertEquals("$to", before.getOrNull(index - 1)?.timestamp, refused.before.takeIf { index > 0 })
+                assertEquals("not sent", before, history())
+            }
+        }
+    }
+
+    @Test
+    fun `a move PluralKit refuses as a taken time stays refused`() = runTest {
+        val older = history()[1]
+        client.refuseNextWrite = PluralKitHttpException(400, "Switch with provided timestamp already exists.", code = 40005)
+
+        val result = repository.moveSwitch(older.uuid, older.timestamp.minusSeconds(60))
+
+        assertEquals(40005, ((result as PkResult.Failure).error as PluralKitHttpException).code)
     }
 
     @Test
@@ -324,13 +283,14 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
-    fun `a refused move stays refused even when checking it fails`() = runTest {
-        val (latest, older) = history()
+    fun `a move that can't check its neighbors isn't sent`() = runTest {
+        val older = history()[1]
         client.recentSwitchesFail = true
 
-        val clash = repository.moveSwitch(latest.uuid, older.timestamp)
+        val result = repository.moveSwitch(older.uuid, older.timestamp.minusSeconds(60))
 
-        assertEquals(40005, ((clash as PkResult.Failure).error as PluralKitHttpException).code)
+        assertTrue((result as PkResult.Failure).error is IOException)
+        assertEquals(older, client.pk.getRecentSwitches(2)[1])
     }
 
     @Test
@@ -367,10 +327,29 @@ class PluralKitRepositoryWritesTest {
         assertTrue(repository.setSwitchMembers(latest.uuid, listOf(members()[4].uuid)).isSuccess())
 
         assertEquals("the edit is in PluralKit", listOf(members()[4].uuid), history().first().members.map { it.uuid })
-        // Nothing fresh to go on, so nothing is announced; the next refresh shows the edit.
         assertEquals(emptyList<Switch?>(), corrected)
         // Three tries, half a second then a second apart.
         assertEquals(listOf(0L, 500L, 1_500L), client.fetchTimes)
+    }
+
+    @Test
+    fun `a correction whose fetch failed goes out with the next fetch that works`() = runTest {
+        val cases = listOf<Pair<String, suspend () -> PkResult<*>>>(
+            "members fix" to { repository.setSwitchMembers(history().first().uuid, listOf(members()[4].uuid)) },
+            "delete" to { repository.deleteSwitch(history().first().uuid) },
+        )
+        for ((what, write) in cases) {
+            corrected.clear()
+            client.failFetchesAfterWrite = 3
+            assertTrue(what, write().isSuccess())
+            client.failFetchesAfterWrite = 0
+            assertEquals(what, emptyList<Switch?>(), corrected)
+
+            repository.refreshFronters()
+            repository.refreshFronters()
+
+            assertEquals(what, listOf(client.pk.getCurrentFronters()), corrected)
+        }
     }
 
     @Test
@@ -386,11 +365,84 @@ class PluralKitRepositoryWritesTest {
             client.fronterFetchError = failure
             val before = client.fronterFetches
 
-            assertTrue(repository.setSwitchMembers(latest.uuid, listOf(members()[before % 6].uuid)).isSuccess())
+            val other = members().first { m -> latest.members.none { it.uuid == m.uuid } }
+            assertTrue(repository.setSwitchMembers(latest.uuid, listOf(other.uuid)).isSuccess())
 
             assertEquals(failure.toString(), fetches, client.fronterFetches - before)
             client.fronterFetchError = null
         }
+    }
+
+    @Test
+    fun `a write still lands, and is followed up, when the screen goes away while it's sent`() = runTest {
+        val latest = history().first()
+        val member = members()[0]
+        repository.refreshMembers()
+        val cases = listOf<Pair<String, suspend () -> Unit>>(
+            "members fix" to { repository.setSwitchMembers(latest.uuid, listOf(members()[4].uuid)) },
+            "member edit" to { repository.updateMember(member.uuid, mapOf(MemberField.Name to "Renamed")) },
+        )
+        for ((what, write) in cases) {
+            val hold = CompletableDeferred<Unit>()
+            client.holdNextWrite = hold
+            val caller = launch { write() }
+            runCurrent()
+
+            caller.cancel()
+            hold.complete(Unit)
+            advanceUntilIdle()
+        }
+
+        assertEquals(listOf(members()[4].uuid), corrected.single()!!.members.map { it.uuid })
+        assertEquals("Renamed", (repository.refreshMembers() as PkResult.Success).value.first { it.uuid == member.uuid }.name)
+    }
+
+    @Test
+    fun `closing the repository stops writes still under way, so nothing is announced for them`() = runTest {
+        val latest = history().first()
+        client.failFetchesAfterWrite = 1
+        launch { repository.setSwitchMembers(latest.uuid, listOf(members()[4].uuid)) }
+        runCurrent()
+
+        repository.close()
+        advanceUntilIdle()
+        client.failFetchesAfterWrite = 0
+        repository.refreshFronters()
+
+        assertEquals(emptyList<Switch?>(), corrected)
+    }
+
+    @Test
+    fun `an unchanged member list is refused when it's the first try, and nobody is told`() = runTest {
+        val latest = history().first()
+
+        val result = repository.setSwitchMembers(latest.uuid, latest.members.map { it.uuid })
+
+        assertEquals(40004, ((result as PkResult.Failure).error as PluralKitHttpException).code)
+        assertEquals(emptyList<Switch?>(), corrected)
+    }
+
+    @Test
+    fun `a delete says whether it deleted the switch or found it already gone`() = runTest {
+        val (latest, older, oldest) = history()
+        client.pk.deleteSwitch(oldest.uuid)
+        client.loseNextResponse = true
+        repository.deleteSwitch(older.uuid)
+
+        assertEquals("deleted elsewhere", Deletion.AlreadyGone, (repository.deleteSwitch(oldest.uuid) as PkResult.Success).value)
+        assertEquals("our lost try", Deletion.Done, (repository.deleteSwitch(older.uuid) as PkResult.Success).value)
+        assertEquals("a first try", Deletion.Done, (repository.deleteSwitch(latest.uuid) as PkResult.Success).value)
+    }
+
+    @Test
+    fun `a 404 that isn't PluralKit saying the switch is gone is a failure`() = runTest {
+        val latest = history().first()
+        client.refuseNextWrite = PluralKitHttpException(404, "Not Found")
+
+        val result = repository.deleteSwitch(latest.uuid)
+
+        assertEquals(404, ((result as PkResult.Failure).error as PluralKitHttpException).statusCode)
+        assertEquals(latest, history().first())
     }
 
     @Test

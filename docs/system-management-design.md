@@ -179,10 +179,16 @@ When an edit changes who's fronting now, the phone tells friends with the correc
 different check that the retry is just repeating a success:
 
 - A member PATCH sets the same values again.
-- A repeated members change gets 40004 ("already those members"): treated as success.
-- A repeated delete gets 404: treated as success.
-- A repeated move gets 40005, because the switch itself already has that time. The app fetches
-  the switch, and a matching time means success.
+- A repeated members change gets 40004 ("already those members"): success, but only for a retry
+  of a change whose response was lost. On a first try, 40004 stays a failure.
+- A repeated delete gets PluralKit's switch-not-found (20007/20008): success. On a first try it
+  means the switch was deleted elsewhere, and the result says so. Any other 404 is a failure.
+- A move first fetches recent switches to check its neighbors, and a switch already at the new
+  time means a lost move landed: nothing is sent again.
+
+A write runs in the repository's own scope, so a screen closing mid-write doesn't cut short what
+follows it; signing out cancels it. A correction whose fetch after the write fails is sent with
+the next fetch that works.
 
 ## 10. Tests
 
