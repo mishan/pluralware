@@ -51,6 +51,8 @@ class PluralKitRepository(
      * Must not block; launch and return.
      */
     private val onFrontCorrected: (Switch?) -> Unit = {},
+    /** Called with a member as PluralKit has it after an edit made here, and the fields it changed. Must not block. */
+    private val onMemberEdited: (Member, Set<MemberField>) -> Unit = { _, _ -> },
     /**
      * Called with each switch this repository registers — never with ones it
      * merely observes on a refresh. Friend sharing hangs off it: telling
@@ -182,7 +184,10 @@ class PluralKitRepository(
             _memberEdits.update { it + 1 }
             _membersChanged.update { it + 1 }
         }
-        if (result is PkResult.Success) afterWrite()
+        if (result is PkResult.Success) {
+            onMemberEdited(result.value, changes.keys)
+            afterWrite()
+        }
         result
     }
 

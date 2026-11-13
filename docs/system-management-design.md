@@ -130,7 +130,8 @@ When an edit changes who's fronting now, the phone tells friends with the correc
   and be dropped.
 - **The relay's names.** The relay announces from a snapshot of shared members' names taken at
   upload. A member edit that changes a shared member's name or display name re-uploads the
-  relay config.
+  relay config. Every relay write (this, the sharing screen's, Disconnect's clear) holds one
+  process-wide lock and reads the config inside it, so none undoes another or lands after a clear.
 
 ## 7. The watch
 

@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import me.pluralware.mobile.watch.WatchLink
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
@@ -14,8 +15,10 @@ import me.pluralware.shared.handoff.SharingHandoff
 import me.pluralware.shared.notify.EncryptedFollowingStore
 import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.notify.RelayClient
+import me.pluralware.shared.notify.RelayNameSync
 import me.pluralware.shared.notify.SwitchAnnouncer
 import me.pluralware.shared.repository.EncryptedTokenStore
+import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.LocalSettingsStore
 
@@ -45,13 +48,27 @@ class AppGraph private constructor(context: Context) {
         SharingHandoff.pushStatus(context, gone)
     }
 
+    // A rename of a shared member reaches the relay, which announces with the names it was given.
+    val relayWrites = Mutex()
+    private val relayClient = RelayClient.create(BuildConfig.VERSION_NAME)
+    private val relayNames = RelayNameSync(sharingStore, relayWrites) { relay, config ->
+        runCatching { relayClient.upload(relay, config) }
+    }
+
     fun newRepository(token: PluralKitToken): PluralKitRepository {
         val client = PluralKitClientFactory.create(
             token = token,
             appVersion = BuildConfig.VERSION_NAME,
             enableLogging = BuildConfig.DEBUG,
         )
-        return PluralKitRepository(client) { switch -> announcer.onSwitchRegistered(appContext, switch) }
+        lateinit var repository: PluralKitRepository
+        repository = PluralKitRepository(
+            client,
+            onMemberEdited = { member, fields ->
+                scope.launch { relayNames.memberEdited(member, fields) { (repository.refreshMembers() as? PkResult.Success)?.value } }
+            },
+        ) { switch -> announcer.onSwitchRegistered(appContext, switch) }
+        return repository
     }
 
     val account = Account(
@@ -60,10 +77,11 @@ class AppGraph private constructor(context: Context) {
         sharingStore = sharingStore,
         owner = PrefsSharingOwner(appContext),
         clearRelay = { relay ->
-            runCatching { RelayClient.create(BuildConfig.VERSION_NAME).clear(relay) }.isSuccess
+            runCatching { relayClient.clear(relay) }.isSuccess
         },
         signOutWatch = watchLink::signOut,
         pushSharingToWatch = { config -> runCatching { SharingHandoff.push(appContext, config) } },
+        relayWrites = relayWrites,
     )
 
     init {
