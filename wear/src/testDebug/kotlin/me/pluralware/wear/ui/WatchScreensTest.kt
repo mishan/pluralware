@@ -14,7 +14,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
@@ -22,6 +21,7 @@ import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.InMemorySettingsStore
+import me.pluralware.wear.ReadOnlyPluralKitClient
 import me.pluralware.wear.ui.screens.FrontersScreen
 import me.pluralware.wear.ui.screens.HistoryScreen
 import me.pluralware.wear.ui.screens.MemberPickerScreen
@@ -52,7 +52,7 @@ class WatchScreensTest {
     private var unauthorized = false
     private val events = mutableListOf<String>()
 
-    private val client = object : PluralKitClient {
+    private val client = object : ReadOnlyPluralKitClient() {
         private fun check() {
             if (unauthorized) throw PluralKitHttpException(401, "Unauthorized")
         }

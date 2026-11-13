@@ -14,13 +14,13 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import java.io.File
 import java.time.Clock
 import java.time.ZoneOffset
-import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.InMemorySettingsStore
+import me.pluralware.wear.ReadOnlyPluralKitClient
 import me.pluralware.wear.ui.LocalClock
 import me.pluralware.wear.ui.screens.FrontersScreen
 import me.pluralware.wear.ui.screens.HistoryScreen
@@ -48,7 +48,7 @@ class ReadmeScreenshots {
 
     @Before fun onlyWhenAsked() = assumeTrue("screenshots not requested", out != null)
 
-    private val client = object : PluralKitClient {
+    private val client = object : ReadOnlyPluralKitClient() {
         override suspend fun getOwnSystem(): SystemInfo = PreviewData.system
         override suspend fun getOwnMembers(): List<Member> = PreviewData.members
         override suspend fun getCurrentFronters(): Switch = PreviewData.currentSwitch
