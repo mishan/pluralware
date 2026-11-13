@@ -38,8 +38,9 @@ history older than the last 10 switches.
 - `MemberEdit` (pure, in `:shared`), the one place an edit turns into a request:
   - `normalize`: trim every field; blank becomes "cleared" (except name); color loses a leading
     `#` and is lowercased.
-  - `validate(draft)`: field → message, using PluralKit's limits, so most mistakes never leave
-    the phone.
+  - `validate(original, draft)`: field → message, using PluralKit's limits, so most mistakes
+    never leave the phone. It checks only the fields that would be sent: a stored value PluralKit
+    once accepted mustn't block an edit to another field.
   - `changes(original, draft)`: a map holding **only the fields where `normalize(draft)` differs
     from `normalize(original)`**. Normalizing both sides means an uppercase color or trailing
     space from PluralKit doesn't count as an edit. A cleared field maps to `null`. No other code

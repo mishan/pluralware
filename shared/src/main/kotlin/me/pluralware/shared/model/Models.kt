@@ -21,6 +21,7 @@ data class Member(
      * members start out unshared (docs/notifications-design.md §6).
      */
     val isPrivate: Boolean = false,
+    val description: String? = null,
 ) {
     /** What the watch should actually render. */
     val displayLabel: String get() = displayName ?: name
