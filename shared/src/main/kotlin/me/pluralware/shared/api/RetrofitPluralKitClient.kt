@@ -17,6 +17,7 @@ import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import retrofit2.HttpException
+import retrofit2.Response
 import java.time.Duration
 import java.time.Instant
 
@@ -70,11 +71,7 @@ class RetrofitPluralKitClient internal constructor(
         // this is a documented success state, not an error.
         if (response.code() == 204) return null
         if (!response.isSuccessful) {
-            throw PluralKitHttpException(
-                statusCode = response.code(),
-                message = response.message(),
-                retryAfter = parseRetryAfter(response.headers()["Retry-After"]),
-            )
+            throw response.toPluralKitException()
         }
         val body = response.body() ?: return null
         return body.toDomain()
@@ -117,15 +114,8 @@ class RetrofitPluralKitClient internal constructor(
     private inline fun <T> http(block: () -> T): T = try {
         block()
     } catch (e: HttpException) {
-        val body = parseErrorBody(runCatching { e.response()?.errorBody()?.string() }.getOrNull())
-        throw PluralKitHttpException(
-            statusCode = e.code(),
-            message = body.message ?: e.message(),
-            retryAfter = parseRetryAfter(e.response()?.headers()?.get("Retry-After")),
-            cause = e,
-            code = body.code,
-            fieldErrors = body.fieldErrors,
-        )
+        throw e.response()?.toPluralKitException(cause = e)
+            ?: PluralKitHttpException(statusCode = e.code(), message = e.message(), cause = e)
     }
 
     // --- Member-cache helpers ---
@@ -213,6 +203,19 @@ class PluralKitHttpException(
     val isUnauthorized: Boolean get() = statusCode == 401
 
     val isRateLimited: Boolean get() = statusCode == 429
+}
+
+/** Every error from PluralKit, thrown by Retrofit or returned, becomes one of these the same way. */
+private fun Response<*>.toPluralKitException(cause: Throwable? = null): PluralKitHttpException {
+    val body = parseErrorBody(runCatching { errorBody()?.string() }.getOrNull())
+    return PluralKitHttpException(
+        statusCode = code(),
+        message = body.message ?: message(),
+        retryAfter = parseRetryAfter(headers()["Retry-After"]),
+        cause = cause,
+        code = body.code,
+        fieldErrors = body.fieldErrors,
+    )
 }
 
 internal data class ErrorBody(val code: Int?, val message: String?, val fieldErrors: Map<String, List<String>>)

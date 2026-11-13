@@ -191,6 +191,22 @@ class RetrofitPluralKitClientTest {
     }
 
     @Test
+    fun `an error PluralKit returns, rather than throws, carries its code too`() = runTest {
+        val api = mockk<PluralKitApi>()
+        val body = """{"code":30004,"message":"Unauthorized to view current fronters."}"""
+        coEvery { api.getCurrentFronters() } returns
+            Response.error(403, body.toResponseBody("application/json".toMediaType()))
+
+        try {
+            client(api).getCurrentFronters()
+            error("expected PluralKitHttpException")
+        } catch (e: PluralKitHttpException) {
+            assertEquals(30004, e.code)
+            assertTrue(e.message, e.message!!.contains("Unauthorized to view current fronters."))
+        }
+    }
+
+    @Test
     fun `an error body that isn't PluralKit's leaves the code and field errors empty`() {
         for (body in listOf(null, "", "<html>Bad gateway</html>", """{"message":"no code"}""", """{"code":"x"}""")) {
             val parsed = parseErrorBody(body)

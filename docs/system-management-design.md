@@ -78,8 +78,9 @@ suspend fun deleteSwitch(uuid: String)
   after it with old data. The repository counts writes; a fronters fetch whose count changed
   while it was in flight is dropped and fetched again. History simply reloads after every write.
 - **Screens notice members-only changes.** `FrontersViewModel` refreshes today only when the
-  switch's uuid or start time changes. It will also compare the members (uuids, names, colors),
-  so a rename, or a members fix on the current switch, redraws the home screen on both devices.
+  switch's uuid or start time changes. It will also compare the members themselves, every
+  field, so any member edit (a rename, new pronouns or color), or a members fix on the current
+  switch, redraws the home screen on both devices.
 - New hook `onFrontCorrected(Switch?)`, beside `onSwitchRegistered` (section 6).
 
 ## 5. Fixing a switch
@@ -121,11 +122,12 @@ When an edit changes who's fronting now, the phone tells friends with the correc
 - **Sent even with the relay on.** The announcer's `appSends` check exists so the relay and the
   app don't both send a *new* switch. The relay only handles new switches (`CREATE_SWITCH`), so
   corrections get their own entry point that skips that check.
-- **Arriving in order.** Push services don't guarantee order, so a correction could arrive
-  before the mistake it corrects. The payload gains `sentAt`, and receivers (the phone's
-  Following screen and the web receiver) ignore a message older than the one they're showing.
-  Private-mode sends also set Web Push's `Topic` header, so a push service that hasn't
-  delivered the mistake yet replaces it. Old receivers ignore the new field.
+- **Arriving in order.** Push services don't guarantee order, but a correction follows its
+  mistake by minutes (someone has to notice it), and pushes are reordered within seconds.
+  Private-mode sends set Web Push's `Topic` header, so a push service still holding the mistake
+  replaces it with the correction. Receivers don't order messages by a sender's timestamp: the
+  phone and the relay have different clocks, so a correction could look older than the mistake
+  and be dropped.
 - **The relay's names.** The relay announces from a snapshot of shared members' names taken at
   upload. A member edit that changes a shared member's name or display name re-uploads the
   relay config.
@@ -193,7 +195,7 @@ different check that the retry is just repeating a success:
 | Repository | Fetch after every write; a stale fetch can't land after a write; `onFrontCorrected` fires only when the current front changed, decided from fresh data | Sections 4 and 6 |
 | Failure injection | The fake server fails mid-write: 500, a dropped connection after the request was sent, 429, and each "retry repeats a success" case | Section 9 |
 | ViewModel | Fronters redraw on a members-only change; edit form states; the time window from neighbors; delete-confirmation text; picker edit mode | Screen logic without a device |
-| Notify | Corrections go out with the relay on; correction wording; receivers drop older messages (Kotlin and web receiver, shared fixtures); the relay config is re-uploaded after a shared member's rename | Section 6 |
+| Notify | Corrections go out with the relay on; correction wording; the `Topic` header on Private sends; the relay config is re-uploaded after a shared member's rename | Section 6 |
 | Sync | `Notice` with and without the members hash; `MemberSync` handled with the app closed (the complication's line expires) | Section 7 |
 | UI (Robolectric) | The editor (including restore after process death) and the switch sheet | Wiring and labels |
 
