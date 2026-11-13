@@ -2,6 +2,12 @@ package me.pluralware.shared.api
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import me.pluralware.shared.api.dto.CreateSwitchRequest
 import me.pluralware.shared.api.dto.MemberDto
 import me.pluralware.shared.api.dto.SwitchFullDto
@@ -11,6 +17,7 @@ import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import retrofit2.HttpException
+import retrofit2.Response
 import java.time.Duration
 import java.time.Instant
 
@@ -64,11 +71,7 @@ class RetrofitPluralKitClient internal constructor(
         // this is a documented success state, not an error.
         if (response.code() == 204) return null
         if (!response.isSuccessful) {
-            throw PluralKitHttpException(
-                statusCode = response.code(),
-                message = response.message(),
-                retryAfter = parseRetryAfter(response.headers()["Retry-After"]),
-            )
+            throw response.toPluralKitException()
         }
         val body = response.body() ?: return null
         return body.toDomain()
@@ -111,12 +114,8 @@ class RetrofitPluralKitClient internal constructor(
     private inline fun <T> http(block: () -> T): T = try {
         block()
     } catch (e: HttpException) {
-        throw PluralKitHttpException(
-            statusCode = e.code(),
-            message = e.message(),
-            retryAfter = parseRetryAfter(e.response()?.headers()?.get("Retry-After")),
-            cause = e,
-        )
+        throw e.response()?.toPluralKitException(cause = e)
+            ?: PluralKitHttpException(statusCode = e.code(), message = e.message(), cause = e)
     }
 
     // --- Member-cache helpers ---
@@ -168,6 +167,7 @@ class RetrofitPluralKitClient internal constructor(
         color = color,
         avatarUrl = avatarUrl,
         isPrivate = privacy?.visibility == "private",
+        description = description,
     )
 
     private fun SwitchFullDto.toDomain() = Switch(
@@ -194,11 +194,44 @@ class PluralKitHttpException(
     /** How long the server asked us to wait, from `Retry-After`; null if it didn't say. */
     val retryAfter: Duration? = null,
     cause: Throwable? = null,
+    /** PluralKit's own error code (e.g. 40005, a switch already at that time); null if the body had none. */
+    val code: Int? = null,
+    /** For a rejected model (40001): field name to PluralKit's messages for it. */
+    val fieldErrors: Map<String, List<String>> = emptyMap(),
 ) : RuntimeException("PluralKit API returned HTTP $statusCode: $message", cause) {
     /** The token was rejected — revoked, regenerated with `pk;token refresh`, or mistyped. */
     val isUnauthorized: Boolean get() = statusCode == 401
 
     val isRateLimited: Boolean get() = statusCode == 429
+}
+
+/** Every error from PluralKit, thrown by Retrofit or returned, becomes one of these the same way. */
+private fun Response<*>.toPluralKitException(cause: Throwable? = null): PluralKitHttpException {
+    val body = parseErrorBody(runCatching { errorBody()?.string() }.getOrNull())
+    return PluralKitHttpException(
+        statusCode = code(),
+        message = body.message ?: message(),
+        retryAfter = parseRetryAfter(headers()["Retry-After"]),
+        cause = cause,
+        code = body.code,
+        fieldErrors = body.fieldErrors,
+    )
+}
+
+internal data class ErrorBody(val code: Int?, val message: String?, val fieldErrors: Map<String, List<String>>)
+
+/** PluralKit's error body: `{"code": 40001, "message": ..., "errors": {"name": [{"message": ...}]}}`. */
+internal fun parseErrorBody(body: String?): ErrorBody {
+    val root = body?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() } as? JsonObject
+        ?: return ErrorBody(null, null, emptyMap())
+    val code = (root["code"] as? JsonPrimitive)?.intOrNull
+    val fieldErrors = (root["errors"] as? JsonObject).orEmpty().mapValues { (_, errors) ->
+        (errors as? JsonArray).orEmpty().mapNotNull { error ->
+            ((error as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+        }
+    }.filterValues { it.isNotEmpty() }
+    val message = (root["message"] as? JsonPrimitive)?.contentOrNull
+    return ErrorBody(code, message, fieldErrors)
 }
 
 /** `Retry-After` in its delta-seconds form; the HTTP-date form is rare enough to ignore. */

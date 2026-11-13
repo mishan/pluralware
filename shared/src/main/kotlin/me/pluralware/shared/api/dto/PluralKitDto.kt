@@ -43,6 +43,7 @@ internal data class MemberDto(
     val pronouns: String? = null,
     val color: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    val description: String? = null,
     /** Present only when the token owns the member; null otherwise. */
     val privacy: MemberPrivacyDto? = null,
 )

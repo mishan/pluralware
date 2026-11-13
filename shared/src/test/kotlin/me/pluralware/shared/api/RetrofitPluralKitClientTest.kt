@@ -45,6 +45,7 @@ class RetrofitPluralKitClientTest {
         pronouns = "she/her",
         color = "ff6b9d",
         avatarUrl = "https://example/alex.png",
+        description = "Likes tea.",
     )
 
     private val sampleSystemDto = SystemDto(
@@ -77,6 +78,7 @@ class RetrofitPluralKitClientTest {
         assertEquals(1, members.size)
         assertEquals("Alex", members[0].name)
         assertEquals("Alex (display)", members[0].displayName)
+        assertEquals("Likes tea.", members[0].description)
         // verify getOwnMembers was called exactly once — the cache warmed,
         // so a subsequent history fetch shouldn't issue a second call.
         coVerify(exactly = 1) { api.getOwnMembers() }
@@ -165,6 +167,53 @@ class RetrofitPluralKitClientTest {
             assertTrue(e.isRateLimited)
             assertEquals(Duration.ofSeconds(7), e.retryAfter)
         }
+    }
+
+    @Test
+    fun `PluralKit's error code and field errors come through`() = runTest {
+        val api = mockk<PluralKitApi>()
+        val body = """{"code":40001,"message":"Error parsing JSON model","errors":{"name":[{"message":"Member name can not be set to null."}],"description":[{"message":"Too long.","max_length":1000,"actual_length":1200}]}}"""
+        coEvery { api.getOwnMembers() } throws
+            HttpException(Response.error<Any>(400, body.toResponseBody("application/json".toMediaType())))
+
+        try {
+            client(api).getOwnMembers()
+            error("expected PluralKitHttpException")
+        } catch (e: PluralKitHttpException) {
+            assertEquals(400, e.statusCode)
+            assertEquals(40001, e.code)
+            assertTrue(e.message, e.message!!.contains("Error parsing JSON model"))
+            assertEquals(
+                mapOf("name" to listOf("Member name can not be set to null."), "description" to listOf("Too long.")),
+                e.fieldErrors,
+            )
+        }
+    }
+
+    @Test
+    fun `an error PluralKit returns, rather than throws, carries its code too`() = runTest {
+        val api = mockk<PluralKitApi>()
+        val body = """{"code":30004,"message":"Unauthorized to view current fronters."}"""
+        coEvery { api.getCurrentFronters() } returns
+            Response.error(403, body.toResponseBody("application/json".toMediaType()))
+
+        try {
+            client(api).getCurrentFronters()
+            error("expected PluralKitHttpException")
+        } catch (e: PluralKitHttpException) {
+            assertEquals(30004, e.code)
+            assertTrue(e.message, e.message!!.contains("Unauthorized to view current fronters."))
+        }
+    }
+
+    @Test
+    fun `an error body that isn't PluralKit's leaves the code and field errors empty`() {
+        for (body in listOf(null, "", "<html>Bad gateway</html>", """{"message":"no code"}""", """{"code":"x"}""")) {
+            val parsed = parseErrorBody(body)
+            assertNull(body, parsed.code)
+            assertEquals(body, emptyMap<String, List<String>>(), parsed.fieldErrors)
+        }
+        assertEquals(20007, parseErrorBody("""{"code":20007,"message":"Switch not found."}""").code)
     }
 
     @Test
