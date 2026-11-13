@@ -147,11 +147,12 @@ class FrontersViewModel(
                 )
             } finally {
                 fetching = false
+                // The front may have changed while this fetched (an edit, say),
+                // whether or not this fetch worked, and the watcher above skipped
+                // it then. poll() still stands down for a 429 or a rejected token.
+                val shown = (_state.value as? UiState.Content)?.value?.switch
+                if (_state.value is UiState.Content && repository.currentFronters.value != shown) poll()
             }
-            // The front may have changed while this fetched (an edit, say), and
-            // the watcher above skipped it then: fetch again for it.
-            val shown = (_state.value as? UiState.Content)?.value?.switch
-            if (_state.value is UiState.Content && repository.currentFronters.value != shown) refresh()
         }
     }
 

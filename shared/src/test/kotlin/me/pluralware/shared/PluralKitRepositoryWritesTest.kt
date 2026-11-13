@@ -543,6 +543,58 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
+    fun `an older member list fetch can't overwrite a newer one`() = runTest(UnconfinedTestDispatcher()) {
+        val member = members().first()
+        val hold = CompletableDeferred<Unit>()
+        client.holdMemberFetch = hold
+        launch { repository.refreshMembers(force = true) }
+        // Renamed in Discord, then fetched again while the first fetch is still out.
+        client.pk.updateMember(member.uuid, mapOf(MemberField.Name to "Renamed"))
+        repository.refreshMembers(force = true)
+
+        hold.complete(Unit)
+
+        val cached = (repository.refreshMembers() as PkResult.Success).value
+        assertEquals("Renamed", cached.first { it.uuid == member.uuid }.name)
+    }
+
+    @Test
+    fun `a front that couldn't be fetched fresh isn't sent as a correction`() = runTest {
+        val latest = history().first()
+        repository.refreshFronters()
+        val fix = listOf(members()[4].uuid)
+        // During every fetch after the fix, an unrelated edit is sent and its outcome lost.
+        var fixing = true
+        client.duringFronterFetch = {
+            if (fixing) {
+                client.refuseNextWrite = IOException("Connection reset")
+                repository.updateMember(members()[1].uuid, mapOf(MemberField.Pronouns to "any"))
+            }
+        }
+
+        assertTrue(repository.setSwitchMembers(latest.uuid, fix).isSuccess())
+        fixing = false
+        assertTrue("nothing stale was sent", corrected.all { it!!.members.map { m -> m.uuid } == fix })
+        repository.refreshFronters()
+
+        assertEquals(fix, corrected.single()!!.members.map { it.uuid })
+    }
+
+    @Test
+    fun `a failed front check between a lost delete and its retry doesn't lose that it was the front`() = runTest {
+        val (latest, older) = history()
+        client.loseNextResponse = true
+        assertTrue(repository.deleteSwitch(latest.uuid) is PkResult.Failure)
+        client.fronterFetchError = PluralKitHttpException(503, "Service Unavailable")
+        assertTrue(repository.deleteSwitch(latest.uuid) is PkResult.Failure)
+        client.fronterFetchError = null
+
+        assertTrue("the retry", repository.deleteSwitch(latest.uuid).isSuccess())
+
+        assertEquals(listOf<Switch?>(older), corrected)
+    }
+
+    @Test
     fun `forcing a member refresh fetches again`() = runTest {
         val first = (repository.refreshMembers() as PkResult.Success).value
 

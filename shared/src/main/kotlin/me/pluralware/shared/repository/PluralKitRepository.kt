@@ -79,20 +79,34 @@ class PluralKitRepository(
     // write's own fetch shows.
     private val writes = AtomicInteger()
 
+    // Member fetches by when they started, so an older one landing late (after
+    // an edit made elsewhere) doesn't replace a newer one in the cache.
+    private val memberFetches = AtomicInteger()
+    private var cachedMemberFetch = 0
+
     suspend fun refreshMembers(force: Boolean = false): PkResult<List<Member>> = runCatchingPk {
         if (!force) membersCacheMutex.withLock { membersCache }?.let { return@runCatchingPk it }
         val writesBefore = writes.get()
+        val fetch = memberFetches.incrementAndGet()
         client.getOwnMembers().also { members ->
-            membersCacheMutex.withLock { if (writes.get() == writesBefore) membersCache = members }
+            membersCacheMutex.withLock {
+                if (writes.get() == writesBefore && fetch > cachedMemberFetch) {
+                    membersCache = members
+                    cachedMemberFetch = fetch
+                }
+            }
         }
     }
 
     /** The system this token belongs to. Not cached: it's for showing who's signed in. */
     suspend fun ownSystem(): PkResult<SystemInfo> = runCatchingPk { client.getOwnSystem() }
 
-    suspend fun refreshFronters(): PkResult<Switch?> = runCatchingPk { fetchFronters() }
+    suspend fun refreshFronters(): PkResult<Switch?> = runCatchingPk { fetchFronters().switch }
 
-    private suspend fun fetchFronters(): Switch? {
+    /** A fronters fetch. Not [fresh] when writes kept landing during it: it may predate them. */
+    private class Fetched(val switch: Switch?, val fresh: Boolean)
+
+    private suspend fun fetchFronters(): Fetched {
         var attempt = 0
         while (true) {
             val writesBefore = writes.get()
@@ -100,12 +114,12 @@ class PluralKitRepository(
             if (writes.get() == writesBefore) {
                 setFronters(switch)
                 while (true) pendingCorrections.poll()?.invoke(switch) ?: break
-                return switch
+                return Fetched(switch, fresh = true)
             }
             if (++attempt == FETCH_ATTEMPTS) {
                 // Writes keep landing. Their own fetches came after this one: answer with theirs.
                 val loaded = _loadedFronters.value
-                return if (loaded != null) loaded.switch else switch
+                return Fetched(if (loaded != null) loaded.switch else switch, fresh = false)
             }
         }
     }
@@ -184,6 +198,7 @@ class PluralKitRepository(
     /** Deletes a switch: [Deletion.AlreadyGone] if PluralKit no longer had it. */
     suspend fun deleteSwitch(uuid: String): PkResult<Deletion> = detached {
         val retrying = unsettledDeletes.containsKey(uuid)
+        var refused = false
         val result = runCatchingPk {
             // Asked fresh, not from a list on screen: someone may have switched since it loaded.
             val isFront = client.getCurrentFronters()?.uuid == uuid
@@ -193,12 +208,14 @@ class PluralKitRepository(
                 sent { client.deleteSwitch(uuid) }
                 Deletion.Done
             } catch (e: PluralKitHttpException) {
-                if (e.code !in SWITCH_GONE) throw e
+                refused = e.code !in SWITCH_GONE
+                if (refused) throw e
                 if (retrying) Deletion.Done else Deletion.AlreadyGone
             }
         }
         val wasFront = unsettledDeletes[uuid] == true
-        if (result is PkResult.Success || result.refusedByPluralKit()) unsettledDeletes.remove(uuid)
+        // Settled only by the delete itself: a front check that failed sent nothing.
+        if (result is PkResult.Success || refused) unsettledDeletes.remove(uuid)
         if (result is PkResult.Success) afterWrite(if (wasFront) onFrontCorrected else null)
         result
     }
@@ -256,7 +273,9 @@ class PluralKitRepository(
     private suspend fun fetchAfterWrite(): LoadedFronters? {
         repeat(FETCH_ATTEMPTS) { attempt ->
             try {
-                return LoadedFronters(fetchFronters())
+                val fetched = fetchFronters()
+                // Not known to follow the write: a correction waits for a fetch that is.
+                return if (fetched.fresh) LoadedFronters(fetched.switch) else null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

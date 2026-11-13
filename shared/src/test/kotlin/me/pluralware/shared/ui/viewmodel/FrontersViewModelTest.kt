@@ -218,6 +218,30 @@ class FrontersViewModelTest {
     }
 
     @Test
+    fun `a change that arrives while a refresh fails isn't missed`() = runTest {
+        val current = PreviewData.currentSwitch
+        val edited = current.copy(members = PreviewData.members.takeLast(1))
+        coEvery { client.getCurrentFronters() } returns current
+        val repository = PluralKitRepository(client)
+        val vm = FrontersViewModel(repository, InMemorySettingsStore(), clock = { now })
+        val held = CompletableDeferred<Unit>()
+        var calls = 0
+        coEvery { client.getCurrentFronters() } coAnswers {
+            when (calls++) {
+                0 -> { held.await(); throw java.io.IOException("Network unreachable") }
+                else -> edited
+            }
+        }
+        vm.refresh()
+
+        // The screen's refresh is out, and will fail, when an edit lands.
+        repository.refreshFronters()
+        held.complete(Unit)
+
+        assertEquals(edited, (vm.state.value as UiState.Content).value.switch)
+    }
+
+    @Test
     fun `its own refresh doesn't trigger another`() = runTest {
         coEvery { client.getCurrentFronters() } returns PreviewData.currentSwitch
         val vm = viewModel()
