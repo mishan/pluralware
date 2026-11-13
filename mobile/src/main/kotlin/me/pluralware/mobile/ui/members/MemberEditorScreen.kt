@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -41,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import me.pluralware.mobile.ui.components.BackTopBar
 import me.pluralware.mobile.ui.components.ErrorView
 import me.pluralware.mobile.ui.components.LoadingView
@@ -159,10 +162,12 @@ private fun MemberForm(
                 onValueChange = { onChange(field, it) },
                 modifier = Modifier.fillMaxWidth().testTag("field-${field.apiKey}"),
                 label = { Text(field.label) },
-                leadingIcon = if (field == MemberField.Color) {
-                    { ColorSwatch(draft.color) }
-                } else {
-                    null
+                leadingIcon = when {
+                    field == MemberField.Color -> { { ColorSwatch(draft.color) } }
+                    // Once it's an address PluralKit would take: not on every keystroke before.
+                    field == MemberField.AvatarUrl && error == null ->
+                        MemberEdit.normalize(field, draft.avatarUrl)?.let { url -> { AvatarPreview(url) } }
+                    else -> null
                 },
                 isError = error != null,
                 supportingText = when {
@@ -205,6 +210,20 @@ private fun SaveBar(state: EditorState, enabled: Boolean, onSave: () -> Unit, on
             }
         }
     }
+}
+
+/** The avatar at [url], or a plain circle while it loads or if it won't. */
+@Composable
+private fun AvatarPreview(url: String) {
+    val blank = ColorPainter(MaterialTheme.colorScheme.surfaceVariant)
+    AsyncImage(
+        model = url,
+        contentDescription = "Avatar preview",
+        placeholder = blank,
+        error = blank,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.size(32.dp).clip(CircleShape),
+    )
 }
 
 /** The color as it would be saved, or an empty ring while it isn't a color yet. */

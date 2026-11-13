@@ -139,6 +139,18 @@ class MemberScreensTest {
     }
 
     @Test
+    fun `the avatar shows from its address once that's a web address`() {
+        showEditor(loaded(alex.copy(avatarUrl = null)))
+        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
+
+        field(MemberField.AvatarUrl).performTextReplacement("example.com/a.png")
+        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
+
+        field(MemberField.AvatarUrl).performTextReplacement("https://example.com/a.png")
+        compose.onNodeWithContentDescription("Avatar preview").assertExists()
+    }
+
+    @Test
     fun `PluralKit's complaint shows under its field, and editing the field clears it`() {
         showEditor(loaded().copy(fieldErrors = mapOf(MemberField.AvatarUrl to "Value must be a publicly-accessible URL.")))
 

@@ -35,6 +35,9 @@ tinkAppsWebpush = "1.15.0"
 unifiedpushConnector = "3.3.5"
 # QR codes for invite links; the core encoder only, no camera or scanning.
 zxing = "3.5.4"
+# The member editor's avatar preview. 3.1 is the newest on Compose 1.7 (as composeBom);
+# 3.2 and later pull in Compose 1.8+, which would quietly upgrade the whole app.
+coil = "3.1.0"
 
 # PluralKit HTTP client stack — Retrofit over OkHttp with kotlinx-serialization for JSON.
 # converter-kotlinx-serialization ships in the retrofit BOM since 2.10; we just align versions.
@@ -102,6 +105,8 @@ tink-android = { group = "com.google.crypto.tink", name = "tink-android", versio
 tink-apps-webpush = { group = "com.google.crypto.tink", name = "apps-webpush", version.ref = "tinkAppsWebpush" }
 unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpushConnector" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 
 # PluralKit HTTP client — Retrofit/OkHttp/kotlinx-serialization.
 # We hand-roll the client because Plural.kt was archived in 2024 and its Maven server
