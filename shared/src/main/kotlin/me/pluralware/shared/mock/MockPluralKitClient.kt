@@ -77,12 +77,13 @@ class MockPluralKitClient(
         if (memberUuids == switches.firstOrNull()?.memberUuids) {
             throw refused(400, 40004, "Member list identical to current fronter list.")
         }
-        val newSwitch = StoredSwitch(UUID.randomUUID().toString(), now(), memberUuids)
+        val newSwitch = StoredSwitch(UUID.randomUUID().toString(), now(), memberUuids.toList())
         switches.add(0, newSwitch)
         return newSwitch.resolved()
     }
 
     override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member {
+        require(changes.isNotEmpty()) { "An edit that changes nothing isn't sent" }
         delayLike()
         val index = members.indexOfFirst { it.uuid == uuid }
         if (index < 0) throw refused(404, 20002, "Member not found.")
@@ -116,7 +117,7 @@ class MockPluralKitClient(
         val switch = find(uuid)
         checkMembers(memberUuids)
         if (memberUuids == switch.memberUuids) throw refused(400, 40004, "Member list identical to current fronter list.")
-        switch.memberUuids = memberUuids
+        switch.memberUuids = memberUuids.toList()
         return switch.resolved()
     }
 

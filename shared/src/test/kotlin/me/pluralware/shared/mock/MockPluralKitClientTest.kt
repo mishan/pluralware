@@ -132,6 +132,29 @@ class MockPluralKitClientTest {
     }
 
     @Test
+    fun `a switch keeps its members even if the caller's list changes afterwards`() = runTest {
+        val members = client.getOwnMembers()
+        val registering = mutableListOf(members[2].uuid)
+        val switch = client.registerSwitch(registering)
+        registering.clear()
+        val fixing = mutableListOf(members[3].uuid)
+        client.setSwitchMembers(switch.uuid, fixing)
+        fixing.clear()
+
+        assertEquals(listOf(members[3]), client.getCurrentFronters()!!.members)
+    }
+
+    @Test
+    fun `an edit that changes nothing is refused, as by the real client`() = runTest {
+        val alex = client.getOwnMembers().first()
+
+        assertEquals(
+            IllegalArgumentException::class,
+            runCatching { client.updateMember(alex.uuid, emptyMap()) }.exceptionOrNull()?.let { it::class },
+        )
+    }
+
+    @Test
     fun `it refuses what PluralKit refuses, with PluralKit's codes`() = runTest {
         val (latest, older) = client.getRecentSwitches(2)
         val alex = client.getOwnMembers().first()

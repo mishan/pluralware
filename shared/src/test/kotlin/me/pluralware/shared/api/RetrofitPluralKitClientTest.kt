@@ -263,6 +263,30 @@ class RetrofitPluralKitClientTest {
     }
 
     @Test
+    fun `a slow switch registration can't bring back a member's old name`() = runTest(UnconfinedTestDispatcher()) {
+        val api = mockk<PluralKitApi>()
+        val slowCreate = CompletableDeferred<Unit>()
+        val renamed = sampleMemberDto.copy(name = "Alexis")
+        coEvery { api.getOwnMembers() } returns listOf(sampleMemberDto)
+        // PluralKit answered the registration with the name it had then.
+        coEvery { api.createSwitch(any()) } coAnswers {
+            slowCreate.await()
+            SwitchFullDto(id = "sw", timestamp = "2026-11-13T14:00:00Z", members = listOf(sampleMemberDto))
+        }
+        coEvery { api.updateMember("uuid-alpha", any()) } returns renamed
+        coEvery { api.getRecentSwitches(any()) } returns
+            listOf(SwitchRefsDto(id = "sw", timestamp = "2026-11-13T14:00:00Z", members = listOf("alpha")))
+        val client = client(api)
+        client.getOwnMembers()
+
+        launch { client.registerSwitch(listOf("uuid-alpha")) }
+        client.updateMember("uuid-alpha", mapOf(MemberField.Name to "Alexis"))
+        slowCreate.complete(Unit)
+
+        assertEquals(listOf("Alexis"), client.getRecentSwitches(10).single().members.map { it.name })
+    }
+
+    @Test
     fun `a member list fetch gives up waiting for edits to stop, after three tries`() = runTest {
         val api = mockk<PluralKitApi>()
         lateinit var client: PluralKitClient

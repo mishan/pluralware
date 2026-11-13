@@ -112,11 +112,12 @@ class RetrofitPluralKitClient internal constructor(
     override suspend fun registerSwitch(memberUuids: List<String>): Switch {
         // PluralKit's POST accepts either short IDs or UUIDs. We send UUIDs
         // because the pickers track members by UUID — the stable identifier.
+        val editsBefore = cacheMutex.withLock { cacheEdits }
         val switch = http { api.createSwitch(CreateSwitchRequest(members = memberUuids)) }
             .toDomain()
         // Server returned full Member objects in the response; refresh the cache
         // so any newly-added members from the response are visible to history.
-        remember(switch.members)
+        remember(switch.members, editsBefore)
         return switch
     }
 
@@ -142,9 +143,16 @@ class RetrofitPluralKitClient internal constructor(
         if (!response.isSuccessful) throw response.toPluralKitException()
     }
 
-    private suspend fun remember(members: List<Member>) = cacheMutex.withLock {
+    /**
+     * Writes [members] into the lookup cache. Given [editsBefore], taken when
+     * their request went out, they don't replace members an edit has written
+     * since: those are newer.
+     */
+    private suspend fun remember(members: List<Member>, editsBefore: Int? = null) = cacheMutex.withLock {
         val merged = (memberCache ?: emptyMap()).toMutableMap()
+        val keepCached = editsBefore != null && editsBefore != cacheEdits
         members.forEach { m ->
+            if (keepCached && m.uuid in merged) return@forEach
             merged[m.uuid] = m
             merged[m.id] = m
         }
