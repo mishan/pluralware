@@ -1,14 +1,19 @@
 package me.pluralware.shared.api
 
+import kotlinx.serialization.json.JsonObject
 import me.pluralware.shared.api.dto.CreateSwitchRequest
 import me.pluralware.shared.api.dto.MemberDto
+import me.pluralware.shared.api.dto.MoveSwitchRequest
 import me.pluralware.shared.api.dto.SwitchFullDto
 import me.pluralware.shared.api.dto.SwitchRefsDto
 import me.pluralware.shared.api.dto.SystemDto
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
@@ -53,4 +58,17 @@ internal interface PluralKitApi {
      */
     @POST("systems/@me/switches")
     suspend fun createSwitch(@Body body: CreateSwitchRequest): SwitchFullDto
+
+    /** A partial member: a key it leaves out stays as it is; one set to null is cleared. */
+    @PATCH("members/{uuid}")
+    suspend fun updateMember(@Path("uuid") uuid: String, @Body changes: JsonObject): MemberDto
+
+    @PATCH("systems/@me/switches/{uuid}")
+    suspend fun moveSwitch(@Path("uuid") uuid: String, @Body body: MoveSwitchRequest): SwitchFullDto
+
+    @PATCH("systems/@me/switches/{uuid}/members")
+    suspend fun setSwitchMembers(@Path("uuid") uuid: String, @Body memberUuids: List<String>): SwitchFullDto
+
+    @DELETE("systems/@me/switches/{uuid}")
+    suspend fun deleteSwitch(@Path("uuid") uuid: String): Response<Unit>
 }

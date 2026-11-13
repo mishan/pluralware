@@ -41,9 +41,17 @@ object PluralKitClientFactory {
         token: PluralKitToken,
         appVersion: String,
         enableLogging: Boolean = false,
+    ): PluralKitClient = create(token, appVersion, enableLogging, BASE_URL)
+
+    /** [create] against another server: tests point it at a fake one to see the requests sent. */
+    internal fun create(
+        token: PluralKitToken,
+        appVersion: String,
+        enableLogging: Boolean,
+        baseUrl: String,
     ): PluralKitClient {
         val okHttp = buildOkHttpClient(token, userAgent(appVersion), enableLogging)
-        val retrofit = buildRetrofit(okHttp)
+        val retrofit = buildRetrofit(okHttp, baseUrl)
         return RetrofitPluralKitClient(retrofit.create(PluralKitApi::class.java))
     }
 
@@ -70,7 +78,7 @@ object PluralKitClientFactory {
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private fun buildRetrofit(okHttp: OkHttpClient): Retrofit {
+    private fun buildRetrofit(okHttp: OkHttpClient, baseUrl: String): Retrofit {
         // ignoreUnknownKeys: future PluralKit API additions don't break us.
         // coerceInputValues: a single unexpected null in a non-null field is
         //                    treated as the default, not a crash.
@@ -80,7 +88,7 @@ object PluralKitClientFactory {
         }
         val contentType = "application/json".toMediaType()
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .client(okHttp)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
