@@ -143,6 +143,13 @@ class RetrofitPluralKitClient internal constructor(
         if (!response.isSuccessful) throw response.toPluralKitException()
     }
 
+    override suspend fun forgetMembers() {
+        cacheMutex.withLock {
+            memberCache = null
+            cacheEdits++
+        }
+    }
+
     /**
      * Writes [members] into the lookup cache. Given [editsBefore], taken when
      * their request went out, they don't replace members an edit has written

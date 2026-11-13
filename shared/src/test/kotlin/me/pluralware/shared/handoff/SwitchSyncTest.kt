@@ -17,6 +17,7 @@ import me.pluralware.shared.repository.PluralKitRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SwitchSyncTest {
@@ -30,6 +31,27 @@ class SwitchSyncTest {
         val notice = SwitchSync.noticeOf(newer, token)
         val map = DataMap().also { SwitchSync.write(notice, it) }
         assertEquals(notice, SwitchSync.read(map))
+    }
+
+    @Test
+    fun `a notice from an app too old to send members reads without them`() {
+        val notice = SwitchSync.noticeOf(newer, token)
+        val map = DataMap().also { SwitchSync.write(notice.copy(membersHash = null), it) }
+
+        assertEquals(notice.copy(membersHash = null), SwitchSync.read(map))
+        assertTrue(notice.membersHash!!.isNotEmpty())
+    }
+
+    @Test
+    fun `the members hash follows the members and their order, and names nobody`() {
+        val two = older.copy(members = PreviewData.members.take(2))
+        val swapped = two.copy(members = two.members.reversed())
+        val renamed = two.copy(members = two.members.map { it.copy(name = "Renamed") })
+
+        assertTrue(SwitchSync.membersHash(two) != SwitchSync.membersHash(swapped))
+        assertTrue(SwitchSync.membersHash(two) != SwitchSync.membersHash(older))
+        assertEquals("the same members, whatever they're called", SwitchSync.membersHash(two), SwitchSync.membersHash(renamed))
+        assertFalse(PreviewData.members.any { SwitchSync.membersHash(two).contains(it.name, ignoreCase = true) })
     }
 
     @Test
@@ -48,10 +70,20 @@ class SwitchSyncTest {
             Case("an older one, as after deleting the latest", older, token, newer, true),
             Case("a moved one, with the same uuid", moved, token, newer, true),
             Case("the same switch: no echo", newer, token, newer, false),
+            Case("the same switch, its members fixed", newer.copy(members = PreviewData.members.take(2)), token, newer, true),
             Case("another system's switch", newer, other, older, false),
         ).forEach { (name, switch, from, current, news) ->
             assertEquals(name, news, SwitchSync.noticeOf(switch, from).differsFrom(current, token.fingerprint))
         }
+    }
+
+    @Test
+    fun `without members on either side, a notice is compared by switch and time only`() {
+        val fixed = newer.copy(members = PreviewData.members.take(2))
+        val fromOldApp = SwitchSync.noticeOf(fixed, token).copy(membersHash = null)
+
+        assertFalse(fromOldApp.differsFrom(newer, token.fingerprint))
+        assertFalse(SwitchSync.noticeOf(fixed, token).differsFrom(newer.uuid, newer.timestamp.toEpochMilli(), null, token.fingerprint))
     }
 
     private data class Case(val name: String, val switch: Switch, val from: PluralKitToken, val current: Switch?, val news: Boolean)
@@ -66,14 +98,15 @@ class SwitchSyncTest {
     fun `an open app pushes each new current switch once`() = runTest(UnconfinedTestDispatcher()) {
         val client = mockk<PluralKitClient>()
         val moved = newer.copy(timestamp = newer.timestamp.plusSeconds(60))
-        coEvery { client.getCurrentFronters() } returnsMany listOf(older, older, newer, moved)
+        val fixed = moved.copy(members = PreviewData.members.take(2))
+        coEvery { client.getCurrentFronters() } returnsMany listOf(older, older, newer, moved, fixed)
         val repository = PluralKitRepository(client)
         val pushed = mutableListOf<Switch>()
         val sync = launch { SwitchSync.keepInSync(repository, token, { pushed += it }, MutableSharedFlow()) }
 
-        repeat(4) { repository.refreshFronters() }
+        repeat(5) { repository.refreshFronters() }
 
-        assertEquals(listOf(older, newer, moved), pushed)
+        assertEquals(listOf(older, newer, moved, fixed), pushed)
         sync.cancel()
     }
 

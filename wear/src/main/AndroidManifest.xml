@@ -59,6 +59,10 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/pluralware/switch" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/members" />
             </intent-filter>
         </service>
 

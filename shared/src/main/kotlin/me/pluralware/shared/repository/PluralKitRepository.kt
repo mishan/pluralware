@@ -108,6 +108,14 @@ class PluralKitRepository(
         }
     }
 
+    /** Members were edited elsewhere: drop what's cached about them, so the next look fetches. */
+    suspend fun forgetMembers() {
+        // Counted as a write, so a member list fetched before the edit isn't cached over it.
+        writes.incrementAndGet()
+        membersCacheMutex.withLock { membersCache = null }
+        client.forgetMembers()
+    }
+
     /** The system this token belongs to. Not cached: it's for showing who's signed in. */
     suspend fun ownSystem(): PkResult<SystemInfo> = runCatchingPk { client.getOwnSystem() }
 

@@ -145,9 +145,13 @@ When an edit changes who's fronting now, the phone tells friends with the correc
   filter. On receipt, the listener service:
   - expires the complication and tile's cached line itself, as it does for switch notices,
     because with the app closed there is no session to do it;
-  - delivers the notice to a running session, which drops its member caches and fetches its
-    fronters again;
-  - drops the member caches of `FronterSurfaces`' own client.
+  - keeps the notice for the watch app, which drops its member caches and fetches its fronters
+    again: at once if it's showing, or when it comes back.
+
+  The complication and tile need no cache of their own dropped: they fetch the current front,
+  which comes with full members. Each session remembers which edits it has told the other device
+  about and which notices it has acted on, so an edit that lands, or a notice that arrives, while
+  an app is in the background is caught up on when it returns.
 
 ## 8. Phone screens
 

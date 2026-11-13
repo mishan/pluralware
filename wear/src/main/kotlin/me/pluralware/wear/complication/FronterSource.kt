@@ -3,6 +3,7 @@ package me.pluralware.wear.complication
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
@@ -90,13 +91,28 @@ internal class FronterSource(
             val cached = cache.get()?.takeIf { it.tokenId == fingerprint }
             when {
                 cached == null -> true
-                !notice.differsFrom(cached.switchUuid, cached.switchAtEpochMillis, fingerprint) -> false
+                !notice.differsFrom(cached.switchUuid, cached.switchAtEpochMillis, cached.switchMembersHash, fingerprint) -> false
                 else -> {
                     cache.set(cached.copy(fetchedAtEpochMillis = 0L))
                     true
                 }
             }
         }
+    }
+
+    /**
+     * The phone reports a member edited for [notice]'s system: the cached
+     * line may name them as they were, so stop answering from it (it stays
+     * as the "Last known" fallback). Returns whether the surfaces should be
+     * asked to update.
+     */
+    suspend fun expireMembers(notice: MemberSync.Notice): Boolean {
+        val fingerprint = token()?.fingerprint ?: return false
+        if (notice.tokenFingerprint != fingerprint) return false
+        cacheLock.withLock {
+            cache.get()?.takeIf { it.tokenId == fingerprint }?.let { cache.set(it.copy(fetchedAtEpochMillis = 0L)) }
+        }
+        return true
     }
 
     private fun lineFor(switch: Switch?, token: PluralKitToken) = LastFronter(
@@ -106,6 +122,7 @@ internal class FronterSource(
         tokenId = token.fingerprint,
         switchUuid = switch?.uuid,
         switchAtEpochMillis = switch?.timestamp?.toEpochMilli(),
+        switchMembersHash = switch?.let(SwitchSync::membersHash),
     )
 
     private fun LastFronter.toDisplay(lastKnown: Boolean) = if (lastKnown) {

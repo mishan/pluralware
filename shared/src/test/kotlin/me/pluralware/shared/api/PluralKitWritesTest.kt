@@ -1,6 +1,7 @@
 package me.pluralware.shared.api
 
 import java.time.Instant
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import me.pluralware.shared.model.MemberField
@@ -194,6 +195,40 @@ class PluralKitWritesTest {
 
         assertEquals(true, e is java.io.IOException)
         assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `after forgetting members, history fetches them again`() = runTest {
+        respond(body = """[{"id":"abcde","uuid":"uuid-alex","name":"Alex"}]""")
+        client.getOwnMembers()
+        client.forgetMembers()
+        respond(body = """[{"id":"uuid-sw","timestamp":"2026-11-13T14:00:00Z","members":["abcde"]}]""")
+        respond(body = """[{"id":"abcde","uuid":"uuid-alex","name":"Renamed on the phone"}]""")
+
+        val history = client.getRecentSwitches(10)
+
+        assertEquals(listOf("Renamed on the phone"), history.single().members.map { it.name })
+    }
+
+    @Test
+    fun `a member list fetched before members were forgotten isn't cached over it`() = runTest {
+        // The fetch lands with the old name only after forgetMembers ran.
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            var calls = 0
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = when {
+                request.path!!.endsWith("/members") && calls++ == 0 -> {
+                    runBlocking { client.forgetMembers() }
+                    MockResponse().setBody("""[{"id":"abcde","uuid":"uuid-alex","name":"Alex"}]""")
+                }
+                request.path!!.endsWith("/members") -> MockResponse().setBody("""[{"id":"abcde","uuid":"uuid-alex","name":"Sam"}]""")
+                else -> MockResponse().setBody("""[{"id":"uuid-sw","timestamp":"2026-11-13T14:00:00Z","members":["abcde"]}]""")
+            }
+        }
+        client.getOwnMembers()
+
+        val history = client.getRecentSwitches(10)
+
+        assertEquals(listOf("Sam"), history.single().members.map { it.name })
     }
 
     @Test

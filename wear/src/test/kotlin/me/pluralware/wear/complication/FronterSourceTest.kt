@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PluralKitRepository
@@ -120,6 +121,7 @@ class FronterSourceTest {
                 PluralKitToken("token").fingerprint,
                 switchUuid = PreviewData.switchOut.uuid,
                 switchAtEpochMillis = PreviewData.switchOut.timestamp.toEpochMilli(),
+                switchMembersHash = SwitchSync.membersHash(PreviewData.switchOut),
             ),
             cache.get(),
         )
@@ -190,6 +192,30 @@ class FronterSourceTest {
 
         assertTrue(source.expire(SwitchSync.noticeOf(moved, PluralKitToken("token"))))
         assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun `a members fix to the cached switch is news, though its uuid and time are the same`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val fixed = PreviewData.currentSwitch.copy(members = PreviewData.members.takeLast(1))
+
+        assertTrue(source.expire(SwitchSync.noticeOf(fixed, PluralKitToken("token"))))
+        assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun `a member edited on the phone makes the next request fetch, for this system only`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val before = cache.get()
+
+        assertFalse(source.expireMembers(MemberSync.noticeOf(PluralKitToken("other system"), 1L)))
+        assertEquals(before, cache.get())
+
+        assertTrue(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 1L)))
+        assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+
+        token = null
+        assertFalse(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 2L)))
     }
 
     @Test

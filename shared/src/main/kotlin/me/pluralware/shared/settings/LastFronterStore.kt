@@ -35,7 +35,7 @@ interface LastFronterCache {
  * (epoch millis), and which token it was fetched with ([tokenId], a hash, never
  * the token itself). A line from another token is never shown.
  *
- * [switchUuid] and [switchAtEpochMillis] name the switch the line describes,
+ * [switchUuid], [switchAtEpochMillis] and [switchMembersHash] name the switch the line describes,
  * when there is one, so a sync notice about that same switch can be told
  * apart from news.
  */
@@ -46,6 +46,7 @@ data class LastFronter(
     val tokenId: String,
     val switchUuid: String? = null,
     val switchAtEpochMillis: Long? = null,
+    val switchMembersHash: String? = null,
 )
 
 class InMemoryLastFronterCache(private var value: LastFronter? = null) : LastFronterCache {
@@ -79,6 +80,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             tokenId = prefs.getString(KEY_TOKEN_ID, null) ?: return@withContext null,
             switchUuid = prefs.getString(KEY_SWITCH_UUID, null),
             switchAtEpochMillis = prefs.getLong(KEY_SWITCH_AT, -1L).takeIf { it >= 0 },
+            switchMembersHash = prefs.getString(KEY_SWITCH_MEMBERS, null),
         )
     }
 
@@ -90,6 +92,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
             .putString(KEY_TOKEN_ID, fronter.tokenId)
             .putString(KEY_SWITCH_UUID, fronter.switchUuid)
             .putLong(KEY_SWITCH_AT, fronter.switchAtEpochMillis ?: -1L)
+            .putString(KEY_SWITCH_MEMBERS, fronter.switchMembersHash)
             .apply()
     }
 
@@ -109,6 +112,7 @@ class LastFronterStore private constructor(appContext: Context) : LastFronterCac
         private const val KEY_TOKEN_ID = "last_fronter_token_id"
         private const val KEY_SWITCH_UUID = "last_fronter_switch_uuid"
         private const val KEY_SWITCH_AT = "last_fronter_switch_at"
+        private const val KEY_SWITCH_MEMBERS = "last_fronter_switch_members"
 
         @Volatile private var instance: LastFronterStore? = null
 

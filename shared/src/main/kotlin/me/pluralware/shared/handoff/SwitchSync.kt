@@ -1,6 +1,7 @@
 package me.pluralware.shared.handoff
 
 import android.content.Context
+import java.security.MessageDigest
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
@@ -42,25 +43,49 @@ object SwitchSync {
     private const val KEY_SWITCH = "switch"
     private const val KEY_AT = "at"
     private const val KEY_SYSTEM = "system"
+    private const val KEY_MEMBERS = "members"
 
-    /** A device's current switch, by uuid and start time, for the system with [tokenFingerprint]. */
-    data class Notice(val switchUuid: String, val atEpochMillis: Long, val tokenFingerprint: String) {
+    /**
+     * A device's current switch, by uuid, start time and [membersHash] (see
+     * [membersHash]; null from an app too old to send it), for the system with
+     * [tokenFingerprint].
+     */
+    data class Notice(
+        val switchUuid: String,
+        val atEpochMillis: Long,
+        val tokenFingerprint: String,
+        val membersHash: String? = null,
+    ) {
         /**
          * Whether this notice is news to a device holding the switch
-         * [currentUuid] that started at [currentAtEpochMillis] (both null when
-         * it knows of none), signed in with the token fingerprinted [fingerprint].
-         * A notice for another system, or for the same switch, isn't.
+         * [currentUuid] that started at [currentAtEpochMillis] with members
+         * hashing to [currentMembersHash] (all null when it knows of none),
+         * signed in with the token fingerprinted [fingerprint]. A notice for
+         * another system, or for the same switch, isn't.
          */
-        fun differsFrom(currentUuid: String?, currentAtEpochMillis: Long?, fingerprint: String): Boolean =
+        fun differsFrom(
+            currentUuid: String?,
+            currentAtEpochMillis: Long?,
+            currentMembersHash: String?,
+            fingerprint: String,
+        ): Boolean =
             tokenFingerprint == fingerprint &&
-                (switchUuid != currentUuid || atEpochMillis != currentAtEpochMillis)
+                (switchUuid != currentUuid || atEpochMillis != currentAtEpochMillis ||
+                    // Compared only when both sides have one: an older app's notice has none.
+                    (membersHash != null && currentMembersHash != null && membersHash != currentMembersHash))
 
         fun differsFrom(current: Switch?, fingerprint: String): Boolean =
-            differsFrom(current?.uuid, current?.timestamp?.toEpochMilli(), fingerprint)
+            differsFrom(current?.uuid, current?.timestamp?.toEpochMilli(), current?.let(::membersHash), fingerprint)
     }
 
+    /** The switch's members, in order, as a hash: a members fix keeps its uuid and time. No names. */
+    fun membersHash(switch: Switch): String =
+        MessageDigest.getInstance("SHA-256").digest(switch.members.joinToString(",") { it.uuid }.toByteArray())
+            .take(16).joinToString("") { "%02x".format(it) }
+
+
     fun noticeOf(switch: Switch, token: PluralKitToken) =
-        Notice(switch.uuid, switch.timestamp.toEpochMilli(), token.fingerprint)
+        Notice(switch.uuid, switch.timestamp.toEpochMilli(), token.fingerprint, membersHash(switch))
 
     /** Shares [switch] as this device's current switch. Throws without Wear OS; callers ignore it. */
     suspend fun push(context: Context, switch: Switch, token: PluralKitToken) {
@@ -75,13 +100,14 @@ object SwitchSync {
         map.putString(KEY_SWITCH, notice.switchUuid)
         map.putLong(KEY_AT, notice.atEpochMillis)
         map.putString(KEY_SYSTEM, notice.tokenFingerprint)
+        notice.membersHash?.let { map.putString(KEY_MEMBERS, it) }
     }
 
     fun read(map: DataMap): Notice? {
         val uuid = map.getString(KEY_SWITCH)?.takeIf { it.isNotBlank() } ?: return null
         val system = map.getString(KEY_SYSTEM)?.takeIf { it.isNotBlank() } ?: return null
         val at = map.getLong(KEY_AT, -1L).takeIf { it >= 0 } ?: return null
-        return Notice(uuid, at, system)
+        return Notice(uuid, at, system, map.getString(KEY_MEMBERS)?.takeIf { it.isNotBlank() })
     }
 
     /**
@@ -125,8 +151,8 @@ object SwitchSync {
         launch {
             repository.loadedFronters
                 .mapNotNull { it?.switch }
-                // The time too: moving a switch keeps its uuid.
-                .distinctUntilChangedBy { it.uuid to it.timestamp }
+                // The time and members too: moving or fixing a switch keeps its uuid.
+                .distinctUntilChangedBy { Triple(it.uuid, it.timestamp, membersHash(it)) }
                 .collect { switch ->
                     try {
                         push(switch)

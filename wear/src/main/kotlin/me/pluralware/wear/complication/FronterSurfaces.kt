@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.EncryptedTokenStore
@@ -53,6 +54,11 @@ object FronterSurfaces {
      */
     suspend fun onRemoteSwitch(context: Context, notice: SwitchSync.Notice) {
         if (source(context).expire(notice)) requestUpdates(context)
+    }
+
+    /** The phone edited a member: the surfaces may name them as they were, so refresh them. */
+    suspend fun onRemoteMemberEdit(context: Context, notice: MemberSync.Notice) {
+        if (source(context).expireMembers(notice)) requestUpdates(context)
     }
 
     /** The token was replaced or cleared: forget the old system's line and refresh. */
