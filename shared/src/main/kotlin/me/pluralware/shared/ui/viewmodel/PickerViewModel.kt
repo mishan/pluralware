@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.pluralware.shared.repository.PkResult
@@ -34,6 +37,12 @@ class PickerViewModel(
     init {
         loadMembers()
         loadInitialSelection()
+        // A member edited while the picker is open (on the other device, say):
+        // show them as they are now, keeping the list and the selection.
+        repository.membersChanged.drop(1).onEach {
+            val r = repository.refreshMembers(force = true)
+            if (r is PkResult.Success) _state.update { it.copy(members = UiState.Content(r.value)) }
+        }.launchIn(viewModelScope)
     }
 
     fun loadMembers() {

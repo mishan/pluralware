@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.repository.PluralKitRepository
 
 /**
@@ -48,4 +49,7 @@ class Session internal constructor(
     val repository: PluralKitRepository,
 ) : ViewModelStoreOwner {
     override val viewModelStore = ViewModelStore()
+
+    /** How far member edits are synced with the other device, across the app going to the background. */
+    val memberSync = MemberSync.Progress()
 }

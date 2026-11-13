@@ -30,10 +30,24 @@ class PickerViewModelTest {
     private val client = mockk<PluralKitClient>().apply {
         coEvery { getOwnMembers() } returns PreviewData.members
         coEvery { getCurrentFronters() } returns PreviewData.currentSwitch
+        coEvery { forgetMembers() } returns Unit
     }
     private val repository = PluralKitRepository(client)
 
     private fun viewModel() = PickerViewModel(repository = repository, confirmationLingerMillis = 0)
+
+    @Test
+    fun `members edited elsewhere while the picker is open show, and the selection stays`() = runTest {
+        val vm = viewModel()
+        val chosen = vm.pickSomeoneElse()
+        val renamed = PreviewData.members.map { if (it.uuid == chosen) it.copy(name = "Renamed") else it }
+        coEvery { client.getOwnMembers() } returns renamed
+
+        repository.forgetMembers()
+
+        assertEquals(renamed, (vm.state.value.members as UiState.Content).value)
+        assertTrue(chosen in vm.state.value.selectedUuids)
+    }
 
     /** Pick a member who isn't fronting, so submit() really registers a switch. */
     private fun PickerViewModel.pickSomeoneElse(): String {

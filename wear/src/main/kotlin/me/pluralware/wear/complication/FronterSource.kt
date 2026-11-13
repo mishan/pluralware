@@ -1,8 +1,10 @@
 package me.pluralware.wear.complication
 
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.repository.PkResult
@@ -46,11 +48,15 @@ internal class FronterSource(
         if (cached != null && clock() - cached.fetchedAtEpochMillis in 0 until FRESH_FOR_MILLIS) {
             return cached.toDisplay(lastKnown = false)
         }
+        val expiriesBefore = expiries.get()
         return when (val result = repositoryFor(token).refreshFronters()) {
             is PkResult.Success -> {
                 val line = lineFor(result.value, token)
-                // Cache only if the token didn't change while we were fetching.
-                if (token() == token) cacheLock.withLock { cache.set(line) }
+                // Cache only if the token didn't change while we were fetching, nor the
+                // line expire: the phone's news may postdate what this fetch read.
+                if (token() == token) {
+                    cacheLock.withLock { if (expiries.get() == expiriesBefore) cache.set(line) }
+                }
                 line.toDisplay(lastKnown = false)
             }
             is PkResult.Failure -> when {
@@ -90,13 +96,30 @@ internal class FronterSource(
             val cached = cache.get()?.takeIf { it.tokenId == fingerprint }
             when {
                 cached == null -> true
-                !notice.differsFrom(cached.switchUuid, cached.switchAtEpochMillis, fingerprint) -> false
+                !notice.differsFrom(cached.switchUuid, cached.switchAtEpochMillis, cached.switchMembersHash, fingerprint) -> false
                 else -> {
+                    expiries.incrementAndGet()
                     cache.set(cached.copy(fetchedAtEpochMillis = 0L))
                     true
                 }
             }
         }
+    }
+
+    /**
+     * The phone reports a member edited for [notice]'s system: the cached
+     * line may name them as they were, so stop answering from it (it stays
+     * as the "Last known" fallback). Returns whether the surfaces should be
+     * asked to update.
+     */
+    suspend fun expireMembers(notice: MemberSync.Notice): Boolean {
+        val fingerprint = token()?.fingerprint ?: return false
+        if (notice.tokenFingerprint != fingerprint) return false
+        cacheLock.withLock {
+            expiries.incrementAndGet()
+            cache.get()?.takeIf { it.tokenId == fingerprint }?.let { cache.set(it.copy(fetchedAtEpochMillis = 0L)) }
+        }
+        return true
     }
 
     private fun lineFor(switch: Switch?, token: PluralKitToken) = LastFronter(
@@ -106,6 +129,7 @@ internal class FronterSource(
         tokenId = token.fingerprint,
         switchUuid = switch?.uuid,
         switchAtEpochMillis = switch?.timestamp?.toEpochMilli(),
+        switchMembersHash = switch?.let(SwitchSync::membersHash),
     )
 
     private fun LastFronter.toDisplay(lastKnown: Boolean) = if (lastKnown) {
@@ -119,6 +143,10 @@ internal class FronterSource(
         // must not land between another's read and write (expire's), or an
         // older line could be put back over a newer one.
         private val cacheLock = Mutex()
+
+        // Counts expiries, process-wide like the lock: a fetch that was out
+        // while the line expired mustn't cache what it read as fresh.
+        private val expiries = AtomicInteger()
 
         /**
          * How long a cached line is answered without fetching. Shorter than the

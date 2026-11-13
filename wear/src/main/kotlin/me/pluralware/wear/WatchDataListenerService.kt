@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.handoff.SettingsHandoff
 import me.pluralware.shared.handoff.SharingHandoff
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.handoff.TokenHandoff
 import me.pluralware.shared.notify.EncryptedSharingStore
@@ -30,6 +31,8 @@ import me.pluralware.wear.complication.FronterSurfaces
  *  - the phone's current switch ([SwitchSync.PATH]) — handed to the open app,
  *    if any, and used to refresh the complication and tile. Kept: it's the
  *    phone's latest state, and holds no names or secrets.
+ *  - a member edited on the phone ([MemberSync.PATH]) — the same: the open
+ *    app drops its member caches, and the complication and tile refresh.
  *
  * Wear OS binds to this service whenever a relevant DataItem changes. The
  * callback runs on a worker thread, so blocking I/O via [runBlocking] is fine.
@@ -48,7 +51,8 @@ class WatchDataListenerService : WearableListenerService() {
         val sharingItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.PATH }
         val statusItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.STATUS_PATH }
         val switchItems = changed.filter { (uri, _) -> uri.path == SwitchSync.PATH }
-        if (listOf(tokenItems, settingsItems, sharingItems, statusItems, switchItems).all { it.isEmpty() }) return
+        val memberItems = changed.filter { (uri, _) -> uri.path == MemberSync.PATH }
+        if (listOf(tokenItems, settingsItems, sharingItems, statusItems, switchItems, memberItems).all { it.isEmpty() }) return
 
         runBlocking {
             if (tokenItems.isNotEmpty()) {
@@ -91,13 +95,25 @@ class WatchDataListenerService : WearableListenerService() {
                 LocalSettingsStore.get(applicationContext)
                     .setRefreshInterval(SettingsHandoff.read(item).refreshInterval)
             }
-            // Last: it reads encrypted stores, and a throw there mustn't cost
-            // the items above, which the Data Layer won't deliver again.
+            // Last, each on its own: they read encrypted stores, and a throw in
+            // one mustn't cost the items before it or the other, which the
+            // Data Layer won't deliver again.
             if (switchItems.isNotEmpty()) {
                 val items = switchItems.map { (uri, item) -> uri.host to item.dataMap }
-                SwitchSync.fromOtherDevice(applicationContext, items).forEach { notice ->
-                    SwitchSync.deliver(notice)
-                    FronterSurfaces.onRemoteSwitch(applicationContext, notice)
+                runCatching {
+                    SwitchSync.fromOtherDevice(applicationContext, items).forEach { notice ->
+                        SwitchSync.deliver(notice)
+                        FronterSurfaces.onRemoteSwitch(applicationContext, notice)
+                    }
+                }
+            }
+            if (memberItems.isNotEmpty()) {
+                val items = memberItems.map { (uri, item) -> uri.host to item.dataMap }
+                runCatching {
+                    MemberSync.fromOtherDevice(applicationContext, items).forEach { notice ->
+                        MemberSync.deliver(notice)
+                        FronterSurfaces.onRemoteMemberEdit(applicationContext, notice)
+                    }
                 }
             }
         }

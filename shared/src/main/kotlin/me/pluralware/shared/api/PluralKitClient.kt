@@ -61,6 +61,9 @@ interface PluralKitClient {
 
     /** DELETE /systems/@me/switches/{uuid}. */
     suspend fun deleteSwitch(uuid: String)
+
+    /** Members were edited elsewhere: drop any members cached for history, so it fetches them again. */
+    suspend fun forgetMembers() {}
 }
 
 /** Auth marker. The token is otherwise an opaque string from `pk;token`. */

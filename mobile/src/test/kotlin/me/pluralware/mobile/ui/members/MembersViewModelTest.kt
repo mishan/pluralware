@@ -59,6 +59,18 @@ class MembersViewModelTest {
     }
 
     @Test
+    fun `an edit made on the other device shows too`() = runTest {
+        val repository = PluralKitRepository(pk)
+        val vm = MembersViewModel(repository)
+        val member = vm.shown().first()
+        pk.updateMember(member.uuid, mapOf(MemberField.Name to "Renamed on the watch"))
+
+        repository.forgetMembers()
+
+        assertEquals("Renamed on the watch", vm.shown().first().name)
+    }
+
+    @Test
     fun `a slow load can't overwrite a newer one`() = runTest {
         val held = CompletableDeferred<Unit>()
         var loads = 0

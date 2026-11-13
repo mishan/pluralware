@@ -21,6 +21,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import me.pluralware.mobile.following.FollowingScreen
 import me.pluralware.mobile.following.FollowingViewModel
 import me.pluralware.mobile.sharing.SharingScreen
@@ -28,12 +29,13 @@ import me.pluralware.mobile.sharing.SharingViewModel
 import me.pluralware.mobile.ui.ConnectScreen
 import me.pluralware.mobile.ui.ConnectViewModel
 import me.pluralware.mobile.ui.SettingsScreen
+import me.pluralware.mobile.ui.SettingsViewModel
 import me.pluralware.mobile.ui.members.MemberEditorScreen
 import me.pluralware.mobile.ui.members.MembersScreen
-import me.pluralware.mobile.ui.SettingsViewModel
 import me.pluralware.mobile.ui.screens.FrontersScreen
 import me.pluralware.mobile.ui.screens.HistoryScreen
 import me.pluralware.mobile.ui.screens.PickerScreen
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.session.Session
 import me.pluralware.shared.session.SessionHolder
@@ -83,13 +85,20 @@ fun PhoneApp(graph: AppGraph, requestedRoute: String?, onRequestHandled: () -> U
             owner = session
         }
         if (session != null) {
-            // While the app is showing, keep a watch on the same switch, both ways.
+            // While the app is showing, keep a watch on the same switch, both ways,
+            // and tell it when a member is edited here.
             val lifecycleOwner = LocalLifecycleOwner.current
+            val appContext = LocalContext.current.applicationContext
             LaunchedEffect(session, lifecycleOwner) {
                 lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
-                        graph.watchLink.shareSwitch(switch, session.token)
-                    })
+                    launch {
+                        SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
+                            graph.watchLink.shareSwitch(switch, session.token)
+                        })
+                    }
+                    MemberSync.keepInSync(session.repository, session.token, push = {
+                        MemberSync.push(appContext, session.token)
+                    }, progress = session.memberSync)
                 }
             }
         }

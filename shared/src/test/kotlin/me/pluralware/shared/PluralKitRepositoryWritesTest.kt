@@ -72,6 +72,22 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
+    fun `members changing anywhere is signalled, for screens that show them`() = runTest {
+        val member = members().first()
+        val seen = mutableListOf(repository.membersChanged.value)
+
+        repository.updateMember(member.uuid, mapOf(MemberField.Name to "A"))
+        seen += repository.membersChanged.value
+        repository.updateMember("no-such-member", mapOf(MemberField.Name to "B"))
+        seen += repository.membersChanged.value
+        repository.forgetMembers()
+        seen += repository.membersChanged.value
+
+        assertEquals("edited here, refused, edited on the other device", listOf(0, 1, 1, 2), seen)
+        assertEquals("only this device's edits are its own to tell", 1, repository.memberEdits.value)
+    }
+
+    @Test
     fun `a member edit is never announced as a new or corrected front`() = runTest {
         val member = members().first()
 

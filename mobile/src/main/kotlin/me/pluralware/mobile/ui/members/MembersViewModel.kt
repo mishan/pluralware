@@ -33,8 +33,8 @@ class MembersViewModel(private val repository: PluralKitRepository) : ViewModel(
     init {
         // Once per screen: the ViewModel outlives rotation, so turning the phone doesn't refetch.
         load()
-        // Again for every edit saved in the app, even one that landed after its editor closed.
-        repository.memberEdits.drop(1).onEach { load() }.launchIn(viewModelScope)
+        // Again for every edit, here (even one that landed after its editor closed) or on the other device.
+        repository.membersChanged.drop(1).onEach { load() }.launchIn(viewModelScope)
     }
 
     /** Loads the list fresh from PluralKit: members may have been edited elsewhere since. */

@@ -35,6 +35,7 @@ import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.handoff.SharingHandoff
+import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.notify.EncryptedSharingStore
 import me.pluralware.shared.notify.SwitchAnnouncer
@@ -136,14 +137,20 @@ private fun ConnectedApp(
             FronterSurfaces.publish(appContext, it.switch, session.token)
         }
     }
-    // While the app is showing, keep the phone on the same switch, both ways.
+    // While the app is showing, keep the phone on the same switch, both ways,
+    // and catch up on members edited there.
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(session, lifecycleOwner) {
         if (BuildConfig.BENCHMARK) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
-                SwitchSync.push(appContext, switch, session.token)
-            })
+            launch {
+                SwitchSync.keepInSync(session.repository, session.token, push = { switch ->
+                    SwitchSync.push(appContext, switch, session.token)
+                })
+            }
+            MemberSync.keepInSync(session.repository, session.token, push = {
+                MemberSync.push(appContext, session.token)
+            }, progress = session.memberSync)
         }
     }
     CompositionLocalProvider(LocalViewModelStoreOwner provides session) {
