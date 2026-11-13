@@ -56,6 +56,22 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
+    fun `member edits that may have landed are counted, for screens that list members`() = runTest {
+        val member = members().first()
+        val counts = mutableListOf(repository.memberEdits.value)
+
+        repository.updateMember(member.uuid, mapOf(MemberField.Name to "A"))
+        counts += repository.memberEdits.value
+        client.loseNextResponse = true
+        repository.updateMember(member.uuid, mapOf(MemberField.Name to "B"))
+        counts += repository.memberEdits.value
+        repository.updateMember("no-such-member", mapOf(MemberField.Name to "C"))
+        counts += repository.memberEdits.value
+
+        assertEquals("landed, maybe landed, refused", listOf(0, 1, 2, 2), counts)
+    }
+
+    @Test
     fun `a member edit is never announced as a new or corrected front`() = runTest {
         val member = members().first()
 

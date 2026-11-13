@@ -160,6 +160,8 @@ private fun MemberForm(
             OutlinedTextField(
                 value = draft[field],
                 onValueChange = { onChange(field, it) },
+                // A save sends the draft as it was: a change made meanwhile would be lost when it closes.
+                enabled = !state.saving,
                 modifier = Modifier.fillMaxWidth().testTag("field-${field.apiKey}"),
                 label = { Text(field.label) },
                 leadingIcon = when {

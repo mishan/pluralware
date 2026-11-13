@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.repository.PkResult
@@ -19,19 +22,40 @@ class MembersViewModel(private val repository: PluralKitRepository) : ViewModel(
     private val _state = MutableStateFlow<UiState<List<Member>>>(UiState.Loading)
     val state: StateFlow<UiState<List<Member>>> = _state.asStateFlow()
 
-    // Once per screen: the ViewModel outlives rotation, so turning the phone doesn't refetch.
-    init { load() }
+    private val _reloadError = MutableStateFlow<String?>(null)
+
+    /** Why the last reload failed, while the list from before stays on screen. */
+    val reloadError: StateFlow<String?> = _reloadError.asStateFlow()
+
+    // Only the newest load's answer is shown; an older one finishing late is stale.
+    private var latestLoad = 0
+
+    init {
+        // Once per screen: the ViewModel outlives rotation, so turning the phone doesn't refetch.
+        load()
+        // Again for every edit saved in the app, even one that landed after its editor closed.
+        repository.memberEdits.drop(1).onEach { load() }.launchIn(viewModelScope)
+    }
 
     /** Loads the list fresh from PluralKit: members may have been edited elsewhere since. */
     fun load() {
+        val load = ++latestLoad
         // A reload keeps the list on screen: returning from an edit shouldn't flash a spinner.
         if (_state.value !is UiState.Content) _state.value = UiState.Loading
         viewModelScope.launch {
             val result = repository.refreshMembers(force = true)
-            _state.value = when (result) {
-                is PkResult.Success -> UiState.Content(result.value)
-                is PkResult.Failure -> _state.value.takeIf { it is UiState.Content && !result.isUnauthorized }
-                    ?: result.toUiError("Couldn't load your members")
+            if (load != latestLoad) return@launch
+            when (result) {
+                is PkResult.Success -> {
+                    _state.value = UiState.Content(result.value)
+                    _reloadError.value = null
+                }
+                is PkResult.Failure ->
+                    if (_state.value is UiState.Content && !result.isUnauthorized) {
+                        _reloadError.value = result.toUiError("Couldn't refresh your members").message
+                    } else {
+                        _state.value = result.toUiError("Couldn't load your members")
+                    }
             }
         }
     }

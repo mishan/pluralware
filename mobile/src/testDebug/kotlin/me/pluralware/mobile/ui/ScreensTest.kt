@@ -117,7 +117,8 @@ class ScreensTest {
 
         compose.onNodeWithText("No switches yet").assertIsDisplayed()
         compose.onNodeWithText("Log a switch").performClick()
-        assertEquals(listOf("change"), events)
+        compose.onNodeWithText("Members").performClick()
+        assertEquals(listOf("change", "members"), events)
     }
 
     @Test

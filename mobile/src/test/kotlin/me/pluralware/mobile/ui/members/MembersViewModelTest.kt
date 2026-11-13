@@ -2,6 +2,7 @@ package me.pluralware.mobile.ui.members
 
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -44,6 +45,60 @@ class MembersViewModelTest {
 
         assertEquals(pk.getOwnMembers(), vm.shown())
         assertEquals("Renamed", vm.shown()[0].name)
+    }
+
+    @Test
+    fun `an edit saved anywhere in the app shows, even one that landed after its editor closed`() = runTest {
+        val repository = PluralKitRepository(pk)
+        val vm = MembersViewModel(repository)
+        val member = vm.shown().first()
+
+        repository.updateMember(member.uuid, mapOf(MemberField.Name to "Renamed"))
+
+        assertEquals("Renamed", vm.shown().first().name)
+    }
+
+    @Test
+    fun `a slow load can't overwrite a newer one`() = runTest {
+        val held = CompletableDeferred<Unit>()
+        var loads = 0
+        val client = object : PluralKitClient by pk {
+            override suspend fun getOwnMembers(): List<Member> {
+                val now = pk.getOwnMembers()
+                if (loads++ == 1) held.await()
+                return now
+            }
+        }
+        val vm = MembersViewModel(PluralKitRepository(client))
+        val first = vm.shown().first()
+        vm.load()
+        pk.updateMember(first.uuid, mapOf(MemberField.Name to "Renamed"))
+        vm.load()
+
+        held.complete(Unit)
+
+        assertEquals("Renamed", vm.shown().first().name)
+    }
+
+    @Test
+    fun `a reload that fails keeps the list and says why, until one works`() = runTest {
+        var failing = false
+        val client = object : PluralKitClient by pk {
+            override suspend fun getOwnMembers(): List<Member> =
+                if (failing) throw java.io.IOException("Network unreachable") else pk.getOwnMembers()
+        }
+        val vm = MembersViewModel(PluralKitRepository(client))
+        failing = true
+
+        vm.load()
+
+        assertEquals(pk.getOwnMembers(), vm.shown())
+        assertTrue(vm.reloadError.value != null)
+
+        failing = false
+        vm.load()
+
+        assertEquals(null, vm.reloadError.value)
     }
 
     @Test

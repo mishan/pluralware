@@ -3,6 +3,7 @@ package me.pluralware.mobile.ui.members
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,12 +19,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -49,24 +52,17 @@ fun MembersScreen(
     onBack: () -> Unit,
     onOpenMember: (String) -> Unit,
     onSignOut: () -> Unit,
-    /** A member was edited since this screen loaded: load it again, then [onReloaded]. */
-    edited: Boolean = false,
-    onReloaded: () -> Unit = {},
     vm: MembersViewModel = viewModel(factory = MembersViewModel.Factory(repository)),
 ) {
-    LaunchedEffect(edited) {
-        if (edited) {
-            vm.load()
-            onReloaded()
-        }
-    }
     val state by vm.state.collectAsStateWithLifecycle()
-    MembersContent(state, onBack, onOpenMember, onRetry = vm::load, onSignOut)
+    val reloadError by vm.reloadError.collectAsStateWithLifecycle()
+    MembersContent(state, reloadError, onBack, onOpenMember, onRetry = vm::load, onSignOut)
 }
 
 @Composable
 internal fun MembersContent(
     state: UiState<List<Member>>,
+    reloadError: String?,
     onBack: () -> Unit,
     onOpenMember: (String) -> Unit,
     onRetry: () -> Unit,
@@ -81,22 +77,45 @@ internal fun MembersContent(
                 if (state.value.isEmpty()) {
                     MessageView("No members yet", "Add members in PluralKit, then they'll show here.", modifier)
                 } else {
-                    MemberDirectory(state.value, onOpenMember, modifier)
+                    MemberDirectory(state.value, reloadError, onOpenMember, onRetry, modifier)
                 }
         }
     }
 }
 
 @Composable
-private fun MemberDirectory(members: List<Member>, onOpenMember: (String) -> Unit, modifier: Modifier) {
+private fun MemberDirectory(
+    members: List<Member>,
+    reloadError: String?,
+    onOpenMember: (String) -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier,
+) {
     var query by rememberSaveable { mutableStateOf("") }
+    val searchable = members.size > SEARCH_FROM
+    // A list that shrank below where search starts takes the search away; its filter goes too,
+    // or it would hide members with nothing on screen to clear it.
+    LaunchedEffect(searchable) { if (!searchable) query = "" }
     val shown = if (query.isBlank()) members else members.filter { it.matches(query.trim()) }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (members.size > SEARCH_FROM) {
+        if (reloadError != null) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Couldn't refresh: $reloadError",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onRetry) { Text("Retry") }
+                }
+            }
+        }
+        if (searchable) {
             item {
                 OutlinedTextField(
                     value = query,

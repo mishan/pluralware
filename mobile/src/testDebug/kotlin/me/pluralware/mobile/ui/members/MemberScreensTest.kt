@@ -48,10 +48,11 @@ class MemberScreensTest {
 
     // --- Members -------------------------------------------------------------------------------
 
-    private fun showMembers(state: UiState<List<Member>>) = compose.setContent {
+    private fun showMembers(state: UiState<List<Member>>, reloadError: String? = null) = compose.setContent {
         PluralWareTheme {
             MembersContent(
                 state = state,
+                reloadError = reloadError,
                 onBack = { events += "back" },
                 onOpenMember = { events += "open:$it" },
                 onRetry = { events += "retry" },
@@ -81,6 +82,34 @@ class MemberScreensTest {
         val row = hasClickAction() and !hasSetTextAction()
         compose.onNode(hasText("Member 11") and row).assertExists()
         compose.onNode(hasText("Member 2") and row).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a list that shrinks below where search starts drops the search, so no filter is left stuck`() {
+        val many = (1..12).map { members[it % members.size].copy(uuid = "u$it", id = "id$it", name = "Member $it", displayName = null) }
+        var state by mutableStateOf<UiState<List<Member>>>(UiState.Content(many))
+        compose.setContent {
+            PluralWareTheme { MembersContent(state, null, {}, {}, {}, {}) }
+        }
+        compose.onNodeWithTag("member-search").performTextReplacement("Nobody")
+
+        state = UiState.Content(many.take(3))
+
+        compose.onNodeWithTag("member-search").assertDoesNotExist()
+        for (name in listOf("Member 1", "Member 2", "Member 3")) {
+            compose.onNode(hasText(name) and hasClickAction()).assertExists()
+        }
+    }
+
+    @Test
+    fun `a reload that fails keeps the list, says so, and offers a retry`() {
+        showMembers(UiState.Content(members), reloadError = "Couldn't reach PluralKit.")
+
+        compose.onNodeWithText(members[0].displayLabel).assertExists()
+        compose.onNodeWithText("Couldn't reach PluralKit.", substring = true).assertExists()
+        compose.onNodeWithText("Retry").performClick()
+
+        assertEquals(listOf("retry"), events)
     }
 
     @Test
@@ -174,10 +203,11 @@ class MemberScreensTest {
     }
 
     @Test
-    fun `while saving, Save says so and can't be tapped again`() {
+    fun `while saving, Save says so, and nothing can be changed until it's done`() {
         showEditor(loaded().copy(saving = true))
 
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
+        for (f in MemberField.entries) field(f).assertIsNotEnabled()
     }
 
     @Test

@@ -150,15 +150,12 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
     composable(Routes.HISTORY) {
         HistoryScreen(repository = repository, onBack = { nav.popBackStack() }, onSignOut = signOut)
     }
-    composable(Routes.MEMBERS) { entry ->
-        val edited by entry.savedStateHandle.getStateFlow(MEMBER_EDITED, false).collectAsState()
+    composable(Routes.MEMBERS) {
         MembersScreen(
             repository = repository,
             onBack = { nav.popBackStack() },
             onOpenMember = { nav.navigate(Routes.editMember(it)) },
             onSignOut = signOut,
-            edited = edited,
-            onReloaded = { entry.savedStateHandle[MEMBER_EDITED] = false },
         )
     }
     composable(Routes.EDIT_MEMBER) { entry ->
@@ -168,10 +165,7 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
             repository = repository,
             uuid = entry.arguments?.getString("uuid").orEmpty(),
             onBack = { back() },
-            onSaved = {
-                nav.previousBackStackEntry?.savedStateHandle?.set(MEMBER_EDITED, true)
-                back()
-            },
+            onSaved = { back() },
             onSignOut = signOut,
         )
     }
@@ -191,9 +185,6 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
         )
     }
 }
-
-/** Set on the Members screen's entry when an edit was saved, so it shows the edit. */
-private const val MEMBER_EDITED = "member-edited"
 
 /**
  * The signed-out screens' ViewModel store, kept in the activity's so typed
