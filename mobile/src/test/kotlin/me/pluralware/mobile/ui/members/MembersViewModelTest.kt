@@ -102,6 +102,21 @@ class MembersViewModelTest {
     }
 
     @Test
+    fun `a reload refused for the token replaces the list with the sign-out error`() = runTest {
+        var rejected = false
+        val client = object : PluralKitClient by pk {
+            override suspend fun getOwnMembers(): List<Member> =
+                if (rejected) throw PluralKitHttpException(401, "Unauthorized") else pk.getOwnMembers()
+        }
+        val vm = MembersViewModel(PluralKitRepository(client))
+        rejected = true
+
+        vm.load()
+
+        assertTrue((vm.state.value as UiState.Error).unauthorized)
+    }
+
+    @Test
     fun `a list that won't load is an error, a rejected token says so`() = runTest {
         val cases = listOf(
             PluralKitHttpException(500, "Internal Server Error") to false,

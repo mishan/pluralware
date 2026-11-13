@@ -2,6 +2,7 @@ package me.pluralware.mobile.ui.members
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
@@ -37,6 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -44,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 import me.pluralware.mobile.ui.components.BackTopBar
 import me.pluralware.mobile.ui.components.ErrorView
 import me.pluralware.mobile.ui.components.LoadingView
@@ -93,11 +99,17 @@ internal fun MemberEditorContent(
         MemberEdit.normalize(it, form[it]) != MemberEdit.normalize(it, MemberDraft.of(from)[it])
     }
 
-    // A save under way carries on without the screen, so there's nothing to discard then.
-    val unsaved = changed && !state.saving
     var confirmingDiscard by rememberSaveable { mutableStateOf(false) }
-    val leave = { if (unsaved) confirmingDiscard = true else onBack() }
-    BackHandler(enabled = unsaved, onBack = leave)
+    var confirmingLeaveWhileSaving by rememberSaveable { mutableStateOf(false) }
+    val leave = {
+        when {
+            // The save carries on without the screen, but how it went would be shown nowhere.
+            state.saving -> confirmingLeaveWhileSaving = true
+            changed -> confirmingDiscard = true
+            else -> onBack()
+        }
+    }
+    BackHandler(enabled = changed || state.saving, onBack = leave)
 
     Scaffold(
         topBar = { BackTopBar(from?.let { "Edit ${it.displayLabel}" } ?: "Edit member", onBack = leave) },
@@ -122,6 +134,20 @@ internal fun MemberEditorContent(
             state.member is UiState.Error -> ErrorView(state.member, onRetry = onRetry, onSignOut = onSignOut, modifier = modifier)
             else -> LoadingView(modifier)
         }
+    }
+
+    if (confirmingLeaveWhileSaving && state.saving) {
+        AlertDialog(
+            onDismissRequest = { confirmingLeaveWhileSaving = false },
+            title = { Text("Still saving") },
+            text = { Text("If you leave now, you won't see whether PluralKit took your changes.") },
+            confirmButton = {
+                TextButton(onClick = { confirmingLeaveWhileSaving = false; onBack() }) { Text("Leave") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingLeaveWhileSaving = false }) { Text("Stay") }
+            },
+        )
     }
 
     if (confirmingDiscard) {
@@ -166,9 +192,11 @@ private fun MemberForm(
                 label = { Text(field.label) },
                 leadingIcon = when {
                     field == MemberField.Color -> { { ColorSwatch(draft.color) } }
-                    // Once it's an address PluralKit would take: not on every keystroke before.
+                    // Only https: Android blocks plain http, so it could never show.
                     field == MemberField.AvatarUrl && error == null ->
-                        MemberEdit.normalize(field, draft.avatarUrl)?.let { url -> { AvatarPreview(url) } }
+                        MemberEdit.normalize(field, draft.avatarUrl)
+                            ?.takeIf { it.startsWith("https://", ignoreCase = true) }
+                            ?.let { url -> { AvatarPreview(url) } }
                     else -> null
                 },
                 isError = error != null,
@@ -181,7 +209,11 @@ private fun MemberForm(
                 minLines = if (field == MemberField.Description) 3 else 1,
                 keyboardOptions = field.keyboard.copy(
                     // Single-line fields move on to the next; the description takes new lines.
-                    imeAction = if (field == MemberField.Description) ImeAction.Default else ImeAction.Next,
+                    imeAction = when (field) {
+                        MemberField.Description -> ImeAction.Default
+                        MemberField.entries.last() -> ImeAction.Done
+                        else -> ImeAction.Next
+                    },
                 ),
             )
         }
@@ -201,7 +233,12 @@ private fun SaveBar(state: EditorState, enabled: Boolean, onSave: () -> Unit, on
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             state.saveError?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
             }
             if (state.unauthorized) {
                 Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
@@ -214,21 +251,36 @@ private fun SaveBar(state: EditorState, enabled: Boolean, onSave: () -> Unit, on
     }
 }
 
-/** The avatar at [url], or a plain circle while it loads or if it won't. */
+/**
+ * The avatar at [url], once it's been still for a moment: not a fetch, to a
+ * different host, on every keystroke. A plain circle while it loads or if it
+ * won't. Silent for screen readers: the address is right beside it.
+ */
 @Composable
 private fun AvatarPreview(url: String) {
+    var settled by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(url) {
+        delay(AVATAR_SETTLE_MILLIS)
+        settled = url
+    }
+    val shown = settled?.takeIf { it == url } ?: return
     val blank = ColorPainter(MaterialTheme.colorScheme.surfaceVariant)
     AsyncImage(
-        model = url,
-        contentDescription = "Avatar preview",
+        model = shown,
+        contentDescription = null,
         placeholder = blank,
         error = blank,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.size(32.dp).clip(CircleShape),
+        modifier = Modifier.size(32.dp).clip(CircleShape).testTag("avatar-preview"),
     )
 }
 
-/** The color as it would be saved, or an empty ring while it isn't a color yet. */
+private const val AVATAR_SETTLE_MILLIS = 600L
+
+/**
+ * The color as it would be saved, or a plain circle while it isn't a color
+ * yet. Outlined, so a color close to the background still shows.
+ */
 @Composable
 private fun ColorSwatch(typed: String) {
     val hex = MemberEdit.normalize(MemberField.Color, typed)
@@ -237,7 +289,8 @@ private fun ColorSwatch(typed: String) {
         modifier = Modifier
             .size(20.dp)
             .clip(CircleShape)
-            .background(color ?: MaterialTheme.colorScheme.surfaceVariant),
+            .background(color ?: MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
     )
 }
 

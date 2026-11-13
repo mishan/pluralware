@@ -44,7 +44,8 @@ coil = "3.1.0"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.7.3"
-kotlinxCoroutines = "1.9.0"
+# Coil needs 1.10; every module and the test library stay on one version.
+kotlinxCoroutines = "1.10.1"
 
 # Testing.
 junit = "4.13.2"

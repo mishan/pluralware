@@ -182,7 +182,7 @@ fun MemberBadge(member: Member, modifier: Modifier = Modifier) {
     }
 }
 
-/** Member lists show a search field from this many members on. */
+/** Member lists show a search field once they have more than this many members. */
 internal const val SEARCH_FROM = 8
 
 internal fun Member.matches(query: String): Boolean =

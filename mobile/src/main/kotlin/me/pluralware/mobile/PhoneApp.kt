@@ -150,11 +150,14 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
     composable(Routes.HISTORY) {
         HistoryScreen(repository = repository, onBack = { nav.popBackStack() }, onSignOut = signOut)
     }
-    composable(Routes.MEMBERS) {
+    composable(Routes.MEMBERS) { entry ->
         MembersScreen(
             repository = repository,
             onBack = { nav.popBackStack() },
-            onOpenMember = { nav.navigate(Routes.editMember(it)) },
+            // Only while it's the screen showing: a quick second tap would open a second editor.
+            onOpenMember = {
+                if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) nav.navigate(Routes.editMember(it))
+            },
             onSignOut = signOut,
         )
     }

@@ -215,18 +215,6 @@ class MemberEditorViewModelTest {
     }
 
     @Test
-    fun `it loads once when made, not again on rotation`() = runTest {
-        val counting = object : PluralKitClient by client.pk {
-            var loads = 0
-            override suspend fun getOwnMembers() = client.pk.getOwnMembers().also { loads++ }
-        }
-
-        MemberEditorViewModel(PluralKitRepository(counting), alex.uuid)
-
-        assertEquals(1, counting.loads)
-    }
-
-    @Test
     fun `a failed save then a retry clears the old error`() = runTest {
         client.editFailure = IOException("Network unreachable")
         val vm = editor()

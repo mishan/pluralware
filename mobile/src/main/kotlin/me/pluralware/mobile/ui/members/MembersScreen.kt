@@ -29,7 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -109,7 +112,7 @@ private fun MemberDirectory(
                         text = "Couldn't refresh: $reloadError",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
                     )
                     TextButton(onClick = onRetry) { Text("Retry") }
                 }

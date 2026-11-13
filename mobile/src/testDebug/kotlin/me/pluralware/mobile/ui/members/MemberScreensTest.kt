@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -113,6 +116,25 @@ class MemberScreensTest {
     }
 
     @Test
+    fun `turning the phone doesn't load the list again`() {
+        val pk = MockPluralKitClient(artificialLatencyMillis = 0)
+        var loads = 0
+        val counting = object : me.pluralware.shared.api.PluralKitClient by pk {
+            override suspend fun getOwnMembers() = pk.getOwnMembers().also { loads++ }
+        }
+        val repository = PluralKitRepository(counting)
+        val vm = MembersViewModel(repository)
+        val restore = StateRestorationTester(compose)
+        restore.setContent { PluralWareTheme { MembersScreen(repository, {}, {}, {}, vm = vm) } }
+        compose.waitForIdle()
+
+        restore.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+
+        assertEquals(1, loads)
+    }
+
+    @Test
     fun `a system with no members says so`() {
         showMembers(UiState.Content(emptyList()))
 
@@ -168,15 +190,23 @@ class MemberScreensTest {
     }
 
     @Test
-    fun `the avatar shows from its address once that's a web address`() {
+    fun `the avatar shows once its https address has been still a moment, not while it's typed`() {
         showEditor(loaded(alex.copy(avatarUrl = null)))
-        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
-
-        field(MemberField.AvatarUrl).performTextReplacement("example.com/a.png")
-        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
-
-        field(MemberField.AvatarUrl).performTextReplacement("https://example.com/a.png")
-        compose.onNodeWithContentDescription("Avatar preview").assertExists()
+        val preview = { compose.onNodeWithTag("avatar-preview", useUnmergedTree = true) }
+        compose.mainClock.autoAdvance = false
+        val cases = listOf(
+            "example.com/a.png" to false,
+            // Android blocks plain http, so it could never show.
+            "http://example.com/a.png" to false,
+            "https://example.com/a.png" to true,
+        )
+        for ((url, shows) in cases) {
+            field(MemberField.AvatarUrl).performTextReplacement(url)
+            compose.mainClock.advanceTimeBy(300)
+            preview().assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(500)
+            if (shows) preview().assertExists() else preview().assertDoesNotExist()
+        }
     }
 
     @Test
@@ -211,16 +241,40 @@ class MemberScreensTest {
     }
 
     @Test
-    fun `leaving while a save is under way doesn't claim it wasn't saved`() {
+    fun `leaving while a save is under way says it's still saving, and staying shows how it went`() {
         var state by mutableStateOf(loaded())
         compose.setContent { PluralWareTheme { editor(state) } }
         field(MemberField.Pronouns).performTextReplacement("xe/xem")
         state = state.copy(saving = true)
 
         compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Still saving", substring = true).assertExists()
+        compose.onNodeWithText("Discard your changes?").assertDoesNotExist()
+        compose.onNodeWithText("Stay").performClick()
+        state = state.copy(saving = false, saveError = "Couldn't reach PluralKit.")
+        compose.onNodeWithText("Couldn't reach PluralKit.").assertExists()
 
-        compose.onNode(isDialog()).assertDoesNotExist()
+        state = state.copy(saving = true, saveError = null)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Leave").performClick()
+
         assertEquals(listOf("back"), events.filterNot { it.startsWith("edited:") })
+    }
+
+    @Test
+    fun `why a save failed is announced, not only shown`() {
+        var state by mutableStateOf(loaded().copy(saveError = "Couldn't reach PluralKit."))
+        compose.setContent { PluralWareTheme { editor(state) } }
+
+        compose.onNodeWithText("Couldn't reach PluralKit.").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
+    }
+
+    @Test
+    fun `a failed reload is announced too`() {
+        showMembers(UiState.Content(members), reloadError = "Couldn't reach PluralKit.")
+
+        compose.onNodeWithText("Couldn't reach PluralKit.", substring = true)
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
     }
 
     @Test
