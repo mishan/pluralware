@@ -3,6 +3,7 @@ package me.pluralware.wear.complication
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
@@ -216,6 +217,21 @@ class FronterSourceTest {
 
         token = null
         assertFalse(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 2L)))
+    }
+
+    @Test
+    fun `a fetch that started before a member edit isn't cached as fresh`() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { client.getCurrentFronters() } coAnswers { held.await(); PreviewData.currentSwitch }
+        val fetching = launch { source.current() }
+
+        assertTrue(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 1L)))
+        held.complete(Unit)
+        fetching.join()
+
+        coEvery { client.getCurrentFronters() } returns PreviewData.currentSwitch
+        source.current()
+        coVerify(exactly = 2) { client.getCurrentFronters() }
     }
 
     @Test

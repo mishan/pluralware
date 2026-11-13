@@ -84,6 +84,16 @@ class PluralKitRepository(
      */
     val memberEdits: StateFlow<Int> = _memberEdits.asStateFlow()
 
+    private val _membersChanged = MutableStateFlow(0)
+
+    /**
+     * Counts every change to members this repository hears of: [memberEdits]
+     * here, and edits on the other device ([forgetMembers]), so a screen
+     * showing members reloads either way. Not [memberEdits], which counts
+     * only this device's own, to be told to the other device.
+     */
+    val membersChanged: StateFlow<Int> = _membersChanged.asStateFlow()
+
     // Counts writes that succeeded. A fetch that was in flight while one did
     // may have read PluralKit from before it, so it doesn't replace what the
     // write's own fetch shows.
@@ -114,6 +124,7 @@ class PluralKitRepository(
         writes.incrementAndGet()
         membersCacheMutex.withLock { membersCache = null }
         client.forgetMembers()
+        _membersChanged.update { it + 1 }
     }
 
     /** The system this token belongs to. Not cached: it's for showing who's signed in. */
@@ -169,6 +180,7 @@ class PluralKitRepository(
         if (!result.refusedByPluralKit()) {
             membersCacheMutex.withLock { membersCache = null }
             _memberEdits.update { it + 1 }
+            _membersChanged.update { it + 1 }
         }
         if (result is PkResult.Success) afterWrite()
         result

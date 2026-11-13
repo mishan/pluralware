@@ -152,14 +152,14 @@ class RetrofitPluralKitClient internal constructor(
 
     /**
      * Writes [members] into the lookup cache. Given [editsBefore], taken when
-     * their request went out, they don't replace members an edit has written
-     * since: those are newer.
+     * their request went out, they're dropped if the cache was edited or
+     * forgotten since: they may predate that. History fetches any member it
+     * doesn't know.
      */
     private suspend fun remember(members: List<Member>, editsBefore: Int? = null) = cacheMutex.withLock {
+        if (editsBefore != null && editsBefore != cacheEdits) return@withLock
         val merged = (memberCache ?: emptyMap()).toMutableMap()
-        val keepCached = editsBefore != null && editsBefore != cacheEdits
         members.forEach { m ->
-            if (keepCached && m.uuid in merged) return@forEach
             merged[m.uuid] = m
             merged[m.id] = m
         }

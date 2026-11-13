@@ -111,8 +111,9 @@ object MemberSync {
             notices.filterNotNull()
                 .filter { it.tokenFingerprint == token.fingerprint && it.atEpochMillis > progress.handledAt }
                 .collect {
-                    progress.handledAt = it.atEpochMillis
                     repository.forgetMembers()
+                    // Only once that's done: cut short, it's done again when the app comes back.
+                    progress.handledAt = it.atEpochMillis
                     repository.refreshFronters()
                 }
         }

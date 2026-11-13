@@ -42,9 +42,13 @@ class MemberSyncTest {
         var memberFetches = 0
         var fronterFetches = 0
         var forgets = 0
+        var holdForget: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         override suspend fun getOwnMembers(): List<Member> = pk.getOwnMembers().also { memberFetches++ }
         override suspend fun getCurrentFronters(): Switch? = pk.getCurrentFronters().also { fronterFetches++ }
-        override suspend fun forgetMembers() { forgets++ }
+        override suspend fun forgetMembers() {
+            forgets++
+            holdForget?.also { holdForget = null }?.await()
+        }
     }
 
     @Test
@@ -116,6 +120,22 @@ class MemberSyncTest {
             launch { MemberSync.keepInSync(repository, token, {}, progress, notices) }.cancel()
 
             assertEquals(1, client.forgets)
+        }
+
+    @Test
+    fun `a catch-up cut short by the app going to the background is done again when it comes back`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val client = CountingClient()
+            val repository = PluralKitRepository(client)
+            val progress = MemberSync.Progress()
+            val notices = MutableStateFlow<MemberSync.Notice?>(MemberSync.noticeOf(token, 5L))
+            client.holdForget = kotlinx.coroutines.CompletableDeferred()
+            val first = launch { MemberSync.keepInSync(repository, token, {}, progress, notices) }
+
+            first.cancel()
+            launch { MemberSync.keepInSync(repository, token, {}, progress, notices) }.cancel()
+
+            assertEquals("tried, cut short, then done", 2, client.forgets)
         }
 
     @Test
