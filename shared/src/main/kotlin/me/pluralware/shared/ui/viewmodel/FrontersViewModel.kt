@@ -58,17 +58,16 @@ class FrontersViewModel(
     init {
         load()
         // Picker → home: when the picker registers a new switch, the repo
-        // pushes the new value into currentFronters. We watch for a different
-        // switch (uuid, or start time: a moved switch keeps its uuid) rather
-        // than any new value, to avoid re-loading on our own writes, and only
-        // react once initial content has settled so we don't race with the
-        // inflight load.
+        // pushes the new value into currentFronters. We watch for a switch
+        // that differs from the one shown (a new one, or the same one moved,
+        // given other members, or with a member edited), so our own refreshes
+        // don't trigger another, and only react once initial content has
+        // settled so we don't race with the inflight load.
         repository.currentFronters
             .onEach { incoming ->
                 val current = _state.value
                 if (current is UiState.Content) {
-                    val shown = current.value.switch
-                    if (incoming?.uuid != shown?.uuid || incoming?.timestamp != shown?.timestamp) refresh()
+                    if (incoming != current.value.switch) refresh()
                 }
             }
             .launchIn(viewModelScope)
@@ -148,6 +147,11 @@ class FrontersViewModel(
                 )
             } finally {
                 fetching = false
+                // The front may have changed while this fetched (an edit, say),
+                // whether or not this fetch worked, and the watcher above skipped
+                // it then. poll() still stands down for a 429 or a rejected token.
+                val shown = (_state.value as? UiState.Content)?.value?.switch
+                if (_state.value is UiState.Content && repository.currentFronters.value != shown) poll()
             }
         }
     }

@@ -26,12 +26,20 @@ class SessionHolder : ViewModel() {
         return Session(token, newRepository()).also { current = it }
     }
 
+    /** Signing out, or a new token: the old system's screens go, and so do its writes still under way. */
     fun end() {
+        current?.repository?.close()
+        release()
+    }
+
+    // Leaving the app isn't signing out: a write under way may finish, and
+    // still tell friends of a corrected front.
+    override fun onCleared() = release()
+
+    private fun release() {
         current?.viewModelStore?.clear()
         current = null
     }
-
-    override fun onCleared() = end()
 }
 
 class Session internal constructor(
