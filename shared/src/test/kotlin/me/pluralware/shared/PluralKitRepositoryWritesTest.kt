@@ -214,6 +214,24 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
+    fun `switch fixes that may have landed are signalled, for screens that list switches`() = runTest {
+        val (latest, older) = history()
+        val seen = mutableListOf(repository.switchesChanged.value)
+
+        repository.moveSwitch(latest.uuid, older.timestamp.plusSeconds(60))
+        seen += repository.switchesChanged.value
+        client.loseNextResponse = true
+        repository.moveSwitch(latest.uuid, older.timestamp.plusSeconds(120))
+        seen += repository.switchesChanged.value
+        repository.setSwitchMembers(older.uuid, older.members.map { it.uuid })
+        seen += repository.switchesChanged.value
+        repository.deleteSwitch(older.uuid)
+        seen += repository.switchesChanged.value
+
+        assertEquals("moved, maybe moved, refused, deleted", listOf(0, 1, 2, 2, 3), seen)
+    }
+
+    @Test
     fun `moving a switch updates the front's time and tells nobody`() = runTest {
         val (latest, older) = history()
         val to = older.timestamp.plusSeconds(60)

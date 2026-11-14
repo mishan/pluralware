@@ -85,8 +85,10 @@ Notable client behaviors:
   reach for the dashboard.
 - **No font import yet**: legibility on tiny screens is hard-won. Using the
   system default until we have a concrete reason to change.
-- **Skipping "current" in the history list**: the most recent switch is the
-  home screen's job. Showing it again on the history screen wastes space.
+- **Skipping "current" in the watch's history list**: the most recent switch
+  is the home screen's job. Showing it again on the watch wastes space. The
+  phone lists it, because that's where a mistaken switch is fixed, and the
+  mistake is usually the latest one.
 
 ## Notes
 

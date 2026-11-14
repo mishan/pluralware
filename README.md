@@ -36,6 +36,8 @@ folks now. Bug reports and ideas are welcome in
 **On your phone**
 
 - Connect your PluralKit account, and send it to your watch if you have one.
+- **Manage your system**: edit members' names, pronouns, colors and more,
+  and fix a switch from History by changing its time or deleting it.
 - **Share with friends**: when you switch, friends you choose get a
   notification. You decide which members may be named; anyone else shows up
   as "someone else".

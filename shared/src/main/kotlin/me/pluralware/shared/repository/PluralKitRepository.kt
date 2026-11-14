@@ -96,6 +96,11 @@ class PluralKitRepository(
      */
     val membersChanged: StateFlow<Int> = _membersChanged.asStateFlow()
 
+    private val _switchesChanged = MutableStateFlow(0)
+
+    /** Counts switch fixes that may have landed (all but PluralKit's refusals), so a list of switches reloads. */
+    val switchesChanged: StateFlow<Int> = _switchesChanged.asStateFlow()
+
     // Counts writes that succeeded. A fetch that was in flight while one did
     // may have read PluralKit from before it, so it doesn't replace what the
     // write's own fetch shows.
@@ -211,6 +216,7 @@ class PluralKitRepository(
             sent { client.moveSwitch(uuid, to) }
             Unit
         }
+        switchesMayHaveChanged(result)
         if (result is PkResult.Success) afterWrite()
         result
     }
@@ -229,6 +235,7 @@ class PluralKitRepository(
             Unit
         }
         if (result is PkResult.Success || result.refusedByPluralKit()) unsettledFixes.remove(uuid)
+        switchesMayHaveChanged(result)
         if (result is PkResult.Success) afterWrite { front -> if (front?.uuid == uuid) onFrontCorrected(front) }
         result
     }
@@ -254,6 +261,7 @@ class PluralKitRepository(
         val wasFront = unsettledDeletes[uuid] == true
         // Settled only by the delete itself: a front check that failed sent nothing.
         if (result is PkResult.Success || refused) unsettledDeletes.remove(uuid)
+        switchesMayHaveChanged(result)
         if (result is PkResult.Success) afterWrite(if (wasFront) onFrontCorrected else null)
         result
     }
@@ -295,6 +303,10 @@ class PluralKitRepository(
     }
 
     private fun PkResult<*>.refusedByPluralKit() = this is PkResult.Failure && error is PluralKitHttpException
+
+    private fun switchesMayHaveChanged(result: PkResult<*>) {
+        if (!result.refusedByPluralKit()) _switchesChanged.update { it + 1 }
+    }
 
     /** Fetches the front after a write and [correct]s with it, now or with the next fetch that works. */
     private suspend fun afterWrite(correct: ((Switch?) -> Unit)? = null) {

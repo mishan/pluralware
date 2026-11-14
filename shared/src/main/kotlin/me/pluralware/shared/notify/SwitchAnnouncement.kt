@@ -4,6 +4,7 @@ import java.time.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.pluralware.shared.model.Switch
+import me.pluralware.shared.ui.listOfNames
 
 /**
  * What friends are told about a switch (docs/notifications-design.md §6).
@@ -18,17 +19,10 @@ object SwitchAnnouncement {
         val anyHidden = named.size < switch.members.size
         return when {
             named.isEmpty() -> "Someone is fronting"
-            anyHidden -> "${list(named + "someone else")} are fronting"
+            anyHidden -> "${listOfNames(named + "someone else")} are fronting"
             named.size == 1 -> "${named[0]} is fronting"
-            else -> "${list(named)} are fronting"
+            else -> "${listOfNames(named)} are fronting"
         }
-    }
-
-    /** "A", "A and B", "A, B, and C". */
-    private fun list(items: List<String>): String = when (items.size) {
-        1 -> items[0]
-        2 -> "${items[0]} and ${items[1]}"
-        else -> items.dropLast(1).joinToString(", ") + ", and " + items.last()
     }
 }
 
