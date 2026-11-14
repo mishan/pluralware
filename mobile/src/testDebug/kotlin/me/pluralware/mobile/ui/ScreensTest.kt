@@ -13,7 +13,12 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -25,6 +30,10 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import me.pluralware.mobile.ui.screens.FrontersContent
 import me.pluralware.mobile.ui.screens.HistoryContent
+import me.pluralware.mobile.ui.screens.SwitchWindow
+import me.pluralware.mobile.ui.screens.SwitchTimeDialog
+import me.pluralware.mobile.ui.screens.SwitchFixViewModel
+import me.pluralware.mobile.ui.screens.FixNotice
 import me.pluralware.mobile.ui.theme.PluralWareTheme
 import me.pluralware.mobile.watch.WatchState
 import me.pluralware.shared.model.Switch
@@ -150,21 +159,26 @@ class ScreensTest {
         Switch("s4", now.minus(5, ChronoUnit.DAYS), listOf(m[2], m[4])),
     )
 
-    private fun history(state: UiState<List<Switch>>) = show {
+    private fun history(state: UiState<List<Switch>>, fix: SwitchFixViewModel.State = SwitchFixViewModel.State()) = show {
         HistoryContent(
             state = state,
             onBack = { events += "back" },
             onRetry = { events += "retry" },
             onSignOut = { events += "signout" },
+            fix = fix,
+            onMove = { uuid, to -> events += "move:$uuid:$to" },
+            onDelete = { events += "delete:$it" },
+            onNoticeShown = { events += "shown" },
             zone = ZoneOffset.UTC,
         )
     }
 
     @Test
-    fun `history leaves out the current switch and lists the rest`() {
+    fun `history lists every switch, the current one marked`() {
         history(UiState.Content(history))
 
-        compose.onNodeWithText("Alex").assertDoesNotExist()
+        compose.onNodeWithText("Now").assertIsDisplayed()
+        compose.onNodeWithText("Alex").assertIsDisplayed()
         compose.onNodeWithText("Bea").assertIsDisplayed()
         compose.onNodeWithText("Switched out").assertIsDisplayed()
         compose.onNodeWithText("Cam").assertIsDisplayed()
@@ -172,19 +186,170 @@ class ScreensTest {
     }
 
     @Test
-    fun `history rows can't be tapped, so nothing switches by accident`() {
-        history(UiState.Content(history))
+    fun `history shows ten switches, keeping the one before them only to know its time`() {
+        val eleven = (0 until 11).map { Switch("s$it", now.minus(it + 1L, ChronoUnit.HOURS), listOf(m[it % m.size])) }
+        history(UiState.Content(eleven))
 
-        compose.onNodeWithText("Bea").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
-        compose.onNodeWithText("5d ago", substring = true)
-            .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+        val list = compose.onNode(hasScrollAction())
+        list.performScrollToNode(hasText("10h ago", substring = true))
+        compose.onNodeWithText("10h ago", substring = true).assertIsDisplayed()
+        list.performScrollToIndex(9)
+        compose.onNodeWithText("11h ago", substring = true).assertDoesNotExist()
     }
 
     @Test
-    fun `history with only the current switch says there's nothing earlier`() {
-        history(UiState.Content(listOf(current)))
+    fun `tapping a switch offers to change its time or delete it, and changes nothing yet`() {
+        history(UiState.Content(history))
 
-        compose.onNodeWithText("No earlier switches").assertIsDisplayed()
+        compose.onNodeWithText("Bea").performClick()
+
+        compose.onNodeWithText("Change time").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed()
+        assertEquals(emptyList<String>(), events)
+    }
+
+    @Test
+    fun `deleting asks first, saying what the front becomes`() {
+        history(UiState.Content(history))
+        compose.onNodeWithText("Alex").performClick()
+        compose.onNodeWithText("Delete").performClick()
+
+        compose.onNodeWithText("Front goes back to Bea", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(emptyList<String>(), events)
+
+        compose.onNodeWithText("Alex").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNode(hasText("Delete") and hasAnyAncestor(isDialog())).performClick()
+        assertEquals(listOf("delete:now"), events)
+    }
+
+    @Test
+    fun `a switch can't be tapped while a fix is under way`() {
+        history(UiState.Content(history), SwitchFixViewModel.State(busy = true))
+
+        compose.onNodeWithText("Bea").performClick()
+
+        compose.onNodeWithText("Change time").assertDoesNotExist()
+    }
+
+    @Test
+    fun `how a fix went is shown once, with sign-out for a rejected token`() {
+        history(
+            UiState.Content(history),
+            SwitchFixViewModel.State(notice = FixNotice.Failed("PluralKit no longer accepts this token.", unauthorized = true)),
+        )
+
+        compose.onNodeWithText("PluralKit no longer accepts this token.").assertIsDisplayed()
+        compose.onNodeWithText("Sign out").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("signout", "shown"), events)
+    }
+
+    @Test
+    fun `a system with no switches says so`() {
+        history(UiState.Content(emptyList()))
+
+        compose.onNodeWithText("No switches yet").assertIsDisplayed()
+    }
+
+    // The time dialog
+
+    private val after = Instant.parse("2026-01-15T12:00:00Z")
+    private val at = Instant.parse("2026-01-15T14:40:00Z")
+    private val before = Instant.parse("2026-01-15T16:00:00Z")
+
+    private fun timeDialog(
+        window: SwitchWindow,
+        initial: Instant = at,
+        zone: java.time.ZoneId = ZoneOffset.UTC,
+        now: Instant = before.plusSeconds(3600),
+    ) = show {
+        SwitchTimeDialog(
+            initial = initial,
+            window = window,
+            zone = zone,
+            clock = java.time.Clock.fixed(now, zone),
+            onConfirm = { events += "move:$it" },
+            onDismiss = { events += "dismiss" },
+        )
+    }
+
+    @Test
+    fun `a switch's time changes to the one picked`() {
+        timeDialog(SwitchWindow(after, before))
+        compose.onNodeWithText("Change").assertIsNotEnabled()
+
+        compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("10")
+        compose.onNodeWithText("Change").performClick()
+
+        assertEquals(listOf("move:2026-01-15T14:10:00Z"), events)
+    }
+
+    @Test
+    fun `the time picked is read in the phone's zone, on the day picked`() {
+        // 9 PM on Jan 14 in UTC-8.
+        timeDialog(SwitchWindow(null, before), initial = Instant.parse("2026-01-15T05:00:00Z"), zone = ZoneOffset.ofHours(-8))
+
+        compose.onNodeWithText("Jan 14, 2026").performClick()
+        compose.onNodeWithText("January 13, 2026", substring = true).performClick()
+        compose.onNodeWithText("OK").performClick()
+        compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("10")
+        compose.onNodeWithText("Change").performClick()
+
+        assertEquals(listOf("move:2026-01-14T05:10:00Z"), events)
+    }
+
+    @Test
+    fun `a switch in the hour that repeats when clocks go back keeps its hour`() {
+        val zone = java.time.ZoneId.of("America/Los_Angeles")
+        // 1:30 AM PST, the second 1:30 that night.
+        timeDialog(
+            SwitchWindow(null, null),
+            initial = Instant.parse("2026-11-01T09:30:00Z"),
+            zone = zone,
+            now = Instant.parse("2026-11-02T00:00:00Z"),
+        )
+        compose.onNodeWithText("Change").assertIsNotEnabled()
+
+        compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("10")
+        compose.onNodeWithText("Change").performClick()
+
+        assertEquals(listOf("move:2026-11-01T09:10:00Z"), events)
+    }
+
+    @Test
+    fun `a time skipped when clocks go forward can't be picked`() {
+        // 1:10 AM PST; that night there is no 2:00 to 2:59.
+        timeDialog(
+            SwitchWindow(null, null),
+            initial = Instant.parse("2026-03-08T09:10:00Z"),
+            zone = java.time.ZoneId.of("America/Los_Angeles"),
+            now = Instant.parse("2026-03-09T00:00:00Z"),
+        )
+
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("2")
+
+        compose.onNodeWithText("That time doesn't exist", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Change").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a switch in the same minute as the one before it opens without an error`() {
+        timeDialog(SwitchWindow(at.plusSeconds(5), before), initial = at.plusSeconds(23))
+
+        compose.onNodeWithText("Pick a time after", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Change").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a time outside the switches either side can't be picked, and says where it may go`() {
+        timeDialog(SwitchWindow(after, before))
+
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("11")
+
+        compose.onNodeWithText("Pick a time after", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Change").assertIsNotEnabled()
     }
 
     @Test
