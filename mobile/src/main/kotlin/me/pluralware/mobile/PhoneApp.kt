@@ -192,7 +192,7 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
     composable(Routes.SHARING) {
         val context = LocalContext.current.applicationContext
         SharingScreen(
-            viewModel = viewModel(factory = SharingViewModel.Factory(graph.tokenStore, graph.sharingStore, context)),
+            viewModel = viewModel(factory = SharingViewModel.Factory(graph.tokenStore, graph.sharingStore, context, graph.relayWrites)),
             onBack = { nav.popBackStack() },
         )
     }

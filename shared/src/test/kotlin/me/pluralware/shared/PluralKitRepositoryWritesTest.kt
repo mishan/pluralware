@@ -30,7 +30,12 @@ class PluralKitRepositoryWritesTest {
     private val client = FlakyClient()
     private val corrected = mutableListOf<Switch?>()
     private val registered = mutableListOf<Switch>()
-    private val repository = PluralKitRepository(client, onFrontCorrected = { corrected += it }) { registered += it }
+    private val edited = mutableListOf<Pair<Member, Set<MemberField>>>()
+    private val repository = PluralKitRepository(
+        client,
+        onFrontCorrected = { corrected += it },
+        onMemberEdited = { member, fields -> edited += member to fields },
+    ) { registered += it }
 
     private suspend fun members() = client.pk.getOwnMembers()
     private suspend fun history() = client.pk.getRecentSwitches(100)
@@ -85,6 +90,16 @@ class PluralKitRepositoryWritesTest {
 
         assertEquals("edited here, refused, edited on the other device", listOf(0, 1, 1, 2), seen)
         assertEquals("only this device's edits are its own to tell", 1, repository.memberEdits.value)
+    }
+
+    @Test
+    fun `a saved member edit is handed on as PluralKit has it, with its fields, a refused one isn't`() = runTest {
+        val member = members().first()
+
+        repository.updateMember(member.uuid, mapOf(MemberField.Name to "Renamed"))
+        repository.updateMember("no-such-member", mapOf(MemberField.Name to "X"))
+
+        assertEquals(listOf(member.copy(name = "Renamed") to setOf(MemberField.Name)), edited)
     }
 
     @Test

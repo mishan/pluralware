@@ -38,6 +38,8 @@ class Account(
     private val clearRelay: suspend (RelaySettings) -> Boolean,
     private val signOutWatch: suspend () -> Unit,
     private val pushSharingToWatch: suspend (SharingConfig) -> Unit,
+    /** Held for every write to the relay, so none lands after it's cleared. */
+    private val relayWrites: Mutex = Mutex(),
 ) {
     private val _signingOut = MutableStateFlow(false)
     val signingOut: StateFlow<Boolean> = _signingOut.asStateFlow()
@@ -117,7 +119,7 @@ class Account(
     }
 
     /** False if sharing couldn't be cleared. */
-    private suspend fun forgetSharing(): Boolean {
+    private suspend fun forgetSharing(): Boolean = relayWrites.withLock {
         // The relay, if any, is told to forget its copy. Unreachable: keep its
         // admin details (orphans survive clear()) so the sharing screen can
         // delete from it later.
@@ -132,7 +134,7 @@ class Account(
             }
             if (!cleared) step("remember the relay") { sharingStore.addOrphan(relay) }
         }
-        return step("clear sharing") { sharingStore.clear() }
+        step("clear sharing") { sharingStore.clear() }
     }
 
     private suspend fun step(what: String, block: suspend () -> Unit): Boolean =

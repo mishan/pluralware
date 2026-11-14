@@ -8,6 +8,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -41,6 +42,8 @@ class SharingViewModelTest {
     private val putStatuses = java.util.concurrent.LinkedBlockingQueue<Int>()
     private val deleteStatuses = java.util.concurrent.LinkedBlockingQueue<Int>()
     private val puts = java.util.concurrent.CopyOnWriteArrayList<String>()
+    private val deletes = java.util.concurrent.atomic.AtomicInteger()
+    private val relayWrites = Mutex()
 
     private fun fakeRelay() = object : okhttp3.mockwebserver.Dispatcher() {
         override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse = when (request.method) {
@@ -52,7 +55,7 @@ class SharingViewModelTest {
                 puts += request.body.readUtf8()
                 MockResponse().setResponseCode(status)
             }
-            "DELETE" -> MockResponse().setResponseCode(deleteStatuses.poll() ?: 204)
+            "DELETE" -> MockResponse().setResponseCode(deleteStatuses.poll() ?: 204).also { deletes.incrementAndGet() }
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -97,6 +100,7 @@ class SharingViewModelTest {
         relayClient = RelayClient.create("test"),
         pushToWatch = { pushedToWatch += it },
         readWatchStatus = { emptySet() },
+        relayWrites = relayWrites,
     ).also { created += it }
 
     /** The relay calls run on OkHttp's threads; wait for them in real time. */
@@ -106,6 +110,48 @@ class SharingViewModelTest {
             check(System.currentTimeMillis() < deadline) { "timed out waiting for: $what" }
             Thread.sleep(20)
         }
+    }
+
+    @Test
+    fun `deleting from a relay waits for another relay write in flight`() {
+        val relay = store.configFlow.value.relay!!
+        val cases = listOf<Pair<String, (SharingViewModel) -> Unit>>(
+            "removing the relay" to { it.removeRelay() },
+            "moving to another relay" to { it.saveRelay("https://other.example", "s") },
+            "retrying an unreachable one" to { vm ->
+                runBlocking { store.addOrphan(relay.copy(url = relay.url + "old/")) }
+                vm.retryOrphans()
+            },
+        )
+        for ((what, act) in cases) {
+            runBlocking { store.set(store.configFlow.value.copy(relay = relay)) }
+            val vm = viewModel()
+            eventually("initial sync") { vm.state.value.system != null && puts.isNotEmpty() }
+            deletes.set(0)
+            runBlocking { relayWrites.lock() }
+
+            act(vm)
+            Thread.sleep(200)
+            assertEquals(what, 0, deletes.get())
+
+            relayWrites.unlock()
+            eventually("$what: the delete") { deletes.get() == 1 }
+        }
+    }
+
+    @Test
+    fun `turning the relay on goes by the config once other relay writes are done`() {
+        val vm = viewModel()
+        eventually("initial sync") { puts.size == 1 }
+        runBlocking { relayWrites.lock() }
+
+        vm.setRelayEnabled(true)
+        runBlocking { store.clear() }
+        relayWrites.unlock()
+        Thread.sleep(200)
+
+        assertEquals(1, puts.size)
+        assertEquals(SharingConfig(), store.configFlow.value)
     }
 
     @Test

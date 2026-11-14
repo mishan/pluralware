@@ -47,6 +47,8 @@ class SharingViewModel(
     private val relayClient: RelayClient = RelayClient.create(BuildConfig.VERSION_NAME),
     private val pushToWatch: suspend (SharingConfig) -> Unit = { SharingHandoff.push(appContext, it) },
     private val readWatchStatus: suspend () -> Set<String> = { SharingHandoff.readStatus(appContext) },
+    /** Held for every write to the relay, by everything that writes to it. */
+    private val relayWrites: Mutex = Mutex(),
 ) : ViewModel() {
 
     data class State(
@@ -81,7 +83,6 @@ class SharingViewModel(
     // the config as it is when its turn comes, so an older upload can never
     // land after a newer one, and no edit waits on the network.
     private val editLock = Mutex()
-    private val relayLock = Mutex()
 
     init {
         load()
@@ -185,21 +186,17 @@ class SharingViewModel(
      * A different address is a different relay: the old one is told to forget
      * us, and the new one starts unconfirmed, with a fresh webhook path.
      */
-    fun saveRelay(url: String, adminSecret: String) {
-        viewModelScope.launch {
-            editLock.withLock {
-                val trimmedUrl = url.trim().trimEnd('/')
-                val secret = adminSecret.trim()
-                val old = config.value.relay
-                val next = if (old != null && old.url == trimmedUrl) {
-                    old.copy(adminSecret = secret)
-                } else {
-                    old?.let { letGo(it) }
-                    RelaySettings(url = trimmedUrl, adminSecret = secret)
-                }
-                save(config.value.copy(relay = next))
-            }
+    fun saveRelay(url: String, adminSecret: String) = relayEdit {
+        val trimmedUrl = url.trim().trimEnd('/')
+        val secret = adminSecret.trim()
+        val old = config.value.relay
+        val next = if (old != null && old.url == trimmedUrl) {
+            old.copy(adminSecret = secret)
+        } else {
+            old?.let { letGo(it) }
+            RelaySettings(url = trimmedUrl, adminSecret = secret)
         }
+        save(config.value.copy(relay = next))
     }
 
     /** The token PluralKit showed for the webhook; uploading it lets the relay pass PluralKit's check. */
@@ -213,45 +210,35 @@ class SharingViewModel(
      * stop; otherwise nobody would send. Turning it off tells them first,
      * for the same reason.
      */
-    fun setRelayEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            editLock.withLock {
-                val relay = config.value.relay ?: return@withLock
-                val next = config.value.copy(relay = relay.copy(enabled = enabled))
-                if (!enabled) {
-                    save(next)
-                    return@withLock
-                }
-                relayLock.withLock {
-                    if (uploadNow(next)) saveLocally(next)
-                }
-            }
+    fun setRelayEnabled(enabled: Boolean) = relayEdit {
+        val relay = config.value.relay ?: return@relayEdit
+        val next = config.value.copy(relay = relay.copy(enabled = enabled))
+        if (!enabled) {
+            save(next)
+        } else if (uploadNow(next)) {
+            saveLocally(next)
         }
     }
 
     /** Deletes our settings from the relay, then forgets it. If it can't be reached, asks first. */
-    fun removeRelay() {
-        viewModelScope.launch {
-            editLock.withLock {
-                val relay = config.value.relay ?: return@withLock
-                try {
-                    relayClient.clear(relay)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    _state.update {
-                        it.copy(
-                            relayRemoveFailed = true,
-                            relayError = "Couldn't reach the relay to delete your settings from it, so it " +
-                                "still has them and may keep sending.",
-                        )
-                    }
-                    return@withLock
-                }
-                save(config.value.copy(relay = null))
-                _state.update { it.copy(relayError = null, relayConfigured = false, relayRemoveFailed = false) }
+    fun removeRelay() = relayEdit {
+        val relay = config.value.relay ?: return@relayEdit
+        try {
+            relayClient.clear(relay)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(
+                    relayRemoveFailed = true,
+                    relayError = "Couldn't reach the relay to delete your settings from it, so it " +
+                        "still has them and may keep sending.",
+                )
             }
+            return@relayEdit
         }
+        save(config.value.copy(relay = null))
+        _state.update { it.copy(relayError = null, relayConfigured = false, relayRemoveFailed = false) }
     }
 
     /** Stops using an unreachable relay, remembering it to delete from later ([orphanedRelays]). */
@@ -270,7 +257,9 @@ class SharingViewModel(
     fun retryOrphans() {
         viewModelScope.launch {
             for (relay in sharingStore.orphanedRelays.value) {
-                if (runCatching { relayClient.clear(relay) }.isSuccess) sharingStore.removeOrphan(relay)
+                relayWrites.withLock {
+                    if (runCatching { relayClient.clear(relay) }.isSuccess) sharingStore.removeOrphan(relay)
+                }
             }
         }
     }
@@ -284,6 +273,11 @@ class SharingViewModel(
 
     private fun change(transform: (SharingConfig) -> SharingConfig) {
         viewModelScope.launch { editLock.withLock { save(transform(config.value)) } }
+    }
+
+    /** An edit that writes to the relay itself, reading the config only once no other relay write is under way. */
+    private fun relayEdit(block: suspend () -> Unit) {
+        viewModelScope.launch { editLock.withLock { relayWrites.withLock { block() } } }
     }
 
     /** Saves locally and on the watch, then brings the relay up to date in the background. */
@@ -305,7 +299,7 @@ class SharingViewModel(
     }
 
     private fun requestRelaySync() {
-        viewModelScope.launch { relayLock.withLock { uploadNow(config.value) } }
+        viewModelScope.launch { relayWrites.withLock { uploadNow(config.value) } }
     }
 
     /**
@@ -352,7 +346,8 @@ class SharingViewModel(
         private val tokenStore: TokenStore,
         private val sharingStore: SharingStore,
         private val appContext: Context,
+        private val relayWrites: Mutex,
     ) : androidx.lifecycle.ViewModelProvider.Factory by viewModelFactory({
-        initializer { SharingViewModel(tokenStore, sharingStore, appContext) }
+        initializer { SharingViewModel(tokenStore, sharingStore, appContext, relayWrites = relayWrites) }
     })
 }

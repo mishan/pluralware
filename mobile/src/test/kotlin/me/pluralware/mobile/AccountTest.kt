@@ -3,6 +3,7 @@ package me.pluralware.mobile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -35,6 +36,7 @@ class AccountTest {
     private val events = mutableListOf<String>()
     private val pushedSharing = mutableListOf<SharingConfig>()
     private var relayReachable = true
+    private val relayWrites = Mutex()
 
     private fun TestScope.account() = Account(
         scope = backgroundScope,
@@ -47,6 +49,7 @@ class AccountTest {
         },
         signOutWatch = { events += "watch" },
         pushSharingToWatch = { pushedSharing += it },
+        relayWrites = relayWrites,
     )
 
     @Test
@@ -58,6 +61,23 @@ class AccountTest {
             assertEquals(listOf("watch", "relay"), events)
             assertEquals(SharingConfig(), sharingStore.configFlow.value)
             assertNull(owner.get())
+        }
+
+    @Test
+    fun `disconnecting clears the relay after an upload in flight, not before it`() =
+        runTest(UnconfinedTestDispatcher()) {
+            relayWrites.lock()
+            val account = account()
+
+            account.disconnect()
+            assertEquals("the token goes at once", null, tokens.getToken())
+            assertEquals(listOf("watch"), events)
+
+            events += "upload"
+            relayWrites.unlock()
+
+            assertEquals(listOf("watch", "upload", "relay"), events)
+            assertEquals(SharingConfig(), sharingStore.configFlow.value)
         }
 
     @Test
