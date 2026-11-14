@@ -123,4 +123,33 @@ class PickerFixTest {
 
         assertEquals(listOf(emptyList(), original), client.fixes)
     }
+
+    @Test
+    fun `a member list that answers after a newer one can't take a member back out`() = runTest {
+        val added = members.first { it.uuid !in older.members.map { m -> m.uuid } }
+        val firstAnswer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var calls = 0
+        val slowFirst = object : PluralKitClient by client {
+            override suspend fun getOwnMembers(): List<me.pluralware.shared.model.Member> {
+                if (++calls == 1) {
+                    firstAnswer.await()
+                    return members - added
+                }
+                return members
+            }
+        }
+        val repository = PluralKitRepository(slowFirst)
+        val vm = PickerViewModel(
+            repository,
+            confirmationLingerMillis = 0,
+            editing = PickerViewModel.Editing(older.uuid, older.members.map { it.uuid }),
+        )
+
+        repository.forgetMembers()
+        vm.toggle(added.uuid)
+        firstAnswer.complete(Unit)
+
+        assertTrue(added.uuid in vm.state.value.selectedUuids)
+        assertEquals(UiState.Content(members), vm.state.value.members)
+    }
 }

@@ -42,6 +42,9 @@ class PickerViewModel(
     // null once a save that may have landed leaves that unknown.
     private var unchangedFrom: List<String>? = editing?.memberUuids
 
+    // Only the newest member list may show: an older one may lack members added since.
+    private var memberFetches = 0
+
     /** Emits when submission finished successfully so the screen can dismiss itself. */
     private val _doneEvents = MutableSharedFlow<Unit>()
     val doneEvents: SharedFlow<Unit> = _doneEvents.asSharedFlow()
@@ -52,8 +55,9 @@ class PickerViewModel(
         // A member edited while the picker is open (on the other device, say):
         // show them as they are now, keeping the list and the selection.
         repository.membersChanged.drop(1).onEach {
+            val fetch = ++memberFetches
             val r = repository.refreshMembers(force = true)
-            if (r is PkResult.Success) showMembers(r.value)
+            if (r is PkResult.Success && fetch == memberFetches) showMembers(r.value)
         }.launchIn(viewModelScope)
     }
 
@@ -63,7 +67,10 @@ class PickerViewModel(
             // force=true on every picker open: this screen is the user's
             // chance to react to members they just added in PluralKit, so a
             // cached list defeats the purpose of opening it.
-            when (val r = repository.refreshMembers(force = true)) {
+            val fetch = ++memberFetches
+            val r = repository.refreshMembers(force = true)
+            if (fetch != memberFetches) return@launch
+            when (r) {
                 is PkResult.Success -> showMembers(r.value)
                 is PkResult.Failure -> _state.update { it.copy(members = r.toUiError("Couldn't load members")) }
             }
