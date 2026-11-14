@@ -319,6 +319,22 @@ class ScreensTest {
     }
 
     @Test
+    fun `a time skipped when clocks go forward can't be picked`() {
+        // 1:10 AM PST; that night there is no 2:00 to 2:59.
+        timeDialog(
+            SwitchWindow(null, null),
+            initial = Instant.parse("2026-03-08T09:10:00Z"),
+            zone = java.time.ZoneId.of("America/Los_Angeles"),
+            now = Instant.parse("2026-03-09T00:00:00Z"),
+        )
+
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("2")
+
+        compose.onNodeWithText("That time doesn't exist", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Change").assertIsNotEnabled()
+    }
+
+    @Test
     fun `a switch in the same minute as the one before it opens without an error`() {
         timeDialog(SwitchWindow(at.plusSeconds(5), before), initial = at.plusSeconds(23))
 

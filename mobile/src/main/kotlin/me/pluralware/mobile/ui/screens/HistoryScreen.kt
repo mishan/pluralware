@@ -244,7 +244,9 @@ internal fun SwitchTimeDialog(
     val unchanged = picked == start.toLocalDateTime().truncatedTo(ChronoUnit.MINUTES)
     // In the hour that repeats when clocks go back, the switch's own offset says which one is meant.
     val chosen = if (unchanged) initial else ZonedDateTime.ofLocal(picked, zone, start.offset).toInstant()
-    val allowed = unchanged || window.allows(chosen, now)
+    // The hour skipped when clocks go forward: ofLocal would quietly move it an hour on.
+    val exists = zone.rules.getValidOffsets(picked).isNotEmpty()
+    val allowed = unchanged || exists && window.allows(chosen, now)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Change time") },
@@ -253,7 +255,8 @@ internal fun SwitchTimeDialog(
                 TextButton(onClick = { pickingDate = true }) { Text(dateFormat.format(date)) }
                 TimeInput(time)
                 if (!allowed) {
-                    Text(window.limits(now, zone), color = MaterialTheme.colorScheme.error)
+                    val why = if (exists) window.limits(now, zone) else "That time doesn't exist here: the clocks skipped it."
+                    Text(why, color = MaterialTheme.colorScheme.error)
                 }
             }
         },

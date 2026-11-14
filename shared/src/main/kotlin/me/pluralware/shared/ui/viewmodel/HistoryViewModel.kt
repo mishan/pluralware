@@ -35,8 +35,14 @@ class HistoryViewModel(
         viewModelScope.launch { fetch() }
     }
 
+    // Only the newest fetch may answer: an older one may have read PluralKit from before a fix.
+    private var fetches = 0
+
     private suspend fun fetch(keepOnFailure: Boolean = false) {
-        when (val r = repository.recentSwitches(limit)) {
+        val fetch = ++fetches
+        val r = repository.recentSwitches(limit)
+        if (fetch != fetches) return
+        when (r) {
             is PkResult.Success -> _state.value = UiState.Content(r.value)
             is PkResult.Failure ->
                 // A fix's own result already shows; a list a little out of date beats an error over it.

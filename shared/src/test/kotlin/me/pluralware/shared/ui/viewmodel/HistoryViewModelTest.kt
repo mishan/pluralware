@@ -98,4 +98,29 @@ class HistoryViewModelTest {
 
         assertEquals(shown, vm.state.value)
     }
+
+    @Test
+    fun `a load that answers after a newer reload can't bring back what it replaced`() = runTest(UnconfinedTestDispatcher()) {
+        val pk = MockPluralKitClient(artificialLatencyMillis = 0)
+        val (_, older) = pk.getRecentSwitches(10)
+        val before = pk.getRecentSwitches(10)
+        val firstAnswer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var calls = 0
+        val client = object : PluralKitClient by pk {
+            override suspend fun getRecentSwitches(limit: Int): List<Switch> {
+                if (++calls == 1) {
+                    firstAnswer.await()
+                    return before
+                }
+                return pk.getRecentSwitches(limit)
+            }
+        }
+        val repository = PluralKitRepository(client)
+        val vm = HistoryViewModel(repository)
+
+        repository.deleteSwitch(older.uuid)
+        firstAnswer.complete(Unit)
+
+        assertEquals(UiState.Content(pk.getRecentSwitches(10)), vm.state.value)
+    }
 }
