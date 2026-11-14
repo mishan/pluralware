@@ -64,8 +64,9 @@ fun PickerScreen(
     onBack: () -> Unit,
     onDone: () -> Unit,
     onSignOut: () -> Unit,
+    editing: PickerViewModel.Editing? = null,
 ) {
-    val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository))
+    val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository, editing))
     val state by vm.state.collectAsState()
     LaunchedEffect(Unit) { vm.doneEvents.collect { onDone() } }
     PickerContent(
@@ -76,6 +77,7 @@ fun PickerScreen(
         onConfirm = vm::submitSelection,
         onRetry = vm::loadMembers,
         onSignOut = onSignOut,
+        editing = editing != null,
     )
 }
 
@@ -88,12 +90,14 @@ internal fun PickerContent(
     onConfirm: () -> Unit,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
+    /** Changing an earlier switch's members, not registering a new one. */
+    editing: Boolean = false,
 ) {
     val members = state.members
     Scaffold(
-        topBar = { BackTopBar("Who's fronting?", onBack = onBack) },
+        topBar = { BackTopBar(if (editing) "Who was fronting?" else "Who's fronting?", onBack = onBack) },
         bottomBar = {
-            if (members is UiState.Content) ConfirmBar(state, onConfirm)
+            if (members is UiState.Content) ConfirmBar(state, editing, onConfirm)
         },
     ) { padding ->
         val modifier = Modifier.padding(padding)
@@ -243,7 +247,7 @@ private fun PositionMark(position: Int?) {
  * Confirming with nobody selected registers a switch-out.
  */
 @Composable
-private fun ConfirmBar(state: PickerState, onConfirm: () -> Unit) {
+private fun ConfirmBar(state: PickerState, editing: Boolean, onConfirm: () -> Unit) {
     Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Button(
             onClick = onConfirm,
@@ -256,8 +260,9 @@ private fun ConfirmBar(state: PickerState, onConfirm: () -> Unit) {
         ) {
             Text(
                 when {
-                    state.confirmed -> "Switched ✓"
+                    state.confirmed -> if (editing) "Saved ✓" else "Switched ✓"
                     state.submitting -> "Saving…"
+                    editing -> if (state.selectedUuids.isNotEmpty()) "Save members" else "Save as switched out"
                     state.selectedUuids.isNotEmpty() -> "Confirm switch"
                     else -> "Switch out"
                 },
