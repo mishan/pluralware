@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,11 +74,12 @@ import me.pluralware.shared.ui.viewmodel.HistoryViewModel
 
 private const val SHOWN = 10
 
-/** Recent switches; tap one to change its time or delete it. */
+/** Recent switches; tap one to change its time or members, or delete it. */
 @Composable
 fun HistoryScreen(
     repository: PluralKitRepository,
     onBack: () -> Unit,
+    onChangeMembers: (Switch) -> Unit,
     onSignOut: () -> Unit,
 ) {
     // One more than is shown, so the oldest row shown knows the switch before it.
@@ -92,6 +94,7 @@ fun HistoryScreen(
         onSignOut = onSignOut,
         fix = fix,
         onMove = fixes::move,
+        onChangeMembers = onChangeMembers,
         onDelete = fixes::delete,
         onNoticeShown = fixes::noticeShown,
     )
@@ -106,6 +109,7 @@ internal fun HistoryContent(
     onSignOut: () -> Unit,
     fix: SwitchFixViewModel.State = SwitchFixViewModel.State(),
     onMove: (String, Instant) -> Unit = { _, _ -> },
+    onChangeMembers: (Switch) -> Unit = {},
     onDelete: (String) -> Unit = {},
     onNoticeShown: () -> Unit = {},
     zone: ZoneId = LocalClock.current.zone,
@@ -153,6 +157,7 @@ internal fun HistoryContent(
                     FixSheet(
                         onDismiss = { chosen = null },
                         onChangeTime = { moving = chosen; chosen = null },
+                        onChangeMembers = { chosen = null; onChangeMembers(switches[index]) },
                         onDelete = { deleting = chosen; chosen = null },
                     )
                 }
@@ -200,13 +205,18 @@ private fun SwitchWindow.limits(now: Instant, zone: ZoneId): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FixSheet(onDismiss: () -> Unit, onChangeTime: () -> Unit, onDelete: () -> Unit) {
+private fun FixSheet(onDismiss: () -> Unit, onChangeTime: () -> Unit, onChangeMembers: () -> Unit, onDelete: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             ListItem(
                 headlineContent = { Text("Change time") },
                 leadingContent = { Icon(Icons.Filled.DateRange, contentDescription = null) },
                 modifier = Modifier.clickable(role = Role.Button, onClick = onChangeTime),
+            )
+            ListItem(
+                headlineContent = { Text("Change members") },
+                leadingContent = { Icon(Icons.Filled.Person, contentDescription = null) },
+                modifier = Modifier.clickable(role = Role.Button, onClick = onChangeMembers),
             )
             ListItem(
                 headlineContent = { Text("Delete") },

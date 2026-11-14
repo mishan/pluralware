@@ -1,5 +1,8 @@
 package me.pluralware.mobile.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -29,7 +32,7 @@ class PickerScreenTest {
     private val m = PreviewData.members
     private val events = mutableListOf<String>()
 
-    private fun show(state: PickerState) {
+    private fun show(state: PickerState, editing: Boolean = false) {
         compose.setContent {
             PluralWareTheme {
                 PickerContent(
@@ -40,6 +43,7 @@ class PickerScreenTest {
                     onConfirm = { events += "confirm" },
                     onRetry = { events += "retry" },
                     onSignOut = { events += "signout" },
+                    editing = editing,
                 )
             }
         }
@@ -159,6 +163,22 @@ class PickerScreenTest {
         compose.onNodeWithText("Retry").performClick()
 
         assertEquals(listOf("retry"), events)
+    }
+
+    @Test
+    fun `changing an earlier switch's members says so, and saves rather than switches`() {
+        val cases = listOf(
+            selecting(m[0].uuid) to listOf("Who was fronting?", "Save members"),
+            selecting() to listOf("Who was fronting?", "Save as switched out"),
+            selecting(m[0].uuid).copy(confirmed = true) to listOf("Saved ✓"),
+        )
+        var shown by mutableStateOf(cases[0].first)
+        compose.setContent { PluralWareTheme { PickerContent(shown, {}, {}, {}, {}, {}, {}, editing = true) } }
+        for ((state, texts) in cases) {
+            shown = state
+            for (text in texts) compose.onNodeWithText(text).assertIsDisplayed()
+            compose.onNodeWithText("Confirm switch").assertDoesNotExist()
+        }
     }
 
     @Test

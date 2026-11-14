@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.pluralware.shared.api.PluralKitHttpException
+import me.pluralware.shared.model.Member
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.PickerState
@@ -25,10 +27,20 @@ class PickerViewModel(
     private val repository: PluralKitRepository,
     /** Briefly shown after a successful switch before nav-back. Tuned for "felt" but not annoying. */
     private val confirmationLingerMillis: Long = 700L,
+    private val editing: Editing? = null,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(PickerState())
+    /** A switch whose members are being changed, rather than a new one. */
+    data class Editing(val switchUuid: String, val memberUuids: List<String>)
+
+    private val _state = MutableStateFlow(
+        editing?.let { PickerState(selectedUuids = it.memberUuids, seeded = true) } ?: PickerState(),
+    )
     val state: StateFlow<PickerState> = _state.asStateFlow()
+
+    // The switch's members as PluralKit has them, for saving nothing when they're unchanged;
+    // null once a save that may have landed leaves that unknown.
+    private var unchangedFrom: List<String>? = editing?.memberUuids
 
     /** Emits when submission finished successfully so the screen can dismiss itself. */
     private val _doneEvents = MutableSharedFlow<Unit>()
@@ -36,12 +48,12 @@ class PickerViewModel(
 
     init {
         loadMembers()
-        loadInitialSelection()
+        if (editing == null) loadInitialSelection()
         // A member edited while the picker is open (on the other device, say):
         // show them as they are now, keeping the list and the selection.
         repository.membersChanged.drop(1).onEach {
             val r = repository.refreshMembers(force = true)
-            if (r is PkResult.Success) _state.update { it.copy(members = UiState.Content(r.value)) }
+            if (r is PkResult.Success) showMembers(r.value)
         }.launchIn(viewModelScope)
     }
 
@@ -51,16 +63,21 @@ class PickerViewModel(
             // force=true on every picker open: this screen is the user's
             // chance to react to members they just added in PluralKit, so a
             // cached list defeats the purpose of opening it.
-            val r = repository.refreshMembers(force = true)
-            _state.update {
-                it.copy(
-                    members = when (r) {
-                        is PkResult.Success -> UiState.Content(r.value)
-                        is PkResult.Failure -> r.toUiError("Couldn't load members")
-                    },
-                )
+            when (val r = repository.refreshMembers(force = true)) {
+                is PkResult.Success -> showMembers(r.value)
+                is PkResult.Failure -> _state.update { it.copy(members = r.toUiError("Couldn't load members")) }
             }
         }
+    }
+
+    private fun showMembers(members: List<Member>) {
+        _state.update { it.copy(members = UiState.Content(members)) }
+        if (editing == null) return
+        // A member deleted since the switch was listed: PluralKit dropped them from it too,
+        // and there's no row here to deselect them with.
+        val known = members.mapTo(HashSet()) { it.uuid }
+        _state.update { it.copy(selectedUuids = it.selectedUuids.filter { uuid -> uuid in known }) }
+        unchangedFrom = unchangedFrom?.filter { it in known }
     }
 
     /**
@@ -110,8 +127,11 @@ class PickerViewModel(
 
     private fun submit(uuids: List<String>) {
         if (_state.value.submitting) return
-        val currentFronterUuids = repository.currentFronters.value
-            ?.members?.map { it.uuid }.orEmpty()
+        val currentFronterUuids = if (editing != null) {
+            unchangedFrom
+        } else {
+            repository.currentFronters.value?.members?.map { it.uuid }.orEmpty()
+        }
         // PluralKit returns HTTP 400 if you POST a switch identical to the current
         // fronters. Treat the user's intent as already satisfied and just flash the
         // confirmation. The comparison is order-sensitive: re-ordering the same
@@ -127,17 +147,19 @@ class PickerViewModel(
         }
         _state.update { it.copy(submitting = true) }
         viewModelScope.launch {
-            when (val r = repository.registerSwitch(uuids)) {
+            val r = if (editing != null) repository.setSwitchMembers(editing.switchUuid, uuids) else repository.registerSwitch(uuids)
+            when (r) {
                 is PkResult.Success -> {
                     _state.update { it.copy(submitting = false, confirmed = true) }
                     delay(confirmationLingerMillis)
                     _doneEvents.emit(Unit)
                 }
                 is PkResult.Failure -> {
+                    if (r.error !is PluralKitHttpException) unchangedFrom = null
                     _state.update {
                         it.copy(
                             submitting = false,
-                            members = r.toUiError("Couldn't register switch"),
+                            members = r.toUiError(if (editing != null) "Couldn't change its members" else "Couldn't register switch"),
                         )
                     }
                 }
@@ -146,8 +168,9 @@ class PickerViewModel(
     }
 
     @Suppress("UNCHECKED_CAST")
-    class Factory(private val repository: PluralKitRepository) : ViewModelProvider.Factory {
+    class Factory(private val repository: PluralKitRepository, private val editing: Editing? = null) :
+        ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            PickerViewModel(repository) as T
+            PickerViewModel(repository, editing = editing) as T
     }
 }

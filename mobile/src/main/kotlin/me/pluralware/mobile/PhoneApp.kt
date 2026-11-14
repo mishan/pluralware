@@ -1,5 +1,6 @@
 package me.pluralware.mobile
 
+import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -37,14 +38,25 @@ import me.pluralware.mobile.ui.screens.HistoryScreen
 import me.pluralware.mobile.ui.screens.PickerScreen
 import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
+import me.pluralware.shared.model.Switch
 import me.pluralware.shared.session.Session
 import me.pluralware.shared.session.SessionHolder
+import me.pluralware.shared.ui.viewmodel.PickerViewModel
 
 object Routes {
     const val CONNECT = "connect"
     const val HOME = "home"
     const val PICK = "pick"
     const val HISTORY = "history"
+    const val FIX_MEMBERS = "history/{switch}?members={members}"
+
+    fun fixMembers(switch: Switch) = "history/${switch.uuid}?members=" + switch.members.joinToString(",") { it.uuid }
+
+    /** What [fixMembers] put in the route. */
+    fun fixing(arguments: Bundle?) = PickerViewModel.Editing(
+        switchUuid = arguments?.getString("switch").orEmpty(),
+        memberUuids = arguments?.getString("members").orEmpty().split(",").filter { it.isNotEmpty() },
+    )
     const val MEMBERS = "members"
     const val EDIT_MEMBER = "members/{uuid}"
 
@@ -156,8 +168,26 @@ private fun NavGraphBuilder.signedInRoutes(graph: AppGraph, session: Session, na
             onSignOut = signOut,
         )
     }
-    composable(Routes.HISTORY) {
-        HistoryScreen(repository = repository, onBack = { nav.popBackStack() }, onSignOut = signOut)
+    composable(Routes.HISTORY) { entry ->
+        HistoryScreen(
+            repository = repository,
+            onBack = { nav.popBackStack() },
+            // Only while it's the screen showing, as for Members.
+            onChangeMembers = {
+                if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) nav.navigate(Routes.fixMembers(it))
+            },
+            onSignOut = signOut,
+        )
+    }
+    composable(Routes.FIX_MEMBERS) { entry ->
+        val back = { if (nav.currentBackStackEntry == entry) nav.popBackStack() }
+        PickerScreen(
+            repository = repository,
+            onBack = { back() },
+            onDone = { back() },
+            onSignOut = signOut,
+            editing = Routes.fixing(entry.arguments),
+        )
     }
     composable(Routes.MEMBERS) { entry ->
         MembersScreen(

@@ -167,6 +167,7 @@ class ScreensTest {
             onSignOut = { events += "signout" },
             fix = fix,
             onMove = { uuid, to -> events += "move:$uuid:$to" },
+            onChangeMembers = { events += "members:${it.uuid}" },
             onDelete = { events += "delete:$it" },
             onNoticeShown = { events += "shown" },
             zone = ZoneOffset.UTC,
@@ -198,12 +199,13 @@ class ScreensTest {
     }
 
     @Test
-    fun `tapping a switch offers to change its time or delete it, and changes nothing yet`() {
+    fun `tapping a switch offers to change its time or members or delete it, and changes nothing yet`() {
         history(UiState.Content(history))
 
         compose.onNodeWithText("Bea").performClick()
 
         compose.onNodeWithText("Change time").assertIsDisplayed()
+        compose.onNodeWithText("Change members").assertIsDisplayed()
         compose.onNodeWithText("Delete").assertIsDisplayed()
         assertEquals(emptyList<String>(), events)
     }
@@ -222,6 +224,17 @@ class ScreensTest {
         compose.onNodeWithText("Delete").performClick()
         compose.onNode(hasText("Delete") and hasAnyAncestor(isDialog())).performClick()
         assertEquals(listOf("delete:now"), events)
+    }
+
+    @Test
+    fun `changing members opens the picker for that switch`() {
+        history(UiState.Content(history))
+
+        compose.onNodeWithText("Bea").performClick()
+        compose.onNodeWithText("Change members").performClick()
+
+        assertEquals(listOf("members:s2"), events)
+        compose.onNodeWithText("Change time").assertDoesNotExist()
     }
 
     @Test
