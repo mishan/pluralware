@@ -338,12 +338,14 @@ class PluralKitRepository(
         return null
     }
 
-    private companion object {
-        const val FETCH_ATTEMPTS = 3
-        const val RETRY_DELAY_MILLIS = 500L
-        const val MAX_SWITCHES = 100
+    companion object {
+        private const val FETCH_ATTEMPTS = 3
+        private const val RETRY_DELAY_MILLIS = 500L
+        private const val MAX_SWITCHES = 100
+
+        /** PluralKit's refusal of a members fix: the switch already has exactly those members. */
         const val SAME_MEMBERS = 40004
-        val SWITCH_GONE = setOf(20007, 20008)
+        private val SWITCH_GONE = setOf(20007, 20008)
     }
 
     private fun setFronters(switch: Switch?) {
