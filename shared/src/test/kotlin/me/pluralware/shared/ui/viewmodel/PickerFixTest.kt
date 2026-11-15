@@ -109,20 +109,24 @@ class PickerFixTest {
     }
 
     @Test
-    fun `after a save that may have landed, going back to the old members is sent, not assumed`() = runTest {
-        val vm = fixing()
-        val original = vm.state.value.selectedUuids
-        vm.deselectAll()
-        client.failure = IOException("response lost")
-        vm.submitSelection()
-        client.failure = null
+    fun `after a save that may have landed, going back to the old members is sent, and PluralKit having them is a save`() =
+        runTest {
+            val vm = fixing()
+            val original = vm.state.value.selectedUuids
+            vm.deselectAll()
+            client.failure = IOException("never reached PluralKit")
+            vm.submitSelection()
+            client.failure = null
 
-        vm.loadMembers()
-        original.forEach(vm::toggle)
-        vm.submitSelection()
+            vm.loadMembers()
+            original.forEach(vm::toggle)
+            val done = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.doneEvents.first() }
+            vm.submitSelection()
 
-        assertEquals(listOf(emptyList(), original), client.fixes)
-    }
+            assertEquals(listOf(emptyList(), original), client.fixes)
+            assertTrue("PluralKit said it already had them", vm.state.value.confirmed)
+            assertTrue(done.isCompleted)
+        }
 
     @Test
     fun `a member list that answers after a newer one can't take a member back out`() = runTest {

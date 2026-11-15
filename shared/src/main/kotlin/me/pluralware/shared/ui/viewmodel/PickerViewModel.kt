@@ -156,13 +156,17 @@ class PickerViewModel(
         _state.update { it.copy(submitting = true) }
         viewModelScope.launch {
             val r = if (editing != null) repository.setSwitchMembers(editing.switchUuid, uuids) else repository.registerSwitch(uuids)
-            when (r) {
-                is PkResult.Success -> {
+            // Already those members (an earlier save that never reached PluralKit left them): what was asked for.
+            val alreadyHad = editing != null && (r as? PkResult.Failure)?.error.let {
+                it is PluralKitHttpException && it.code == PluralKitRepository.SAME_MEMBERS
+            }
+            when {
+                r is PkResult.Success || alreadyHad -> {
                     _state.update { it.copy(submitting = false, confirmed = true) }
                     delay(confirmationLingerMillis)
                     _doneEvents.emit(Unit)
                 }
-                is PkResult.Failure -> {
+                r is PkResult.Failure -> {
                     if (r.error !is PluralKitHttpException) unchangedFrom = null
                     _state.update {
                         it.copy(
