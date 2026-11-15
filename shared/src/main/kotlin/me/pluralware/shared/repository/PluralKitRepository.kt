@@ -20,6 +20,7 @@ import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberEdit
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
@@ -181,13 +182,14 @@ class PluralKitRepository(
     // away mid-write mustn't cut short what follows it (clearing caches,
     // correcting the front). close() cancels them when the session ends.
 
-    /** Sends a member edit ([MemberEdit.changes], [MemberEdit.proxyTagChanges]), then fetches what it changed. */
+    /** Sends a member edit ([MemberEdit]'s changes, proxy tags and privacy), then fetches what it changed. */
     suspend fun updateMember(
         uuid: String,
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>? = null,
+        privacy: Map<MemberPrivacy, Boolean> = emptyMap(),
     ): PkResult<Member> = detached {
-        val result = runCatchingPk { sent { client.updateMember(uuid, changes, proxyTags) } }
+        val result = runCatchingPk { sent { client.updateMember(uuid, changes, proxyTags, privacy) } }
         // Unless PluralKit refused it, the edit may have landed: cached names may be old.
         if (!result.refusedByPluralKit()) {
             membersCacheMutex.withLock { membersCache = null }

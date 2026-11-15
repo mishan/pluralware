@@ -5,6 +5,7 @@ import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
@@ -83,8 +84,13 @@ class MockPluralKitClient(
         return newSwitch.resolved()
     }
 
-    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
-        require(changes.isNotEmpty() || proxyTags != null) { "An edit that changes nothing isn't sent" }
+    override suspend fun updateMember(
+        uuid: String,
+        changes: Map<MemberField, String?>,
+        proxyTags: List<ProxyTag>?,
+        privacy: Map<MemberPrivacy, Boolean>,
+    ): Member {
+        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty()) { "An edit that changes nothing isn't sent" }
         delayLike()
         val index = members.indexOfFirst { it.uuid == uuid }
         if (index < 0) throw refused(404, 20002, "Member not found.")
@@ -100,7 +106,8 @@ class MockPluralKitClient(
                 MemberField.Birthday -> member.copy(birthday = value)
             }
         }
-        members[index] = if (proxyTags != null) updated.copy(proxyTags = proxyTags) else updated
+        val private = updated.privateParts + privacy.filterValues { it }.keys - privacy.filterValues { !it }.keys
+        members[index] = updated.copy(proxyTags = proxyTags ?: updated.proxyTags, privateParts = private)
         return members[index]
     }
 

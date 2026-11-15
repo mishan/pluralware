@@ -10,6 +10,8 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -31,6 +33,7 @@ import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.preview.PreviewData
@@ -52,6 +55,7 @@ class MemberScreensTest {
         description = "Likes tea.",
         birthday = "0004-03-15",
         proxyTags = listOf(ProxyTag("[", "]")),
+        privateParts = setOf(MemberPrivacy.Birthday),
     )
     private val events = mutableListOf<String>()
     private val saves = mutableListOf<Pair<Member, MemberDraft>>()
@@ -247,7 +251,24 @@ class MemberScreensTest {
         for (f in MemberField.entries) field(f).assertIsNotEnabled()
         tag("prefix", 0).assertIsNotEnabled()
         tag("remove", 0).assertIsNotEnabled()
+        privacy(MemberPrivacy.Name).assertIsNotEnabled()
         compose.onNodeWithText("Add proxy tag").performScrollTo().assertIsNotEnabled()
+    }
+
+    private fun privacy(part: MemberPrivacy) = compose.onNodeWithTag("privacy-${part.apiKey}").performScrollTo()
+
+    @Test
+    fun `each part's privacy shows as a switch, and changing one is an edit`() {
+        showEditor(loaded())
+
+        privacy(MemberPrivacy.Birthday).assertIsOn()
+        privacy(MemberPrivacy.Name).assertIsOff()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        privacy(MemberPrivacy.Name).performClick()
+        privacy(MemberPrivacy.Birthday).performClick()
+        compose.onNodeWithText("Save").performClick()
+
+        assertEquals(listOf(alex to MemberDraft.of(alex).copy(privateParts = setOf(MemberPrivacy.Name))), saves)
     }
 
     private fun tag(part: String, index: Int) = compose.onNodeWithTag("proxy-$part-$index").performScrollTo()
@@ -403,6 +424,7 @@ class MemberScreensTest {
         restore.setContent { PluralWareTheme { editor(state) } }
         field(MemberField.Pronouns).performTextReplacement("xe/xem")
         tag("prefix", 0).performTextReplacement("{")
+        privacy(MemberPrivacy.Aliases).performClick()
 
         // Back in, the screen loads afresh and finds the member edited elsewhere meanwhile.
         state = EditorState()
@@ -412,6 +434,7 @@ class MemberScreensTest {
         field(MemberField.Pronouns).assertTextContains("xe/xem")
         compose.onNodeWithText("Save").performClick()
         val tags = listOf(ProxyTagDraft("{", "]"))
-        assertEquals(alex to MemberDraft.of(alex).copy(pronouns = "xe/xem", proxyTags = tags), saves.single())
+        val private = setOf(MemberPrivacy.Birthday, MemberPrivacy.Aliases)
+        assertEquals(alex to MemberDraft.of(alex).copy(pronouns = "xe/xem", proxyTags = tags, privateParts = private), saves.single())
     }
 }

@@ -4,6 +4,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
@@ -50,11 +51,16 @@ interface PluralKitClient {
     /**
      * PATCH /members/{uuid} with only [changes]: PluralKit leaves a field it
      * isn't sent alone and clears one sent as null. [proxyTags], unless null,
-     * replaces the member's whole list. Build them with
-     * [me.pluralware.shared.model.MemberEdit.changes] and
-     * [me.pluralware.shared.model.MemberEdit.proxyTagChanges]; nothing else should.
+     * replaces the member's whole list. [privacy] sets each part given private
+     * (true) or public. Build them with [me.pluralware.shared.model.MemberEdit]'s
+     * `changes`, `proxyTagChanges` and `privacyChanges`; nothing else should.
      */
-    suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>? = null): Member
+    suspend fun updateMember(
+        uuid: String,
+        changes: Map<MemberField, String?>,
+        proxyTags: List<ProxyTag>? = null,
+        privacy: Map<MemberPrivacy, Boolean> = emptyMap(),
+    ): Member
 
     /** PATCH /systems/@me/switches/{uuid}: moves when the switch started. */
     suspend fun moveSwitch(uuid: String, to: Instant): Switch

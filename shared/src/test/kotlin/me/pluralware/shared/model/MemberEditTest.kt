@@ -177,6 +177,22 @@ class MemberEditTest {
     }
 
     @Test
+    fun `only the privacy settings that changed are sent`() {
+        val draft = MemberDraft.of(alex.copy(privateParts = setOf(MemberPrivacy.Birthday)))
+        val original = alex.copy(privateParts = setOf(MemberPrivacy.Birthday))
+        val cases = listOf(
+            draft to emptyMap(),
+            draft.copy(privateParts = setOf(MemberPrivacy.Birthday, MemberPrivacy.Name)) to mapOf(MemberPrivacy.Name to true),
+            draft.copy(privateParts = emptySet()) to mapOf(MemberPrivacy.Birthday to false),
+            draft.copy(privateParts = setOf(MemberPrivacy.Visibility)) to
+                mapOf(MemberPrivacy.Visibility to true, MemberPrivacy.Birthday to false),
+        )
+        for ((edited, expected) in cases) {
+            assertEquals(edited.privateParts.toString(), expected, MemberEdit.privacyChanges(original, edited))
+        }
+    }
+
+    @Test
     fun `an invalid draft is refused rather than sent`() {
         assertThrows(IllegalArgumentException::class.java) {
             MemberEdit.changes(alex, MemberDraft.of(alex).copy(name = ""))
@@ -270,6 +286,7 @@ class MemberEditTest {
             avatarUrl = keepOr(draft.avatarUrl) { if (random.nextBoolean()) "https://example.com/b.png" else "" },
             birthday = keepOr(draft.birthday) { listOf("", "03-15", "2001-01-01", "02-29").random(random) },
             proxyTags = draft.proxyTags,
+            privateParts = draft.privateParts,
         )
     }
 }

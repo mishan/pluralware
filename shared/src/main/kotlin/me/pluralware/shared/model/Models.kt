@@ -16,18 +16,35 @@ data class Member(
     val pronouns: String?,
     val color: String?,       // Hex without leading '#'.
     val avatarUrl: String?,
-    /**
-     * PluralKit visibility is private. Only friend sharing reads it: such
-     * members start out unshared (docs/notifications-design.md §6).
-     */
-    val isPrivate: Boolean = false,
     val description: String? = null,
     /** "YYYY-MM-DD"; year 0004 means PluralKit keeps it without a year. */
     val birthday: String? = null,
     val proxyTags: List<ProxyTag> = emptyList(),
+    /** The parts of this member PluralKit shows only to its system. */
+    val privateParts: Set<MemberPrivacy> = emptySet(),
 ) {
     /** What the watch should actually render. */
     val displayLabel: String get() = displayName ?: name
+
+    /**
+     * PluralKit visibility is private. Friend sharing reads it: such
+     * members start out unshared (docs/notifications-design.md §6).
+     */
+    val isPrivate: Boolean get() = MemberPrivacy.Visibility in privateParts
+}
+
+/** Each part of a member PluralKit can keep private, by its key in the API's privacy object. */
+enum class MemberPrivacy(val apiKey: String) {
+    Visibility("visibility"),
+    Name("name_privacy"),
+    Description("description_privacy"),
+    Birthday("birthday_privacy"),
+    Pronouns("pronoun_privacy"),
+    Avatar("avatar_privacy"),
+    Banner("banner_privacy"),
+    Metadata("metadata_privacy"),
+    ProxyTags("proxy_privacy"),
+    Aliases("alias_privacy"),
 }
 
 /** What marks a message as this member's in Discord: `prefix` + text + `suffix`, either one optional. */
