@@ -67,13 +67,14 @@ class MemberEditorViewModel(
         if (now.saving || now.saved || !MemberEdit.isValid(original, draft)) return
         val changes = MemberEdit.changes(original, draft)
         val proxyTags = MemberEdit.proxyTagChanges(original, draft)
-        if (changes.isEmpty() && proxyTags == null) {
+        val privacy = MemberEdit.privacyChanges(original, draft)
+        if (changes.isEmpty() && proxyTags == null && privacy.isEmpty()) {
             _state.update { it.copy(saved = true) }
             return
         }
         _state.update { it.copy(saving = true, saveError = null, fieldErrors = emptyMap()) }
         viewModelScope.launch {
-            when (val result = repository.updateMember(uuid, changes, proxyTags)) {
+            when (val result = repository.updateMember(uuid, changes, proxyTags, privacy)) {
                 is PkResult.Success -> _state.update { it.copy(saving = false, saved = true) }
                 is PkResult.Failure -> _state.update { failed(it.copy(saving = false), result) }
             }

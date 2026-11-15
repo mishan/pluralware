@@ -17,6 +17,7 @@ import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.repository.PluralKitRepository
@@ -37,15 +38,22 @@ class MemberEditorViewModelTest {
         PluralKitClient by pk {
         val edits = mutableListOf<Map<MemberField, String?>>()
         val tagEdits = mutableListOf<List<ProxyTag>?>()
+        val privacyEdits = mutableListOf<Map<MemberPrivacy, Boolean>>()
         var editFailure: Exception? = null
         var holdEdit: CompletableDeferred<Unit>? = null
 
-        override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
+        override suspend fun updateMember(
+            uuid: String,
+            changes: Map<MemberField, String?>,
+            proxyTags: List<ProxyTag>?,
+            privacy: Map<MemberPrivacy, Boolean>,
+        ): Member {
             edits += changes
             tagEdits += proxyTags
+            privacyEdits += privacy
             holdEdit?.await()
             editFailure?.let { throw it }
-            return pk.updateMember(uuid, changes, proxyTags)
+            return pk.updateMember(uuid, changes, proxyTags, privacy)
         }
     }
 
@@ -109,6 +117,17 @@ class MemberEditorViewModelTest {
         assertEquals(listOf(listOf(ProxyTag("[", "]"))), client.tagEdits)
         assertTrue(vm.state.value.saved)
         assertEquals(listOf(ProxyTag("[", "]")), client.pk.getOwnMembers().first().proxyTags)
+    }
+
+    @Test
+    fun `privacy alone is an edit, with only the parts that changed`() = runTest {
+        val vm = editor()
+
+        vm.save(alex, MemberDraft.of(alex).copy(privateParts = alex.privateParts + MemberPrivacy.Pronouns))
+
+        assertEquals(listOf(mapOf(MemberPrivacy.Pronouns to true)), client.privacyEdits)
+        assertTrue(vm.state.value.saved)
+        assertTrue(MemberPrivacy.Pronouns in client.pk.getOwnMembers().first().privateParts)
     }
 
     @Test

@@ -1,19 +1,19 @@
 # System management on the phone
 
 Editing a system from the phone app. This round covers editing a member and fixing switch
-history. Adding and deleting members, groups, privacy settings and the system profile come
+history. Adding and deleting members, groups and the system profile come
 later, on the same foundations.
 
 ## 1. Scope
 
 - **Edit a member:** name, display name, pronouns, color, description, avatar URL, birthday,
-  proxy tags.
+  proxy tags, and which parts are private.
 - **Fix a switch** in the history the phone shows (the last 10): change when it started, change
   its members, or delete it.
 - Corrections reach everything that shows them: the phone's screens, the watch, its complication
   and tile, the relay, and friends, when the current front changed.
 
-Out of scope: creating or deleting members, groups, privacy, the system profile,
+Out of scope: creating or deleting members, groups, the system profile,
 avatar uploads (PluralKit takes a URL), banners, offline edit queues, editing on the watch, and
 history older than the last 10 switches.
 
@@ -28,7 +28,9 @@ history older than the last 10 switches.
   when edited, and then overwrites tags changed elsewhere since the editor loaded. Each tag
   needs one of them (PluralKit silently drops one with neither), and `prefix + "text" + suffix`
   can be up to 100 characters, so 96 for the two together. PluralKit doesn't trim tags, and
-  neither does the app.
+  neither does the app. `privacy` is an object of each part's `"private"` or `"public"`
+  (`visibility`, `name_privacy`, `pronoun_privacy` and so on); a PATCH changes only the parts
+  it names, so only the ones toggled are sent.
 - `PATCH /systems/@me/switches/{uuid}` with `{"timestamp": ...}` moves a switch. PluralKit only
   rejects a time any switch already has (40005), **including the switch being moved**. It does
   not check neighbors or the future, so the app enforces both (section 5).

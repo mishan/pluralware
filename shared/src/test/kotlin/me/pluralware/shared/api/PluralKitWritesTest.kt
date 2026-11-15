@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -197,9 +198,26 @@ class PluralKitWritesTest {
     }
 
     @Test
+    fun `each part's privacy comes through, and changed ones are sent`() = runTest {
+        respond(body = alexJson.dropLast(1) + ""","privacy":{"visibility":"public","name_privacy":"private","pronoun_privacy":"private","alias_privacy":null}}""")
+
+        val member = client.updateMember(
+            "uuid-alex",
+            emptyMap(),
+            privacy = mapOf(MemberPrivacy.Name to true, MemberPrivacy.Visibility to false),
+        )
+
+        assertEquals(
+            Json.parseToJsonElement("""{"privacy":{"name_privacy":"private","visibility":"public"}}"""),
+            server.takeRequest().json(),
+        )
+        assertEquals(setOf(MemberPrivacy.Name, MemberPrivacy.Pronouns), member.privateParts)
+    }
+
+    @Test
     fun `privacy settings come through, private only when PluralKit says so`() = runTest {
         for ((privacy, private) in listOf(""","privacy":{"visibility":"private"}""" to true,
-            ""","privacy":{"visibility":"public"}""" to false, "" to false)) {
+            ""","privacy":{"visibility":"public"}""" to false, ""","privacy":null""" to false, "" to false)) {
             respond(body = """[{"id":"abcde","uuid":"uuid-alex","name":"Alex"$privacy}]""")
             assertEquals(privacy, private, client.getOwnMembers().single().isPrivate)
         }

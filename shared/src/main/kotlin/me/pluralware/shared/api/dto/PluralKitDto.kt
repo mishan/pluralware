@@ -47,17 +47,16 @@ internal data class MemberDto(
     /** "YYYY-MM-DD"; year 0004 when PluralKit keeps it without a year. */
     val birthday: String? = null,
     @SerialName("proxy_tags") val proxyTags: List<ProxyTagDto> = emptyList(),
-    /** Present only when the token owns the member; null otherwise. */
-    val privacy: MemberPrivacyDto? = null,
+    /**
+     * Each part's "private" or "public" (null: public), by
+     * [me.pluralware.shared.model.MemberPrivacy.apiKey]. Present only when the
+     * token owns the member; null otherwise.
+     */
+    val privacy: Map<String, String?>? = null,
 )
 
 @Serializable
 internal data class ProxyTagDto(val prefix: String? = null, val suffix: String? = null)
-
-@Serializable
-internal data class MemberPrivacyDto(
-    val visibility: String? = null,
-)
 
 /**
  * Switch with fully-expanded member objects.

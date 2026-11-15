@@ -16,6 +16,7 @@ import me.pluralware.shared.api.dto.SwitchRefsDto
 import me.pluralware.shared.api.dto.SystemDto
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
@@ -122,12 +123,20 @@ class RetrofitPluralKitClient internal constructor(
         return switch
     }
 
-    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
-        require(changes.isNotEmpty() || proxyTags != null) { "An edit that changes nothing isn't sent" }
+    override suspend fun updateMember(
+        uuid: String,
+        changes: Map<MemberField, String?>,
+        proxyTags: List<ProxyTag>?,
+        privacy: Map<MemberPrivacy, Boolean>,
+    ): Member {
+        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty()) { "An edit that changes nothing isn't sent" }
         val tags = proxyTags?.let { list ->
             "proxy_tags" to JsonArray(list.map { JsonObject(mapOf("prefix" to JsonPrimitive(it.prefix), "suffix" to JsonPrimitive(it.suffix))) })
         }
-        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags))
+        val parts = privacy.takeIf { it.isNotEmpty() }?.let { parts ->
+            "privacy" to JsonObject(parts.entries.associate { (part, private) -> part.apiKey to JsonPrimitive(if (private) "private" else "public") })
+        }
+        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags, parts))
         // History resolves members from the lookup cache; keep the edit visible there.
         return http { api.updateMember(uuid, body) }.toDomain().also { remember(listOf(it)) }
     }
@@ -223,10 +232,10 @@ class RetrofitPluralKitClient internal constructor(
         pronouns = pronouns,
         color = color,
         avatarUrl = avatarUrl,
-        isPrivate = privacy?.visibility == "private",
         description = description,
         birthday = birthday,
         proxyTags = proxyTags.map { ProxyTag(it.prefix, it.suffix) },
+        privateParts = MemberPrivacy.entries.filterTo(HashSet()) { privacy?.get(it.apiKey) == "private" },
     )
 
     private fun SwitchFullDto.toDomain() = Switch(

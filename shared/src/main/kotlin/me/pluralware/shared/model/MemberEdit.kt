@@ -23,6 +23,7 @@ data class MemberDraft(
     val avatarUrl: String,
     val birthday: String,
     val proxyTags: List<ProxyTagDraft>,
+    val privateParts: Set<MemberPrivacy>,
 ) {
     operator fun get(field: MemberField): String = when (field) {
         MemberField.Name -> name
@@ -44,6 +45,7 @@ data class MemberDraft(
             avatarUrl = member.avatarUrl.orEmpty(),
             birthday = member.birthday.orEmpty().removePrefix(MemberEdit.NO_YEAR),
             proxyTags = member.proxyTags.map { ProxyTagDraft(it.prefix.orEmpty(), it.suffix.orEmpty()) },
+            privateParts = member.privateParts,
         )
     }
 }
@@ -122,6 +124,11 @@ object MemberEdit {
         val tags = draft.proxyTags.map { ProxyTag(it.prefix.ifEmpty { null }, it.suffix.ifEmpty { null }) }
         return tags.takeIf { it != original.proxyTags.map { tag -> ProxyTag(tag.prefix?.ifEmpty { null }, tag.suffix?.ifEmpty { null }) } }
     }
+
+    /** Each part whose privacy [draft] changed: true for private, false for public. */
+    fun privacyChanges(original: Member, draft: MemberDraft): Map<MemberPrivacy, Boolean> =
+        MemberPrivacy.entries.filter { (it in draft.privateParts) != (it in original.privateParts) }
+            .associateWith { it in draft.privateParts }
 
     /** Whether [draft] can be sent: no field [validate] objects to, and no [proxyTagProblem]. */
     fun isValid(original: Member, draft: MemberDraft) =

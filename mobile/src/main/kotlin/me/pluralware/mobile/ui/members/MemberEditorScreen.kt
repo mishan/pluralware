@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -63,6 +66,7 @@ import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberEdit
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.MemberPrivacy
 import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.repository.PluralKitRepository
@@ -105,7 +109,8 @@ internal fun MemberEditorContent(
     val form = draft
     val changed = from != null && form != null && (
         MemberField.entries.any { MemberEdit.normalize(it, form[it]) != MemberEdit.normalize(it, MemberDraft.of(from)[it]) } ||
-            MemberEdit.proxyTagChanges(from, form) != null
+            MemberEdit.proxyTagChanges(from, form) != null ||
+            MemberEdit.privacyChanges(from, form).isNotEmpty()
         )
 
     var confirmingDiscard by rememberSaveable { mutableStateOf(false) }
@@ -139,6 +144,7 @@ internal fun MemberEditorContent(
                     onEdited(field)
                 },
                 onTagsChange = { draft = form.copy(proxyTags = it) },
+                onPrivacyChange = { draft = form.copy(privateParts = it) },
                 modifier = modifier,
             )
             state.member is UiState.Error -> ErrorView(state.member, onRetry = onRetry, onSignOut = onSignOut, modifier = modifier)
@@ -182,6 +188,7 @@ private fun MemberForm(
     draft: MemberDraft,
     onChange: (MemberField, String) -> Unit,
     onTagsChange: (List<ProxyTagDraft>) -> Unit,
+    onPrivacyChange: (Set<MemberPrivacy>) -> Unit,
     modifier: Modifier,
 ) {
     val problems = MemberEdit.validate(original, draft)
@@ -230,8 +237,50 @@ private fun MemberForm(
             )
         }
         ProxyTags(draft.proxyTags, MemberEdit.proxyTagProblem(original, draft), enabled = !state.saving, onChange = onTagsChange)
+        Privacy(draft.privateParts, enabled = !state.saving, onChange = onPrivacyChange)
     }
 }
+
+@Composable
+private fun Privacy(private: Set<MemberPrivacy>, enabled: Boolean, onChange: (Set<MemberPrivacy>) -> Unit) {
+    Text("Privacy", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    Text(
+        "Switched on, it's private: only your system sees it in PluralKit. Others see a private name as the " +
+            "display name, and don't see a private member in the member list.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    for (part in MemberPrivacy.entries) {
+        val isPrivate = part in private
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = isPrivate, enabled = enabled, role = Role.Switch) {
+                    onChange(if (it) private + part else private - part)
+                }
+                .testTag("privacy-${part.apiKey}")
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(part.label, modifier = Modifier.weight(1f))
+            Switch(checked = isPrivate, onCheckedChange = null, enabled = enabled)
+        }
+    }
+}
+
+private val MemberPrivacy.label: String
+    get() = when (this) {
+        MemberPrivacy.Visibility -> "Whole member"
+        MemberPrivacy.Name -> "Name"
+        MemberPrivacy.Description -> "Description"
+        MemberPrivacy.Birthday -> "Birthday"
+        MemberPrivacy.Pronouns -> "Pronouns"
+        MemberPrivacy.Avatar -> "Avatar"
+        MemberPrivacy.Banner -> "Banner"
+        MemberPrivacy.Metadata -> "Message count and dates"
+        MemberPrivacy.ProxyTags -> "Proxy tags"
+        MemberPrivacy.Aliases -> "Aliases"
+    }
 
 /** Each tag as prefix, "text", suffix: how a message is marked as this member's in Discord. */
 @Composable
@@ -377,32 +426,41 @@ private fun MemberDraft.with(field: MemberField, value: String) = when (field) {
     MemberField.Birthday -> copy(birthday = value)
 }
 
-// The text fields in order, then each proxy tag's prefix and suffix.
+// The text fields in order, the private parts, then each proxy tag's prefix and suffix.
 private val DraftSaver: Saver<MemberDraft?, Any> = listSaver(
     save = { draft ->
-        draft?.let { d -> MemberField.entries.map { d[it] } + d.proxyTags.flatMap { listOf(it.prefix, it.suffix) } }.orEmpty()
+        draft?.let { d ->
+            MemberField.entries.map { d[it] } + d.privateParts.toSaved() + d.proxyTags.flatMap { listOf(it.prefix, it.suffix) }
+        }.orEmpty()
     },
     restore = { values ->
         val fields = MemberField.entries.size
-        values.takeIf { it.size >= fields && (it.size - fields) % 2 == 0 }?.let {
-            val tags = it.drop(fields).chunked(2) { (prefix, suffix) -> ProxyTagDraft(prefix, suffix) }
-            MemberField.entries.zip(it).fold(MemberDraft("", "", "", "", "", "", "", tags)) { draft, (field, value) -> draft.with(field, value) }
+        values.takeIf { it.size > fields && (it.size - fields - 1) % 2 == 0 }?.let {
+            val tags = it.drop(fields + 1).chunked(2) { (prefix, suffix) -> ProxyTagDraft(prefix, suffix) }
+            val blank = MemberDraft("", "", "", "", "", "", "", tags, privateParts(it[fields]))
+            MemberField.entries.zip(it).fold(blank) { draft, (field, value) -> draft.with(field, value) }
         }
     },
 )
+
+private fun Set<MemberPrivacy>.toSaved() = joinToString(",") { it.apiKey }
+
+private fun privateParts(saved: String?) = saved.orEmpty().split(",").mapNotNullTo(HashSet()) { key ->
+    MemberPrivacy.entries.firstOrNull { it.apiKey == key }
+}
 
 // Ten fields, then each proxy tag's prefix and suffix.
 private val MemberSaver: Saver<Member?, Any> = listSaver(
     save = { m ->
         m?.let {
-            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.isPrivate.toString(), it.description, it.birthday) +
+            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.privateParts.toSaved(), it.description, it.birthday) +
                 it.proxyTags.flatMap { tag -> listOf(tag.prefix, tag.suffix) }
         }.orEmpty()
     },
     restore = { v ->
         v.takeIf { it.size >= 10 && (it.size - 10) % 2 == 0 }?.let {
             Member(
-                it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], isPrivate = it[7] == "true", description = it[8], birthday = it[9],
+                it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], privateParts = privateParts(it[7]), description = it[8], birthday = it[9],
                 proxyTags = it.drop(10).chunked(2) { (prefix, suffix) -> ProxyTag(prefix, suffix) },
             )
         }
