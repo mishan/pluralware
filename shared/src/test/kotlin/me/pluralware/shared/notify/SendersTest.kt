@@ -45,6 +45,8 @@ class SendersTest {
         assertEquals("/push/abc", request.path)
         assertEquals("aes128gcm", request.getHeader("Content-Encoding"))
         assertEquals("43200", request.getHeader("TTL"))
+        // The relay's pushes share it, so a correction replaces a mistake a push service still holds.
+        assertEquals("front", request.getHeader("Topic"))
         assertTrue(request.getHeader("Authorization")!!.startsWith("vapid t="))
         assertTrue(request.getHeader("User-Agent")!!.startsWith("PluralWare/9.9.9 "))
         assertEquals(512L, request.bodySize)
@@ -140,6 +142,18 @@ class SendersTest {
         )
         val paths = List(3) { server.takeRequest(1, TimeUnit.SECONDS)!!.path }.toSet()
         assertEquals(setOf("/push/sam", "/push/gone", "/"), paths)
+    }
+
+    @Test
+    fun `a correction goes to every friend, worded as one`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val kit = Friend.Simple("s1", "Kit", "pw_kit")
+        val config = SharingConfig(title = "Sample", friends = listOf(kit), ntfy = NtfyServer(server.url("/").toString()))
+
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http)).announceCorrection(config, null)
+
+        assertEquals(mapOf(kit to SendOutcome.Delivered), outcomes)
+        assertTrue("Correction: switched out" in server.takeRequest().body.readUtf8())
     }
 
     @Test

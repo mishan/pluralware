@@ -36,6 +36,9 @@ class WebPushSender(
                 .header("Content-Encoding", "aes128gcm")
                 .header("TTL", TTL_SECONDS.toString())
                 .header("Urgency", "normal")
+                // Shared with the relay's pushes: a push service holding an undelivered
+                // switch replaces it with the next, so a correction overtakes its mistake.
+                .header("Topic", TOPIC)
                 .header("Authorization", Vapid.authorization(code.endpoint, vapid, clock()))
                 .post(WebPushCrypto.encrypt(code, payload.toBytes()).toRequestBody(OCTET_STREAM))
                 .build()
@@ -51,6 +54,7 @@ class WebPushSender(
     private companion object {
         /** Twelve hours: an offline friend still gets the latest switch (§4.2). */
         const val TTL_SECONDS = 12 * 60 * 60
+        const val TOPIC = "front"
         val OCTET_STREAM = "application/octet-stream".toMediaType()
     }
 }

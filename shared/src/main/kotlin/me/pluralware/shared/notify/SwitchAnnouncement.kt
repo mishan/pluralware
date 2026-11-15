@@ -13,6 +13,21 @@ import me.pluralware.shared.ui.listOfNames
  */
 object SwitchAnnouncement {
 
+    /**
+     * Said when a fix changed who's fronting now: Simple-mode friends keep
+     * both messages, so this one says it replaces the other.
+     */
+    fun correction(front: Switch?, sharedMemberUuids: Set<String>): String {
+        val text = textOf(front, sharedMemberUuids)
+        // A name keeps its capital; "Someone…" and "Switched out" read on in lower case.
+        val named = front != null && front.members.any { it.uuid in sharedMemberUuids }
+        return "Correction: " + if (named) text else text.replaceFirstChar { it.lowercase() }
+    }
+
+    /** [text], with no switch at all reading as switched out. */
+    fun textOf(front: Switch?, sharedMemberUuids: Set<String>): String =
+        if (front == null) "Switched out" else text(front, sharedMemberUuids)
+
     fun text(switch: Switch, sharedMemberUuids: Set<String>): String {
         if (switch.isSwitchOut) return "Switched out"
         val named = switch.members.filter { it.uuid in sharedMemberUuids }.map { it.displayLabel }
@@ -50,6 +65,13 @@ data class SwitchPayload(
             system = title,
             text = SwitchAnnouncement.text(switch, sharedMemberUuids),
             switchedAt = switch.timestamp.toString(),
+        )
+
+        /** With nobody's switch left to date it ([front] null), it's dated [now]. */
+        fun correction(title: String, front: Switch?, sharedMemberUuids: Set<String>, now: Instant) = SwitchPayload(
+            system = title,
+            text = SwitchAnnouncement.correction(front, sharedMemberUuids),
+            switchedAt = (front?.timestamp ?: now).toString(),
         )
 
         fun fromBytes(bytes: ByteArray): SwitchPayload? =

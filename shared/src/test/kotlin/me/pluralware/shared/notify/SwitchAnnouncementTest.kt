@@ -39,6 +39,26 @@ class SwitchAnnouncementTest {
     @Test fun `nothing shared names nobody`() =
         assertEquals("Someone is fronting", text(alex, bea, shared = emptySet()))
 
+    @Test
+    fun `a correction with no switch left is dated when it's sent`() {
+        val now = Instant.parse("2026-11-14T12:00:00Z")
+
+        assertEquals(now.toString(), SwitchPayload.correction("Sample", null, emptySet(), now).switchedAt)
+    }
+
+    @Test
+    fun `a correction says it is one`() {
+        val shared = setOf(alex.uuid)
+        val cases = listOf(
+            Switch("s", Instant.EPOCH, listOf(alex)) to "Correction: Alex is fronting",
+            Switch("s", Instant.EPOCH, listOf(alex, hidden)) to "Correction: Alex and someone else are fronting",
+            Switch("s", Instant.EPOCH, listOf(hidden)) to "Correction: someone is fronting",
+            Switch("s", Instant.EPOCH, emptyList()) to "Correction: switched out",
+            null to "Correction: switched out",
+        )
+        for ((front, expected) in cases) assertEquals(expected, SwitchAnnouncement.correction(front, shared))
+    }
+
     @Test fun `payload carries title, text and switch time`() {
         val switch = Switch("s", Instant.parse("2026-09-27T14:02:00Z"), listOf(alex))
         val payload = SwitchPayload.of("Sample", switch, setOf(alex.uuid))

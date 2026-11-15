@@ -97,6 +97,8 @@ test('a new switch goes to every friend, each their own way', async () => {
 
   const push = sent.find((s) => s.url === 'https://push.example/sam');
   assert.equal(push.init.headers['content-encoding'], 'aes128gcm');
+  // The app's pushes share it, so its correction replaces a mistake a push service still holds.
+  assert.equal(push.init.headers.topic, 'front');
   assert.match(push.init.headers.authorization, /^vapid t=.+, k=.+$/);
   assert.equal(push.init.body.length, 512);
 

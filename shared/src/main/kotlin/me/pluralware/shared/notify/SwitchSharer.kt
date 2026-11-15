@@ -1,6 +1,7 @@
 package me.pluralware.shared.notify
 
 import java.security.GeneralSecurityException
+import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -20,8 +21,23 @@ class SwitchSharer(
         config: SharingConfig,
         switch: Switch,
         skipFriendIds: Set<String> = emptySet(),
+    ): Map<Friend, SendOutcome> =
+        sendAll(config, SwitchPayload.of(config.title, switch, config.sharedMemberUuids), skipFriendIds)
+
+    /** [front] is who's fronting after a fix changed it; null if no switch is left. */
+    suspend fun announceCorrection(
+        config: SharingConfig,
+        front: Switch?,
+        skipFriendIds: Set<String> = emptySet(),
+        now: Instant = Instant.now(),
+    ): Map<Friend, SendOutcome> =
+        sendAll(config, SwitchPayload.correction(config.title, front, config.sharedMemberUuids, now), skipFriendIds)
+
+    private suspend fun sendAll(
+        config: SharingConfig,
+        payload: SwitchPayload,
+        skipFriendIds: Set<String>,
     ): Map<Friend, SendOutcome> = coroutineScope {
-        val payload = SwitchPayload.of(config.title, switch, config.sharedMemberUuids)
         config.friends
             .filter { it.id !in skipFriendIds }
             .map { friend -> async { friend to sendTo(friend, config, payload) } }

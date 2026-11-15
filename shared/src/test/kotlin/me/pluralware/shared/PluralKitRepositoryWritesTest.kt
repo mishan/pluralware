@@ -29,11 +29,15 @@ class PluralKitRepositoryWritesTest {
 
     private val client = FlakyClient()
     private val corrected = mutableListOf<Switch?>()
+    private val replaced = mutableListOf<Switch?>()
     private val registered = mutableListOf<Switch>()
     private val edited = mutableListOf<Pair<Member, Set<MemberField>>>()
     private val repository = PluralKitRepository(
         client,
-        onFrontCorrected = { corrected += it },
+        onFrontCorrected = { before, after ->
+            replaced += before
+            corrected += after
+        },
         onMemberEdited = { member, fields -> edited += member to fields },
     ) { registered += it }
 
@@ -415,6 +419,31 @@ class PluralKitRepositoryWritesTest {
 
             assertEquals(what, listOf(client.pk.getCurrentFronters()), corrected)
         }
+    }
+
+    @Test
+    fun `a delete's correction that had to wait isn't sent about a switch made since`() = runTest {
+        client.failFetchesAfterWrite = 3
+        assertTrue(repository.deleteSwitch(history().first().uuid).isSuccess())
+        client.failFetchesAfterWrite = 0
+
+        // On the watch, in Discord: announced there already.
+        client.pk.registerSwitch(listOf(members()[2].uuid))
+        repository.refreshFronters()
+
+        assertEquals(emptyList<Switch?>(), corrected)
+    }
+
+    @Test
+    fun `a correction comes with the front it replaced, so friends needn't hear one they can't tell apart`() = runTest {
+        repository.refreshFronters()
+        val (latest, _) = history()
+        repository.setSwitchMembers(latest.uuid, listOf(members()[4].uuid))
+        val fixed = history().first()
+
+        repository.deleteSwitch(fixed.uuid)
+
+        assertEquals(listOf(latest, fixed), replaced)
     }
 
     @Test

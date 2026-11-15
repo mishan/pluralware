@@ -63,7 +63,7 @@ class SessionHolderTest {
     private fun TestScope.sessionMidWrite(holder: SessionHolder, corrected: MutableList<Switch?>): CompletableDeferred<Unit> {
         val client = FlakyClient()
         val session = holder.sessionFor(PluralKitToken("a")) {
-            PluralKitRepository(client, onFrontCorrected = { corrected += it })
+            PluralKitRepository(client, onFrontCorrected = { _, after -> corrected += after })
         }
         val hold = CompletableDeferred<Unit>()
         client.holdNextWrite = hold

@@ -45,12 +45,12 @@ import java.util.concurrent.atomic.AtomicInteger
 class PluralKitRepository(
     private val client: PluralKitClient,
     /**
-     * Called when an edit changed who's fronting now, with the corrected
-     * current switch: null when no switches are left. Decided from what
-     * PluralKit returned after the edit, never from a list the screen showed.
-     * Must not block; launch and return.
+     * Called when an edit changed who's fronting now, with the current switch
+     * before it (null if not known) and after it (null when no switches are
+     * left). Decided from what PluralKit returned after the edit, never from
+     * a list the screen showed. Must not block; launch and return.
      */
-    private val onFrontCorrected: (Switch?) -> Unit = {},
+    private val onFrontCorrected: (before: Switch?, after: Switch?) -> Unit = { _, _ -> },
     /** Called with a member as PluralKit has it after an edit made here, and the fields it changed. Must not block. */
     private val onMemberEdited: (Member, Set<MemberField>) -> Unit = { _, _ -> },
     /**
@@ -226,6 +226,7 @@ class PluralKitRepository(
         // Only a retry of a fix whose response was lost may take "already those members" as done.
         val retrying = unsettledFixes[uuid] == memberUuids
         unsettledFixes[uuid] = memberUuids
+        val before = _loadedFronters.value?.switch?.takeIf { it.uuid == uuid }
         val result = runCatchingPk {
             try {
                 sent { client.setSwitchMembers(uuid, memberUuids) }
@@ -236,7 +237,7 @@ class PluralKitRepository(
         }
         if (result is PkResult.Success || result.refusedByPluralKit()) unsettledFixes.remove(uuid)
         switchesMayHaveChanged(result)
-        if (result is PkResult.Success) afterWrite { front -> if (front?.uuid == uuid) onFrontCorrected(front) }
+        if (result is PkResult.Success) afterWrite { front -> if (front?.uuid == uuid) onFrontCorrected(before, front) }
         result
     }
 
@@ -246,9 +247,9 @@ class PluralKitRepository(
         var refused = false
         val result = runCatchingPk {
             // Asked fresh, not from a list on screen: someone may have switched since it loaded.
-            val isFront = client.getCurrentFronters()?.uuid == uuid
+            val front = client.getCurrentFronters()?.takeIf { it.uuid == uuid }
             // A retry finds the front already handed back if the first try landed; remember it was the front.
-            unsettledDeletes[uuid] = unsettledDeletes[uuid] == true || isFront
+            unsettledDeletes[uuid] = UnsettledDelete(unsettledDeletes[uuid]?.front ?: front)
             try {
                 sent { client.deleteSwitch(uuid) }
                 Deletion.Done
@@ -258,11 +259,18 @@ class PluralKitRepository(
                 if (retrying) Deletion.Done else Deletion.AlreadyGone
             }
         }
-        val wasFront = unsettledDeletes[uuid] == true
+        val deletedFront = unsettledDeletes[uuid]?.front
         // Settled only by the delete itself: a front check that failed sent nothing.
         if (result is PkResult.Success || refused) unsettledDeletes.remove(uuid)
         switchesMayHaveChanged(result)
-        if (result is PkResult.Success) afterWrite(if (wasFront) onFrontCorrected else null)
+        if (result is PkResult.Success) afterWrite(
+            deletedFront?.let { deleted ->
+                { front ->
+                    // A front that started after it was made since, elsewhere, and announced there.
+                    if (front == null || !front.timestamp.isAfter(deleted.timestamp)) onFrontCorrected(deleted, front)
+                }
+            },
+        )
         result
     }
 
@@ -276,7 +284,10 @@ class PluralKitRepository(
 
     // Writes whose response was lost, so it's not known whether they landed.
     private val unsettledFixes = ConcurrentHashMap<String, List<String>>()
-    private val unsettledDeletes = ConcurrentHashMap<String, Boolean>()
+    private val unsettledDeletes = ConcurrentHashMap<String, UnsettledDelete>()
+
+    /** [front]: the switch being deleted, if it was the current one. */
+    private class UnsettledDelete(val front: Switch?)
 
     // Corrections whose fetch after the write failed; the next fetch that works delivers them.
     private val pendingCorrections = ConcurrentLinkedQueue<(Switch?) -> Unit>()
