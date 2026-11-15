@@ -203,6 +203,7 @@ private fun MemberForm(
                 supportingText = when {
                     error != null -> { { Text(error) } }
                     field == MemberField.Description -> { { Text("${draft.description.trim().length} / ${field.maxLength}") } }
+                    field == MemberField.Birthday -> { { Text("YYYY-MM-DD, or MM-DD to leave out the year") } }
                     else -> null
                 },
                 singleLine = field != MemberField.Description,
@@ -302,12 +303,15 @@ private val MemberField.label: String
         MemberField.Color -> "Color (hex)"
         MemberField.Description -> "Description"
         MemberField.AvatarUrl -> "Avatar URL"
+        MemberField.Birthday -> "Birthday"
     }
 
 private val MemberField.keyboard: KeyboardOptions
     get() = when (this) {
         MemberField.Color -> KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false)
         MemberField.AvatarUrl -> KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false)
+        // Digits and a dash, which a phone keyboard has and a number keyboard may not.
+        MemberField.Birthday -> KeyboardOptions(keyboardType = KeyboardType.Phone, autoCorrectEnabled = false)
         MemberField.Description -> KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
         else -> KeyboardOptions(capitalization = KeyboardCapitalization.Words)
     }
@@ -319,21 +323,27 @@ private fun MemberDraft.with(field: MemberField, value: String) = when (field) {
     MemberField.Color -> copy(color = value)
     MemberField.Description -> copy(description = value)
     MemberField.AvatarUrl -> copy(avatarUrl = value)
+    MemberField.Birthday -> copy(birthday = value)
 }
 
 private val DraftSaver: Saver<MemberDraft?, Any> = listSaver(
     save = { draft -> draft?.let { d -> MemberField.entries.map { d[it] } }.orEmpty() },
-    restore = { values -> values.takeIf { it.size == MemberField.entries.size }?.let { MemberDraft(it[0], it[1], it[2], it[3], it[4], it[5]) } },
+    restore = { values ->
+        values.takeIf { it.size == MemberField.entries.size }?.let {
+            MemberField.entries.zip(it).fold(MemberDraft("", "", "", "", "", "", "")) { draft, (field, value) -> draft.with(field, value) }
+        }
+    },
 )
 
 private val MemberSaver: Saver<Member?, Any> = listSaver(
     save = { m ->
-        m?.let { listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.isPrivate.toString(), it.description) }
-            .orEmpty()
+        m?.let {
+            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.isPrivate.toString(), it.description, it.birthday)
+        }.orEmpty()
     },
     restore = { v ->
-        v.takeIf { it.size == 9 }?.let {
-            Member(it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], isPrivate = it[7] == "true", description = it[8])
+        v.takeIf { it.size == 10 }?.let {
+            Member(it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], isPrivate = it[7] == "true", description = it[8], birthday = it[9])
         }
     },
 )

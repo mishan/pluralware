@@ -10,6 +10,7 @@ enum class MemberField(val apiKey: String, val maxLength: Int?) {
     Color("color", null), // Six hex digits exactly; see [MemberEdit.validate].
     Description("description", 1000),
     AvatarUrl("avatar_url", 256),
+    Birthday("birthday", null), // A date; see [MemberEdit.normalize].
 }
 
 /** A member edit form's fields, exactly as typed. */
@@ -20,6 +21,7 @@ data class MemberDraft(
     val color: String,
     val description: String,
     val avatarUrl: String,
+    val birthday: String,
 ) {
     operator fun get(field: MemberField): String = when (field) {
         MemberField.Name -> name
@@ -28,6 +30,7 @@ data class MemberDraft(
         MemberField.Color -> color
         MemberField.Description -> description
         MemberField.AvatarUrl -> avatarUrl
+        MemberField.Birthday -> birthday
     }
 
     companion object {
@@ -38,6 +41,7 @@ data class MemberDraft(
             color = member.color.orEmpty(),
             description = member.description.orEmpty(),
             avatarUrl = member.avatarUrl.orEmpty(),
+            birthday = member.birthday.orEmpty().removePrefix(MemberEdit.NO_YEAR),
         )
     }
 }
@@ -49,12 +53,22 @@ data class MemberDraft(
  */
 object MemberEdit {
 
-    /** What is sent for [value]: trimmed, blank as cleared (null), colors without `#`, lowercase. */
+    /**
+     * What is sent for [value]: trimmed, blank as cleared (null), colors without `#`, lowercase,
+     * and a birthday typed without its year ("03-15") in year 4, as PluralKit keeps one.
+     */
     fun normalize(field: MemberField, value: String?): String? {
         val trimmed = value?.trim().orEmpty()
-        val stored = if (field == MemberField.Color) trimmed.removePrefix("#").trim().lowercase() else trimmed
+        val stored = when (field) {
+            MemberField.Color -> trimmed.removePrefix("#").trim().lowercase()
+            MemberField.Birthday -> if (MONTH_DAY.matches(trimmed)) NO_YEAR + trimmed else trimmed
+            else -> trimmed
+        }
         return stored.ifEmpty { null }
     }
+
+    /** The year PluralKit stores a birthday in when it has none: a leap year, so 02-29 fits. */
+    const val NO_YEAR = "0004-"
 
     /**
      * A message per field that would be sent ([changes]) and PluralKit would
@@ -73,6 +87,7 @@ object MemberEdit {
                 field.maxLength != null && value.length > field.maxLength -> "Up to ${field.maxLength} characters."
                 field == MemberField.AvatarUrl && value.toHttpUrlOrNull() == null ->
                     "A web address starting with https:// or http://."
+                field == MemberField.Birthday && !isDate(value) -> "A date like 2002-03-15, or 03-15 without the year."
                 else -> null
             }
             if (problem != null) put(field, problem)
@@ -94,6 +109,11 @@ object MemberEdit {
     }
 
     private val HEX_COLOR = Regex("^[0-9a-f]{6}$")
+    private val MONTH_DAY = Regex("^\\d{2}-\\d{2}$")
+    private val DATE = Regex("^\\d{4}-\\d{2}-\\d{2}$")
+
+    private fun isDate(value: String) =
+        DATE.matches(value) && runCatching { java.time.LocalDate.parse(value) }.isSuccess
 
     internal fun valueOf(member: Member, field: MemberField): String? = when (field) {
         MemberField.Name -> member.name
@@ -102,5 +122,6 @@ object MemberEdit {
         MemberField.Color -> member.color
         MemberField.Description -> member.description
         MemberField.AvatarUrl -> member.avatarUrl
+        MemberField.Birthday -> member.birthday
     }
 }

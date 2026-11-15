@@ -221,6 +221,7 @@ class RetrofitPluralKitClient internal constructor(
         avatarUrl = avatarUrl,
         isPrivate = privacy?.visibility == "private",
         description = description,
+        birthday = birthday,
     )
 
     private fun SwitchFullDto.toDomain() = Switch(

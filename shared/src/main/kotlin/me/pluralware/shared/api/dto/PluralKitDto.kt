@@ -44,6 +44,8 @@ internal data class MemberDto(
     val color: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     val description: String? = null,
+    /** "YYYY-MM-DD"; year 0004 when PluralKit keeps it without a year. */
+    val birthday: String? = null,
     /** Present only when the token owns the member; null otherwise. */
     val privacy: MemberPrivacyDto? = null,
 )

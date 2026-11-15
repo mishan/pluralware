@@ -17,6 +17,7 @@ class MemberEditTest {
         color = "e6a12b",
         avatarUrl = "https://example.com/alex.png",
         description = "Likes tea.",
+        birthday = "2002-03-15",
     )
 
     @Test
@@ -31,6 +32,10 @@ class MemberEditTest {
             Triple(MemberField.Color, "#", null),
             Triple(MemberField.Description, "\n Likes tea. \n", "Likes tea."),
             Triple(MemberField.Description, "line one\nline two", "line one\nline two"),
+            Triple(MemberField.Birthday, " 2002-03-15 ", "2002-03-15"),
+            // PluralKit keeps a birthday without its year as year 4, a leap year, so 02-29 fits.
+            Triple(MemberField.Birthday, "03-15", "0004-03-15"),
+            Triple(MemberField.Birthday, "", null),
         )
         for ((field, input, expected) in cases) {
             assertEquals("$field ${input?.let { "\"$it\"" }}", expected, MemberEdit.normalize(field, input))
@@ -71,6 +76,14 @@ class MemberEditTest {
             ok.copy(avatarUrl = "https://example.com/" + "a".repeat(236)) to emptySet<MemberField>(),
             ok.copy(avatarUrl = "https://example.com/" + "a".repeat(236) + "b") to setOf(MemberField.AvatarUrl),
             ok.copy(name = "", color = "red") to setOf(MemberField.Name, MemberField.Color),
+            ok.copy(birthday = "") to emptySet<MemberField>(),
+            ok.copy(birthday = "02-29") to emptySet<MemberField>(),
+            ok.copy(birthday = "2004-02-29") to emptySet<MemberField>(),
+            ok.copy(birthday = "2003-02-29") to setOf(MemberField.Birthday),
+            ok.copy(birthday = "2002-13-01") to setOf(MemberField.Birthday),
+            ok.copy(birthday = "15/03/2002") to setOf(MemberField.Birthday),
+            ok.copy(birthday = "3-15") to setOf(MemberField.Birthday),
+            ok.copy(birthday = "March 15") to setOf(MemberField.Birthday),
         )
         for ((draft, invalid) in cases) {
             val errors = MemberEdit.validate(alex, draft)
@@ -92,6 +105,8 @@ class MemberEditTest {
             untouched.copy(description = "   ") to mapOf(MemberField.Description to null),
             untouched.copy(color = "#FF0000", avatarUrl = "") to
                 mapOf(MemberField.Color to "ff0000", MemberField.AvatarUrl to null),
+            untouched.copy(birthday = "03-15") to mapOf(MemberField.Birthday to "0004-03-15"),
+            untouched.copy(birthday = "") to mapOf(MemberField.Birthday to null),
         )
         for ((draft, expected) in cases) {
             assertEquals(draft.toString(), expected, MemberEdit.changes(alex, draft))
@@ -112,6 +127,14 @@ class MemberEditTest {
         val fromPluralKit = alex.copy(color = "E6A12B", description = "Likes tea.  ", pronouns = "")
 
         assertEquals(emptyMap<MemberField, String?>(), MemberEdit.changes(fromPluralKit, MemberDraft.of(fromPluralKit)))
+    }
+
+    @Test
+    fun `a birthday kept without its year shows without it, and isn't taken for an edit`() {
+        val yearless = alex.copy(birthday = "0004-03-15")
+
+        assertEquals("03-15", MemberDraft.of(yearless).birthday)
+        assertEquals(emptyMap<MemberField, String?>(), MemberEdit.changes(yearless, MemberDraft.of(yearless)))
     }
 
     @Test
@@ -185,7 +208,11 @@ class MemberEditTest {
         // Sometimes a value PluralKit took that the phone's checks wouldn't: the edit must still go through.
         avatarUrl = listOf("https://example.com/a.png", null, "not a url").random(random),
         description = if (random.nextInt(10) == 0) "x".repeat(1200) else randomText(random),
+        birthday = randomBirthday(random),
     )
+
+    private fun randomBirthday(random: Random): String? =
+        listOf(null, "2002-03-15", "0004-02-29", "1999-12-31", "0004-07-04").random(random)
 
     /** Each field kept as is, re-typed with case or whitespace changes, or replaced. */
     private fun randomEdit(random: Random, member: Member): MemberDraft {
@@ -202,6 +229,7 @@ class MemberEditTest {
             color = keepOr(draft.color.let { if (random.nextBoolean()) it.uppercase() else it }) { randomColor(random) },
             description = keepOr(draft.description) { randomText(random) },
             avatarUrl = keepOr(draft.avatarUrl) { if (random.nextBoolean()) "https://example.com/b.png" else "" },
+            birthday = keepOr(draft.birthday) { listOf("", "03-15", "2001-01-01", "02-29").random(random) },
         )
     }
 }

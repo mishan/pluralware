@@ -45,7 +45,7 @@ class MemberScreensTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val members = PreviewData.members
-    private val alex = members[0].copy(description = "Likes tea.")
+    private val alex = members[0].copy(description = "Likes tea.", birthday = "0004-03-15")
     private val events = mutableListOf<String>()
     private val saves = mutableListOf<Pair<Member, MemberDraft>>()
 
@@ -339,6 +339,22 @@ class MemberScreensTest {
     }
 
     @Test
+    fun `a birthday shows without a year PluralKit doesn't keep, says how to write one, and must be a date`() {
+        showEditor(loaded())
+
+        field(MemberField.Birthday).assertTextContains("03-15")
+        compose.onNodeWithText("YYYY-MM-DD, or MM-DD to leave out the year").assertExists()
+
+        field(MemberField.Birthday).performTextReplacement("2003-02-29")
+        compose.onNodeWithText("A date like 2002-03-15, or 03-15 without the year.").assertExists()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+
+        field(MemberField.Birthday).performTextReplacement("2002-03-15")
+        compose.onNodeWithText("Save").performClick()
+        assertEquals(listOf(alex to MemberDraft.of(alex).copy(birthday = "2002-03-15")), saves)
+    }
+
+    @Test
     fun `the form, and the member as it was loaded, survive the process being stopped`() {
         val restore = StateRestorationTester(compose)
         var state by mutableStateOf(loaded())
@@ -352,6 +368,6 @@ class MemberScreensTest {
 
         field(MemberField.Pronouns).assertTextContains("xe/xem")
         compose.onNodeWithText("Save").performClick()
-        assertEquals(alex, saves.single().first)
+        assertEquals(alex to MemberDraft.of(alex).copy(pronouns = "xe/xem"), saves.single())
     }
 }

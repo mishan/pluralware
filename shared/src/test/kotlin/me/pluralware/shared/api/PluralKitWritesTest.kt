@@ -29,7 +29,7 @@ class PluralKitWritesTest {
 
     private fun RecordedRequest.json() = Json.parseToJsonElement(body.readUtf8())
 
-    private val alexJson = """{"id":"abcde","uuid":"uuid-alex","name":"Alexis","pronouns":"she/her","color":"e6a12b"}"""
+    private val alexJson = """{"id":"abcde","uuid":"uuid-alex","name":"Alexis","pronouns":"she/her","color":"e6a12b","birthday":"0004-03-15"}"""
     private val switchJson = """{"id":"uuid-sw","timestamp":"2026-11-13T14:00:00Z","members":[$alexJson]}"""
 
     @Test
@@ -40,6 +40,7 @@ class PluralKitWritesTest {
             mapOf(MemberField.Name to "Alexis", MemberField.Color to "e6a12b", MemberField.Description to null) to
                 """{"name":"Alexis","color":"e6a12b","description":null}""",
             mapOf(MemberField.AvatarUrl to "https://example.com/a.png") to """{"avatar_url":"https://example.com/a.png"}""",
+            mapOf(MemberField.Birthday to "0004-03-15") to """{"birthday":"0004-03-15"}""",
         )
         for ((changes, expected) in cases) {
             respond(body = alexJson)
@@ -53,6 +54,7 @@ class PluralKitWritesTest {
             assertEquals("application/json", request.getHeader("Content-Type")?.substringBefore(";"))
             assertEquals(changes.toString(), Json.parseToJsonElement(expected), request.json())
             assertEquals("Alexis", member.name)
+            assertEquals("0004-03-15", member.birthday)
         }
     }
 

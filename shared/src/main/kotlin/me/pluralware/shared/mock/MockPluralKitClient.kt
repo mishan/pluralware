@@ -96,6 +96,7 @@ class MockPluralKitClient(
                 MemberField.Color -> member.copy(color = value)
                 MemberField.Description -> member.copy(description = value)
                 MemberField.AvatarUrl -> member.copy(avatarUrl = value)
+                MemberField.Birthday -> member.copy(birthday = value)
             }
         }
         members[index] = updated
