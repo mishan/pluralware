@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
@@ -56,6 +57,27 @@ class PluralKitWritesTest {
             assertEquals("Alexis", member.name)
             assertEquals("0004-03-15", member.birthday)
         }
+    }
+
+    @Test
+    fun `proxy tags are sent whole, with the other changes, and read back`() = runTest {
+        respond(body = alexJson.dropLast(1) + ""","proxy_tags":[{"prefix":"[","suffix":"]"},{"prefix":null,"suffix":"-a"}]}""")
+
+        val member = client.updateMember(
+            "uuid-alex",
+            mapOf(MemberField.Pronouns to "she/her"),
+            proxyTags = listOf(ProxyTag("[", "]"), ProxyTag(null, "-a")),
+        )
+
+        assertEquals(
+            Json.parseToJsonElement("""{"pronouns":"she/her","proxy_tags":[{"prefix":"[","suffix":"]"},{"prefix":null,"suffix":"-a"}]}"""),
+            server.takeRequest().json(),
+        )
+        assertEquals(listOf(ProxyTag("[", "]"), ProxyTag(null, "-a")), member.proxyTags)
+
+        respond(body = alexJson)
+        client.updateMember("uuid-alex", emptyMap(), proxyTags = emptyList())
+        assertEquals("clearing them", Json.parseToJsonElement("""{"proxy_tags":[]}"""), server.takeRequest().json())
     }
 
     @Test

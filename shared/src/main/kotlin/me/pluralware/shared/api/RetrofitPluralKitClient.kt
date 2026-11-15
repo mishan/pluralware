@@ -16,6 +16,7 @@ import me.pluralware.shared.api.dto.SwitchRefsDto
 import me.pluralware.shared.api.dto.SystemDto
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import retrofit2.HttpException
@@ -121,9 +122,12 @@ class RetrofitPluralKitClient internal constructor(
         return switch
     }
 
-    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member {
-        require(changes.isNotEmpty()) { "An edit that changes nothing isn't sent" }
-        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) })
+    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
+        require(changes.isNotEmpty() || proxyTags != null) { "An edit that changes nothing isn't sent" }
+        val tags = proxyTags?.let { list ->
+            "proxy_tags" to JsonArray(list.map { JsonObject(mapOf("prefix" to JsonPrimitive(it.prefix), "suffix" to JsonPrimitive(it.suffix))) })
+        }
+        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags))
         // History resolves members from the lookup cache; keep the edit visible there.
         return http { api.updateMember(uuid, body) }.toDomain().also { remember(listOf(it)) }
     }
@@ -222,6 +226,7 @@ class RetrofitPluralKitClient internal constructor(
         isPrivate = privacy?.visibility == "private",
         description = description,
         birthday = birthday,
+        proxyTags = proxyTags.map { ProxyTag(it.prefix, it.suffix) },
     )
 
     private fun SwitchFullDto.toDomain() = Switch(

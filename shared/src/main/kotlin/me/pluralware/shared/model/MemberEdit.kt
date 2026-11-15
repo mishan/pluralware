@@ -22,6 +22,7 @@ data class MemberDraft(
     val description: String,
     val avatarUrl: String,
     val birthday: String,
+    val proxyTags: List<ProxyTagDraft>,
 ) {
     operator fun get(field: MemberField): String = when (field) {
         MemberField.Name -> name
@@ -42,9 +43,13 @@ data class MemberDraft(
             description = member.description.orEmpty(),
             avatarUrl = member.avatarUrl.orEmpty(),
             birthday = member.birthday.orEmpty().removePrefix(MemberEdit.NO_YEAR),
+            proxyTags = member.proxyTags.map { ProxyTagDraft(it.prefix.orEmpty(), it.suffix.orEmpty()) },
         )
     }
 }
+
+/** A proxy tag's fields, exactly as typed. */
+data class ProxyTagDraft(val prefix: String, val suffix: String)
 
 /**
  * Turns a member edit into what PluralKit is sent. The only place a member
@@ -107,6 +112,35 @@ object MemberEdit {
             }
         }
     }
+
+    /**
+     * All of [draft]'s proxy tags, or null when they're as [original] has them:
+     * PluralKit replaces the whole list. Not trimmed, since a tag's spaces are
+     * matched too.
+     */
+    fun proxyTagChanges(original: Member, draft: MemberDraft): List<ProxyTag>? {
+        val tags = draft.proxyTags.map { ProxyTag(it.prefix.ifEmpty { null }, it.suffix.ifEmpty { null }) }
+        return tags.takeIf { it != original.proxyTags.map { tag -> ProxyTag(tag.prefix?.ifEmpty { null }, tag.suffix?.ifEmpty { null }) } }
+    }
+
+    /** Whether [draft] can be sent: no field [validate] objects to, and no [proxyTagProblem]. */
+    fun isValid(original: Member, draft: MemberDraft) =
+        validate(original, draft).isEmpty() && proxyTagProblem(original, draft) == null
+
+    /** Why PluralKit would refuse [draft]'s proxy tags, if they changed; null if it wouldn't. */
+    fun proxyTagProblem(original: Member, draft: MemberDraft): String? {
+        val tags = proxyTagChanges(original, draft) ?: return null
+        return when {
+            tags.any { it.prefix == null && it.suffix == null } -> "Each proxy tag needs a prefix or a suffix."
+            tags.any { it.prefix.orEmpty().length + it.suffix.orEmpty().length > MAX_PROXY_TAG } ->
+                "A proxy tag's prefix and suffix can be up to $MAX_PROXY_TAG characters together."
+            tags.toSet().size < tags.size -> "Two proxy tags are the same."
+            else -> null
+        }
+    }
+
+    // PluralKit takes prefix + "text" + suffix up to 100 characters.
+    private const val MAX_PROXY_TAG = 96
 
     private val HEX_COLOR = Regex("^[0-9a-f]{6}$")
     private val MONTH_DAY = Regex("^\\d{2}-\\d{2}$")
