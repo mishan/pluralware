@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.model.Switch
 
 /**
@@ -83,11 +85,14 @@ class SwitchAnnouncer(
             return record(store, now) { config, skip -> sharer.announce(config, switch, skipFriendIds = skip) }
         }
 
+        // One send at a time, retries included, so a correction can't land before the mistake it corrects.
+        private val sending = Mutex()
+
         private suspend fun record(
             store: SharingStore,
             now: Long,
             send: suspend (SharingConfig, Set<String>) -> Map<Friend, SendOutcome>,
-        ): Boolean {
+        ): Boolean = sending.withLock {
             val config = store.configFlow.value
             val before = store.goneFlow.value
             val skip = GoneFriends.toSkip(GoneFriends.merged(before, store.peerGoneFlow.value), now)
@@ -101,7 +106,7 @@ class SwitchAnnouncer(
                 .mapTo(HashSet()) { it.id }.filterTo(HashSet()) { it in before }
             if (gone.isNotEmpty()) store.markGone(gone, now)
             if (back.isNotEmpty()) store.clearGone(back)
-            return store.goneFlow.value != before
+            store.goneFlow.value != before
         }
     }
 }

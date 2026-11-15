@@ -4,6 +4,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import me.pluralware.shared.preview.PreviewData
 import org.junit.Assert.assertEquals
@@ -80,6 +81,32 @@ class SwitchAnnouncerTest {
 
         coVerify { sharer.announceCorrection(config.copy(relay = relay), null, setOf("s2"), any()) }
         assertTrue("its gone friends are recorded too", changed)
+    }
+
+    @Test
+    fun `a correction waits for an announcement still being sent, so the mistake can't land last`() = runTest {
+        val store = InMemorySharingStore(config)
+        val announcing = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val order = mutableListOf<String>()
+        coEvery { sharer.announce(any(), any(), any()) } coAnswers {
+            announcing.await()
+            order += "announced"
+            emptyMap()
+        }
+        coEvery { sharer.announceCorrection(any(), any(), any(), any()) } coAnswers {
+            order += "corrected"
+            emptyMap()
+        }
+
+        val first = launch { SwitchAnnouncer.announce(store, sharer, switch, now) }
+        testScheduler.runCurrent()
+        val second = launch { SwitchAnnouncer.correct(store, sharer, null, switch, now) }
+        testScheduler.runCurrent()
+        announcing.complete(Unit)
+        first.join()
+        second.join()
+
+        assertEquals(listOf("announced", "corrected"), order)
     }
 
     @Test

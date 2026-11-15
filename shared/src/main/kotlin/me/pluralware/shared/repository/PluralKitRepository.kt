@@ -224,9 +224,11 @@ class PluralKitRepository(
     /** Sets a switch's members, first as primary. An unchanged list is refused (40004). */
     suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): PkResult<Unit> = detached {
         // Only a retry of a fix whose response was lost may take "already those members" as done.
-        val retrying = unsettledFixes[uuid] == memberUuids
-        unsettledFixes[uuid] = memberUuids
-        val before = _loadedFronters.value?.switch?.takeIf { it.uuid == uuid }
+        val earlier = unsettledFixes[uuid]
+        val retrying = earlier?.members == memberUuids
+        // A refresh since a lost try may already show the fix: keep the front from before it.
+        val before = if (retrying) earlier?.before else _loadedFronters.value?.switch?.takeIf { it.uuid == uuid }
+        unsettledFixes[uuid] = UnsettledFix(memberUuids, before)
         val result = runCatchingPk {
             try {
                 sent { client.setSwitchMembers(uuid, memberUuids) }
@@ -283,8 +285,11 @@ class PluralKitRepository(
     private val writeScope = CoroutineScope(SupervisorJob())
 
     // Writes whose response was lost, so it's not known whether they landed.
-    private val unsettledFixes = ConcurrentHashMap<String, List<String>>()
+    private val unsettledFixes = ConcurrentHashMap<String, UnsettledFix>()
     private val unsettledDeletes = ConcurrentHashMap<String, UnsettledDelete>()
+
+    /** [before]: the current switch the fix started from, if it was this one. */
+    private class UnsettledFix(val members: List<String>, val before: Switch?)
 
     /** [front]: the switch being deleted, if it was the current one. */
     private class UnsettledDelete(val front: Switch?)

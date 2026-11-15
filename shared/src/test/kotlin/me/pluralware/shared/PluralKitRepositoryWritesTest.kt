@@ -447,6 +447,20 @@ class PluralKitRepositoryWritesTest {
     }
 
     @Test
+    fun `a members fix retried after its response was lost still knows the front it replaced`() = runTest {
+        repository.refreshFronters()
+        val latest = history().first()
+        val fix = listOf(members()[4].uuid)
+        client.loseNextResponse = true
+        repository.setSwitchMembers(latest.uuid, fix)
+        repository.refreshFronters()
+
+        assertTrue(repository.setSwitchMembers(latest.uuid, fix).isSuccess())
+
+        assertEquals(listOf(latest), replaced)
+    }
+
+    @Test
     fun `the fetch after a write is retried only for failures that might pass`() = runTest {
         val cases = listOf(
             PluralKitHttpException(401, "Unauthorized") to 1,
