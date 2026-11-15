@@ -5,6 +5,7 @@ import me.pluralware.shared.api.PluralKitClient
 import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 import me.pluralware.shared.model.SystemInfo
 import java.time.Instant
@@ -82,8 +83,8 @@ class MockPluralKitClient(
         return newSwitch.resolved()
     }
 
-    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member {
-        require(changes.isNotEmpty()) { "An edit that changes nothing isn't sent" }
+    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
+        require(changes.isNotEmpty() || proxyTags != null) { "An edit that changes nothing isn't sent" }
         delayLike()
         val index = members.indexOfFirst { it.uuid == uuid }
         if (index < 0) throw refused(404, 20002, "Member not found.")
@@ -99,8 +100,8 @@ class MockPluralKitClient(
                 MemberField.Birthday -> member.copy(birthday = value)
             }
         }
-        members[index] = updated
-        return updated
+        members[index] = if (proxyTags != null) updated.copy(proxyTags = proxyTags) else updated
+        return members[index]
     }
 
     override suspend fun moveSwitch(uuid: String, to: Instant): Switch {

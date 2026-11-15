@@ -17,6 +17,8 @@ import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
+import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 import org.junit.After
@@ -34,14 +36,16 @@ class MemberEditorViewModelTest {
     private class RecordingClient(val pk: MockPluralKitClient = MockPluralKitClient(artificialLatencyMillis = 0)) :
         PluralKitClient by pk {
         val edits = mutableListOf<Map<MemberField, String?>>()
+        val tagEdits = mutableListOf<List<ProxyTag>?>()
         var editFailure: Exception? = null
         var holdEdit: CompletableDeferred<Unit>? = null
 
-        override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>): Member {
+        override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?): Member {
             edits += changes
+            tagEdits += proxyTags
             holdEdit?.await()
             editFailure?.let { throw it }
-            return pk.updateMember(uuid, changes)
+            return pk.updateMember(uuid, changes, proxyTags)
         }
     }
 
@@ -91,6 +95,20 @@ class MemberEditorViewModelTest {
         assertEquals(listOf(mapOf(MemberField.Pronouns to "xe/xem", MemberField.Color to "abcdef")), client.edits)
         assertTrue(vm.state.value.saved)
         assertEquals(alex.copy(pronouns = "xe/xem", color = "abcdef"), client.pk.getOwnMembers().first())
+    }
+
+    @Test
+    fun `proxy tags alone are an edit, and a tag PluralKit would refuse isn't sent`() = runTest {
+        val vm = editor()
+        vm.save(alex, MemberDraft.of(alex).copy(proxyTags = listOf(ProxyTagDraft("", ""))))
+        assertEquals("refused before sending", emptyList<List<ProxyTag>?>(), client.tagEdits)
+
+        vm.save(alex, MemberDraft.of(alex).copy(proxyTags = listOf(ProxyTagDraft("[", "]"))))
+
+        assertEquals(listOf(emptyMap<MemberField, String?>()), client.edits)
+        assertEquals(listOf(listOf(ProxyTag("[", "]"))), client.tagEdits)
+        assertTrue(vm.state.value.saved)
+        assertEquals(listOf(ProxyTag("[", "]")), client.pk.getOwnMembers().first().proxyTags)
     }
 
     @Test

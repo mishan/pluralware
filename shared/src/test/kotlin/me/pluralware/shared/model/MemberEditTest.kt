@@ -18,6 +18,7 @@ class MemberEditTest {
         avatarUrl = "https://example.com/alex.png",
         description = "Likes tea.",
         birthday = "2002-03-15",
+        proxyTags = listOf(ProxyTag("[", "]"), ProxyTag("A:", null)),
     )
 
     @Test
@@ -138,6 +139,44 @@ class MemberEditTest {
     }
 
     @Test
+    fun `proxy tags are sent whole, and only when they changed`() {
+        val untouched = MemberDraft.of(alex)
+        val cases = listOf(
+            untouched.proxyTags to null,
+            untouched.proxyTags.reversed() to listOf(ProxyTag("A:", null), ProxyTag("[", "]")),
+            untouched.proxyTags + ProxyTagDraft("", "-a") to listOf(ProxyTag("[", "]"), ProxyTag("A:", null), ProxyTag(null, "-a")),
+            // Spaces are part of a tag, as PluralKit matches them.
+            listOf(ProxyTagDraft("A: ", "")) to listOf(ProxyTag("A: ", null)),
+            emptyList<ProxyTagDraft>() to emptyList(),
+        )
+        for ((tags, expected) in cases) {
+            assertEquals(tags.toString(), expected, MemberEdit.proxyTagChanges(alex, untouched.copy(proxyTags = tags)))
+        }
+        // PluralKit keeps an empty part as null; a "" from anywhere is the same tag.
+        val withEmpty = alex.copy(proxyTags = listOf(ProxyTag("A:", "")))
+        assertEquals(null, MemberEdit.proxyTagChanges(withEmpty, MemberDraft.of(withEmpty)))
+    }
+
+    @Test
+    fun `proxy tags PluralKit would refuse are caught, unless they're as PluralKit has them`() {
+        val ok = MemberDraft.of(alex)
+        val cases = listOf(
+            ok.proxyTags to null,
+            listOf(ProxyTagDraft("", "")) to "Each proxy tag needs a prefix or a suffix.",
+            // PluralKit takes prefix + "text" + suffix up to 100 characters.
+            listOf(ProxyTagDraft("x".repeat(50), "y".repeat(46))) to null,
+            listOf(ProxyTagDraft("x".repeat(50), "y".repeat(47))) to
+                "A proxy tag's prefix and suffix can be up to 96 characters together.",
+            listOf(ProxyTagDraft("[", "]"), ProxyTagDraft("[", "]")) to "Two proxy tags are the same.",
+        )
+        for ((tags, expected) in cases) {
+            assertEquals(tags.toString(), expected, MemberEdit.proxyTagProblem(alex, ok.copy(proxyTags = tags)))
+        }
+        val stored = alex.copy(proxyTags = listOf(ProxyTag("x".repeat(99), null)))
+        assertEquals(null, MemberEdit.proxyTagProblem(stored, MemberDraft.of(stored)))
+    }
+
+    @Test
     fun `an invalid draft is refused rather than sent`() {
         assertThrows(IllegalArgumentException::class.java) {
             MemberEdit.changes(alex, MemberDraft.of(alex).copy(name = ""))
@@ -230,6 +269,7 @@ class MemberEditTest {
             description = keepOr(draft.description) { randomText(random) },
             avatarUrl = keepOr(draft.avatarUrl) { if (random.nextBoolean()) "https://example.com/b.png" else "" },
             birthday = keepOr(draft.birthday) { listOf("", "03-15", "2001-01-01", "02-29").random(random) },
+            proxyTags = draft.proxyTags,
         )
     }
 }

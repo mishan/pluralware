@@ -8,6 +8,7 @@ import me.pluralware.shared.api.PluralKitHttpException
 import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.Switch
 
 /** The mock PluralKit, plus the failures a phone on a real network meets. */
@@ -67,8 +68,8 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
         return result
     }
 
-    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>) =
-        write { pk.updateMember(uuid, changes) }
+    override suspend fun updateMember(uuid: String, changes: Map<MemberField, String?>, proxyTags: List<ProxyTag>?) =
+        write { pk.updateMember(uuid, changes, proxyTags) }
     override suspend fun moveSwitch(uuid: String, to: Instant) = write { pk.moveSwitch(uuid, to) }
     override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>) =
         write { pk.setSwitchMembers(uuid, memberUuids) }

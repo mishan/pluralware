@@ -64,15 +64,16 @@ class MemberEditorViewModel(
     /** Sends the fields of [draft] that differ from [original], the member as the form loaded it. */
     fun save(original: Member, draft: MemberDraft) {
         val now = _state.value
-        if (now.saving || now.saved || MemberEdit.validate(original, draft).isNotEmpty()) return
+        if (now.saving || now.saved || !MemberEdit.isValid(original, draft)) return
         val changes = MemberEdit.changes(original, draft)
-        if (changes.isEmpty()) {
+        val proxyTags = MemberEdit.proxyTagChanges(original, draft)
+        if (changes.isEmpty() && proxyTags == null) {
             _state.update { it.copy(saved = true) }
             return
         }
         _state.update { it.copy(saving = true, saveError = null, fieldErrors = emptyMap()) }
         viewModelScope.launch {
-            when (val result = repository.updateMember(uuid, changes)) {
+            when (val result = repository.updateMember(uuid, changes, proxyTags)) {
                 is PkResult.Success -> _state.update { it.copy(saving = false, saved = true) }
                 is PkResult.Failure -> _state.update { failed(it.copy(saving = false), result) }
             }

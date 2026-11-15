@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -16,8 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -33,6 +38,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -57,6 +63,8 @@ import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberEdit
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
+import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 
@@ -95,9 +103,10 @@ internal fun MemberEditorContent(
     }
     val from = original
     val form = draft
-    val changed = from != null && form != null && MemberField.entries.any {
-        MemberEdit.normalize(it, form[it]) != MemberEdit.normalize(it, MemberDraft.of(from)[it])
-    }
+    val changed = from != null && form != null && (
+        MemberField.entries.any { MemberEdit.normalize(it, form[it]) != MemberEdit.normalize(it, MemberDraft.of(from)[it]) } ||
+            MemberEdit.proxyTagChanges(from, form) != null
+        )
 
     var confirmingDiscard by rememberSaveable { mutableStateOf(false) }
     var confirmingLeaveWhileSaving by rememberSaveable { mutableStateOf(false) }
@@ -115,7 +124,7 @@ internal fun MemberEditorContent(
         topBar = { BackTopBar(from?.let { "Edit ${it.displayLabel}" } ?: "Edit member", onBack = leave) },
         bottomBar = {
             if (from != null && form != null) {
-                SaveBar(state, enabled = changed && MemberEdit.validate(from, form).isEmpty(), { onSave(from, form) }, onSignOut)
+                SaveBar(state, enabled = changed && MemberEdit.isValid(from, form), { onSave(from, form) }, onSignOut)
             }
         },
     ) { padding ->
@@ -129,6 +138,7 @@ internal fun MemberEditorContent(
                     draft = form.with(field, value)
                     onEdited(field)
                 },
+                onTagsChange = { draft = form.copy(proxyTags = it) },
                 modifier = modifier,
             )
             state.member is UiState.Error -> ErrorView(state.member, onRetry = onRetry, onSignOut = onSignOut, modifier = modifier)
@@ -171,6 +181,7 @@ private fun MemberForm(
     original: Member,
     draft: MemberDraft,
     onChange: (MemberField, String) -> Unit,
+    onTagsChange: (List<ProxyTagDraft>) -> Unit,
     modifier: Modifier,
 ) {
     val problems = MemberEdit.validate(original, draft)
@@ -218,7 +229,47 @@ private fun MemberForm(
                 ),
             )
         }
+        ProxyTags(draft.proxyTags, MemberEdit.proxyTagProblem(original, draft), enabled = !state.saving, onChange = onTagsChange)
     }
+}
+
+/** Each tag as prefix, "text", suffix: how a message is marked as this member's in Discord. */
+@Composable
+private fun ProxyTags(tags: List<ProxyTagDraft>, problem: String?, enabled: Boolean, onChange: (List<ProxyTagDraft>) -> Unit) {
+    Text("Proxy tags", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    tags.forEachIndexed { i, tag ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val tagKeyboard = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next)
+            OutlinedTextField(
+                value = tag.prefix,
+                onValueChange = { onChange(tags.toMutableList().apply { set(i, tag.copy(prefix = it)) }) },
+                enabled = enabled,
+                label = { Text("Prefix") },
+                singleLine = true,
+                keyboardOptions = tagKeyboard,
+                modifier = Modifier.weight(1f).testTag("proxy-prefix-$i"),
+            )
+            Text("text", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(
+                value = tag.suffix,
+                onValueChange = { onChange(tags.toMutableList().apply { set(i, tag.copy(suffix = it)) }) },
+                enabled = enabled,
+                label = { Text("Suffix") },
+                singleLine = true,
+                keyboardOptions = tagKeyboard,
+                modifier = Modifier.weight(1f).testTag("proxy-suffix-$i"),
+            )
+            IconButton(
+                onClick = { onChange(tags.filterIndexed { j, _ -> j != i }) },
+                enabled = enabled,
+                modifier = Modifier.testTag("proxy-remove-$i"),
+            ) { Icon(Icons.Filled.Close, contentDescription = "Remove proxy tag ${i + 1}") }
+        }
+    }
+    if (problem != null) {
+        Text(problem, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    TextButton(onClick = { onChange(tags + ProxyTagDraft("", "")) }, enabled = enabled) { Text("Add proxy tag") }
 }
 
 /** Pinned to the bottom, above the keyboard while it's open, so Save is always in reach. */
@@ -326,24 +377,34 @@ private fun MemberDraft.with(field: MemberField, value: String) = when (field) {
     MemberField.Birthday -> copy(birthday = value)
 }
 
+// The text fields in order, then each proxy tag's prefix and suffix.
 private val DraftSaver: Saver<MemberDraft?, Any> = listSaver(
-    save = { draft -> draft?.let { d -> MemberField.entries.map { d[it] } }.orEmpty() },
+    save = { draft ->
+        draft?.let { d -> MemberField.entries.map { d[it] } + d.proxyTags.flatMap { listOf(it.prefix, it.suffix) } }.orEmpty()
+    },
     restore = { values ->
-        values.takeIf { it.size == MemberField.entries.size }?.let {
-            MemberField.entries.zip(it).fold(MemberDraft("", "", "", "", "", "", "")) { draft, (field, value) -> draft.with(field, value) }
+        val fields = MemberField.entries.size
+        values.takeIf { it.size >= fields && (it.size - fields) % 2 == 0 }?.let {
+            val tags = it.drop(fields).chunked(2) { (prefix, suffix) -> ProxyTagDraft(prefix, suffix) }
+            MemberField.entries.zip(it).fold(MemberDraft("", "", "", "", "", "", "", tags)) { draft, (field, value) -> draft.with(field, value) }
         }
     },
 )
 
+// Ten fields, then each proxy tag's prefix and suffix.
 private val MemberSaver: Saver<Member?, Any> = listSaver(
     save = { m ->
         m?.let {
-            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.isPrivate.toString(), it.description, it.birthday)
+            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.isPrivate.toString(), it.description, it.birthday) +
+                it.proxyTags.flatMap { tag -> listOf(tag.prefix, tag.suffix) }
         }.orEmpty()
     },
     restore = { v ->
-        v.takeIf { it.size == 10 }?.let {
-            Member(it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], isPrivate = it[7] == "true", description = it[8], birthday = it[9])
+        v.takeIf { it.size >= 10 && (it.size - 10) % 2 == 0 }?.let {
+            Member(
+                it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], isPrivate = it[7] == "true", description = it[8], birthday = it[9],
+                proxyTags = it.drop(10).chunked(2) { (prefix, suffix) -> ProxyTag(prefix, suffix) },
+            )
         }
     },
 )

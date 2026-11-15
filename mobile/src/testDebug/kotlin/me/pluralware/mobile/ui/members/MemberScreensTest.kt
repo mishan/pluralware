@@ -23,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import me.pluralware.mobile.ui.theme.PluralWareTheme
 import kotlinx.coroutines.runBlocking
@@ -30,6 +31,8 @@ import me.pluralware.shared.mock.MockPluralKitClient
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberField
+import me.pluralware.shared.model.ProxyTag
+import me.pluralware.shared.model.ProxyTagDraft
 import me.pluralware.shared.preview.PreviewData
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
@@ -45,7 +48,11 @@ class MemberScreensTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val members = PreviewData.members
-    private val alex = members[0].copy(description = "Likes tea.", birthday = "0004-03-15")
+    private val alex = members[0].copy(
+        description = "Likes tea.",
+        birthday = "0004-03-15",
+        proxyTags = listOf(ProxyTag("[", "]")),
+    )
     private val events = mutableListOf<String>()
     private val saves = mutableListOf<Pair<Member, MemberDraft>>()
 
@@ -238,6 +245,41 @@ class MemberScreensTest {
 
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
         for (f in MemberField.entries) field(f).assertIsNotEnabled()
+        tag("prefix", 0).assertIsNotEnabled()
+        tag("remove", 0).assertIsNotEnabled()
+        compose.onNodeWithText("Add proxy tag").performScrollTo().assertIsNotEnabled()
+    }
+
+    private fun tag(part: String, index: Int) = compose.onNodeWithTag("proxy-$part-$index").performScrollTo()
+
+    @Test
+    fun `proxy tags can be added, changed and removed, and are saved whole`() {
+        showEditor(loaded())
+
+        tag("prefix", 0).assertTextContains("[")
+        compose.onNodeWithText("Add proxy tag").performScrollTo().performClick()
+        tag("suffix", 1).performTextReplacement("-a")
+        tag("prefix", 0).performTextReplacement("{")
+        tag("suffix", 0).performTextReplacement("}")
+        compose.onNodeWithText("Add proxy tag").performScrollTo().performClick()
+        tag("prefix", 2).performTextReplacement("gone")
+        tag("remove", 2).performClick()
+        compose.onNodeWithText("Save").performClick()
+
+        val tags = listOf(ProxyTagDraft("{", "}"), ProxyTagDraft("", "-a"))
+        assertEquals(listOf(alex to MemberDraft.of(alex).copy(proxyTags = tags)), saves)
+    }
+
+    @Test
+    fun `a proxy tag PluralKit would refuse blocks Save, saying why`() {
+        showEditor(loaded())
+
+        compose.onNodeWithText("Add proxy tag").performScrollTo().performClick()
+
+        compose.onNodeWithText("Each proxy tag needs a prefix or a suffix.").assertExists()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        tag("prefix", 1).performTextReplacement("A:")
+        compose.onNodeWithText("Save").assertIsEnabled()
     }
 
     @Test
@@ -360,6 +402,7 @@ class MemberScreensTest {
         var state by mutableStateOf(loaded())
         restore.setContent { PluralWareTheme { editor(state) } }
         field(MemberField.Pronouns).performTextReplacement("xe/xem")
+        tag("prefix", 0).performTextReplacement("{")
 
         // Back in, the screen loads afresh and finds the member edited elsewhere meanwhile.
         state = EditorState()
@@ -368,6 +411,7 @@ class MemberScreensTest {
 
         field(MemberField.Pronouns).assertTextContains("xe/xem")
         compose.onNodeWithText("Save").performClick()
-        assertEquals(alex to MemberDraft.of(alex).copy(pronouns = "xe/xem"), saves.single())
+        val tags = listOf(ProxyTagDraft("{", "]"))
+        assertEquals(alex to MemberDraft.of(alex).copy(pronouns = "xe/xem", proxyTags = tags), saves.single())
     }
 }

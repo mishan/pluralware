@@ -24,10 +24,14 @@ data class Member(
     val description: String? = null,
     /** "YYYY-MM-DD"; year 0004 means PluralKit keeps it without a year. */
     val birthday: String? = null,
+    val proxyTags: List<ProxyTag> = emptyList(),
 ) {
     /** What the watch should actually render. */
     val displayLabel: String get() = displayName ?: name
 }
+
+/** What marks a message as this member's in Discord: `prefix` + text + `suffix`, either one optional. */
+data class ProxyTag(val prefix: String?, val suffix: String?)
 
 /**
  * A switch — who is fronting and when it started.
