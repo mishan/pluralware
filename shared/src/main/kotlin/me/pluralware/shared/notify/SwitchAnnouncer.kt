@@ -80,9 +80,11 @@ class SwitchAnnouncer(
             switch: Switch,
             now: Long,
         ): Boolean {
-            // With the relay on, it tells friends about every switch, this one included.
-            if (!store.configFlow.value.appSends) return false
-            return record(store, now) { config, skip -> sharer.announce(config, switch, skipFriendIds = skip) }
+            return record(store, now) { config, skip ->
+                // With the relay on, it tells friends about every switch, this one included.
+                // Read once it's this send's turn: the relay may have taken over meanwhile.
+                if (config.appSends) sharer.announce(config, switch, skipFriendIds = skip) else emptyMap()
+            }
         }
 
         // One send at a time, retries included, so a correction can't land before the mistake it corrects.

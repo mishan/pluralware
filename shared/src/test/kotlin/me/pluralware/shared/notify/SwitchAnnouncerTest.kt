@@ -110,6 +110,27 @@ class SwitchAnnouncerTest {
     }
 
     @Test
+    fun `an announcement waiting its turn isn't sent if the relay took over meanwhile`() = runTest {
+        val store = InMemorySharingStore(config)
+        val correcting = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { sharer.announceCorrection(any(), any(), any(), any()) } coAnswers {
+            correcting.await()
+            emptyMap()
+        }
+
+        val first = launch { SwitchAnnouncer.correct(store, sharer, null, switch, now) }
+        testScheduler.runCurrent()
+        val second = launch { SwitchAnnouncer.announce(store, sharer, switch, now) }
+        testScheduler.runCurrent()
+        store.set(config.copy(relay = RelaySettings(url = "https://relay.example", adminSecret = "a", webhookPath = "w", enabled = true)))
+        correcting.complete(Unit)
+        first.join()
+        second.join()
+
+        coVerify(exactly = 0) { sharer.announce(any(), any(), any()) }
+    }
+
+    @Test
     fun `a correction friends couldn't tell from what they were told isn't sent`() = runTest {
         val m = PreviewData.members
         fun s(vararg members: Int) = me.pluralware.shared.model.Switch("x", java.time.Instant.EPOCH, members.map { m[it] })
