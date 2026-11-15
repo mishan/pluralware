@@ -54,25 +54,26 @@ class PickerViewModel(
         if (editing == null) loadInitialSelection()
         // A member edited while the picker is open (on the other device, say):
         // show them as they are now, keeping the list and the selection.
-        repository.membersChanged.drop(1).onEach {
-            val fetch = ++memberFetches
-            val r = repository.refreshMembers(force = true)
-            if (r is PkResult.Success && fetch == memberFetches) showMembers(r.value)
-        }.launchIn(viewModelScope)
+        repository.membersChanged.drop(1).onEach { fetchMembers() }.launchIn(viewModelScope)
     }
 
     fun loadMembers() {
         _state.update { it.copy(members = UiState.Loading) }
-        viewModelScope.launch {
-            // force=true on every picker open: this screen is the user's
-            // chance to react to members they just added in PluralKit, so a
-            // cached list defeats the purpose of opening it.
-            val fetch = ++memberFetches
-            val r = repository.refreshMembers(force = true)
-            if (fetch != memberFetches) return@launch
-            when (r) {
-                is PkResult.Success -> showMembers(r.value)
-                is PkResult.Failure -> _state.update { it.copy(members = r.toUiError("Couldn't load members")) }
+        viewModelScope.launch { fetchMembers() }
+    }
+
+    private suspend fun fetchMembers() {
+        val fetch = ++memberFetches
+        // force=true on every picker open: this screen is the user's
+        // chance to react to members they just added in PluralKit, so a
+        // cached list defeats the purpose of opening it.
+        val r = repository.refreshMembers(force = true)
+        if (fetch != memberFetches) return
+        when (r) {
+            is PkResult.Success -> showMembers(r.value)
+            // A list already showing stays; with none, the error offers a retry.
+            is PkResult.Failure -> if (_state.value.members !is UiState.Content) {
+                _state.update { it.copy(members = r.toUiError("Couldn't load members")) }
             }
         }
     }

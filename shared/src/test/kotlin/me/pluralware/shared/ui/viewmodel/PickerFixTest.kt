@@ -152,4 +152,30 @@ class PickerFixTest {
         assertTrue(added.uuid in vm.state.value.selectedUuids)
         assertEquals(UiState.Content(members), vm.state.value.members)
     }
+
+    @Test
+    fun `when the newest member list fails, the picker says so rather than loading forever`() = runTest {
+        val firstAnswer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var calls = 0
+        val flaky = object : PluralKitClient by client {
+            override suspend fun getOwnMembers(): List<me.pluralware.shared.model.Member> {
+                if (++calls == 1) {
+                    firstAnswer.await()
+                    return members
+                }
+                throw IOException("offline")
+            }
+        }
+        val repository = PluralKitRepository(flaky)
+        val vm = PickerViewModel(
+            repository,
+            confirmationLingerMillis = 0,
+            editing = PickerViewModel.Editing(older.uuid, older.members.map { it.uuid }),
+        )
+
+        repository.forgetMembers()
+        firstAnswer.complete(Unit)
+
+        assertTrue(vm.state.value.members is UiState.Error)
+    }
 }
