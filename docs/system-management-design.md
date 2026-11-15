@@ -6,7 +6,7 @@ later, on the same foundations.
 
 ## 1. Scope
 
-- **Edit a member:** name, display name, pronouns, color, description, avatar URL.
+- **Edit a member:** name, display name, pronouns, color, description, avatar URL, birthday.
 - **Fix a switch** in the history the phone shows (the last 10): change when it started, change
   its members, or delete it.
 - Corrections reach everything that shows them: the phone's screens, the watch, its complication
@@ -21,7 +21,8 @@ history older than the last 10 switches.
 - `PATCH /members/{uuid}` takes a partial member. A **missing key is left alone**; a key set to
   `null` or `""` **clears** the field. `name` can't be cleared. `color` must be six hex digits,
   no `#`. Limits: name, display name and pronouns 100 characters, description 1000, avatar URL
-  256 and a valid URL.
+  256 and a valid URL. `birthday` is `YYYY-MM-DD`; one kept without its year is in year 0004 (a
+  leap year, so 02-29 fits), which the editor shows and takes as `MM-DD`.
 - `PATCH /systems/@me/switches/{uuid}` with `{"timestamp": ...}` moves a switch. PluralKit only
   rejects a time any switch already has (40005), **including the switch being moved**. It does
   not check neighbors or the future, so the app enforces both (section 5).

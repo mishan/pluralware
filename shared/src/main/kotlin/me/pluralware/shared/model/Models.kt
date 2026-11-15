@@ -22,6 +22,8 @@ data class Member(
      */
     val isPrivate: Boolean = false,
     val description: String? = null,
+    /** "YYYY-MM-DD"; year 0004 means PluralKit keeps it without a year. */
+    val birthday: String? = null,
 ) {
     /** What the watch should actually render. */
     val displayLabel: String get() = displayName ?: name
