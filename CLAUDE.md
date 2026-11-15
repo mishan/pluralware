@@ -235,7 +235,9 @@ what's built. In short:
 - The phone owns a `SharingConfig` (friends, shared members, VAPID key, ntfy server). It keeps it in
   an encrypted store and pushes it to the watch on `/pluralware/sharing`.
 - Each app sends after each switch **it registers**, via `PluralKitRepository`'s
-  `onSwitchRegistered` and its own `SwitchAnnouncer`, so no switch goes out twice. It sends either
+  `onSwitchRegistered` and its own `SwitchAnnouncer`, so no switch goes out twice. The phone
+  also sends a correction when a fix changes the current front (`onFrontCorrected`), relay or
+  not, since the relay only hears of new switches. It sends either
   encrypted Web Push (`Friend.Private`) or ntfy messages (`Friend.Simple`). Friends a device finds gone
   are recorded in its `SharingStore` and reported to the other device on
   `/pluralware/sharing-status`, which keeps them apart (`peerGoneFlow`) and skips them too. Each

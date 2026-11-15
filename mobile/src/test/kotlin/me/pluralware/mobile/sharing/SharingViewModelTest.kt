@@ -115,15 +115,24 @@ class SharingViewModelTest {
     @Test
     fun `deleting from a relay waits for another relay write in flight`() {
         val relay = store.configFlow.value.relay!!
-        val cases = listOf<Pair<String, (SharingViewModel) -> Unit>>(
-            "removing the relay" to { it.removeRelay() },
-            "moving to another relay" to { it.saveRelay("https://other.example", "s") },
-            "retrying an unreachable one" to { vm ->
-                runBlocking { store.addOrphan(relay.copy(url = relay.url + "old/")) }
-                vm.retryOrphans()
-            },
+        // Each with what it leaves saved, so the next case doesn't start while it's still saving.
+        val cases = listOf<Triple<String, (SharingViewModel) -> Unit, () -> Boolean>>(
+            Triple("removing the relay", { it.removeRelay() }, { store.configFlow.value.relay == null }),
+            Triple(
+                "moving to another relay",
+                { it.saveRelay("https://other.example", "s") },
+                { store.configFlow.value.relay?.url == "https://other.example" },
+            ),
+            Triple(
+                "retrying an unreachable one",
+                { vm ->
+                    runBlocking { store.addOrphan(relay.copy(url = relay.url + "old/")) }
+                    vm.retryOrphans()
+                },
+                { store.orphanedRelays.value.isEmpty() },
+            ),
         )
-        for ((what, act) in cases) {
+        for ((what, act, settled) in cases) {
             runBlocking { store.set(store.configFlow.value.copy(relay = relay)) }
             val vm = viewModel()
             eventually("initial sync") { vm.state.value.system != null && puts.isNotEmpty() }
@@ -136,6 +145,7 @@ class SharingViewModelTest {
 
             relayWrites.unlock()
             eventually("$what: the delete") { deletes.get() == 1 }
+            eventually("$what: saved") { settled() }
         }
     }
 

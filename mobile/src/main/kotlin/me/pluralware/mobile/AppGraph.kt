@@ -64,6 +64,7 @@ class AppGraph private constructor(context: Context) {
         lateinit var repository: PluralKitRepository
         repository = PluralKitRepository(
             client,
+            onFrontCorrected = { before, front -> announcer.onFrontCorrected(appContext, before, front) },
             onMemberEdited = { member, fields ->
                 scope.launch { relayNames.memberEdited(member, fields) { (repository.refreshMembers() as? PkResult.Success)?.value } }
             },

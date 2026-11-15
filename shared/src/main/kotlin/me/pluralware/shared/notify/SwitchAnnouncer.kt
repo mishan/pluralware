@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.pluralware.shared.model.Switch
 
 /**
@@ -38,17 +40,34 @@ class SwitchAnnouncer(
 
     private val sharer by lazy { SwitchSharer.create(appVersion) }
 
-    fun onSwitchRegistered(context: Context, switch: Switch) {
+    fun onSwitchRegistered(context: Context, switch: Switch) =
+        launch(context) { store -> announce(store, sharer, switch, System.currentTimeMillis()) }
+
+    /** A fix changed who's fronting now; see [correct]. */
+    fun onFrontCorrected(context: Context, before: Switch?, front: Switch?) =
+        launch(context) { store -> correct(store, sharer, before, front, System.currentTimeMillis()) }
+
+    private fun launch(context: Context, send: suspend (SharingStore) -> Boolean) {
         val appContext = context.applicationContext
         scope.launch {
             val store = EncryptedSharingStore.get(appContext)
-            val changed = announce(store, sharer, switch, System.currentTimeMillis())
-            if (changed) runCatching { onGoneChanged(appContext, store.goneFlow.value) }
+            if (send(store)) runCatching { onGoneChanged(appContext, store.goneFlow.value) }
         }
     }
 
     internal companion object {
         private const val TAG = "SwitchAnnouncer"
+
+        /**
+         * Tells friends a fix changed who's fronting from [before] to [front]
+         * (null: no switch left), unless what they'd be told is the same.
+         */
+        suspend fun correct(store: SharingStore, sharer: SwitchSharer, before: Switch?, front: Switch?, now: Long): Boolean {
+            val shared = store.configFlow.value.sharedMemberUuids
+            if (before != null && SwitchAnnouncement.text(before, shared) == SwitchAnnouncement.textOf(front, shared)) return false
+            // Even with the relay on: it only hears of new switches, never fixes.
+            return record(store, now) { config, skip -> sharer.announceCorrection(config, front, skip) }
+        }
 
         /**
          * Sends [switch] to every friend not recently found gone, here or on the
@@ -61,12 +80,25 @@ class SwitchAnnouncer(
             switch: Switch,
             now: Long,
         ): Boolean {
+            return record(store, now) { config, skip ->
+                // With the relay on, it tells friends about every switch, this one included.
+                // Read once it's this send's turn: the relay may have taken over meanwhile.
+                if (config.appSends) sharer.announce(config, switch, skipFriendIds = skip) else emptyMap()
+            }
+        }
+
+        // One send at a time, retries included, so a correction can't land before the mistake it corrects.
+        private val sending = Mutex()
+
+        private suspend fun record(
+            store: SharingStore,
+            now: Long,
+            send: suspend (SharingConfig, Set<String>) -> Map<Friend, SendOutcome>,
+        ): Boolean = sending.withLock {
             val config = store.configFlow.value
-            // With the relay on, it tells friends about every switch, this one included.
-            if (!config.appSends) return false
             val before = store.goneFlow.value
             val skip = GoneFriends.toSkip(GoneFriends.merged(before, store.peerGoneFlow.value), now)
-            val outcomes = sharer.announce(config, switch, skipFriendIds = skip)
+            val outcomes = send(config, skip)
             outcomes.forEach { (_, outcome) ->
                 if (outcome is SendOutcome.Failed) Log.w(TAG, "Couldn't notify a friend: ${outcome.reason}")
             }
@@ -76,7 +108,7 @@ class SwitchAnnouncer(
                 .mapTo(HashSet()) { it.id }.filterTo(HashSet()) { it in before }
             if (gone.isNotEmpty()) store.markGone(gone, now)
             if (back.isNotEmpty()) store.clearGone(back)
-            return store.goneFlow.value != before
+            store.goneFlow.value != before
         }
     }
 }

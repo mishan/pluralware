@@ -105,6 +105,8 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
             'content-type': 'application/octet-stream',
             ttl: String(TTL_SECONDS),
             urgency: 'normal',
+            // Shared with the app's pushes: a correction from the app replaces a mistake not yet delivered.
+            topic: 'front',
             authorization: await vapidAuthorization(endpoint, config.vapid, now()),
           },
           body: await encrypt(friend.followCode, payload),
