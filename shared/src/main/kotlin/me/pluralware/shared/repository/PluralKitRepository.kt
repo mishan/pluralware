@@ -192,8 +192,9 @@ class PluralKitRepository(
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>? = null,
         privacy: Map<MemberPrivacy, Boolean> = emptyMap(),
+        aliases: List<String>? = null,
     ): PkResult<Member> = detached {
-        val result = runCatchingPk { sent { client.updateMember(uuid, changes, proxyTags, privacy) } }
+        val result = runCatchingPk { sent { client.updateMember(uuid, changes, proxyTags, privacy, aliases) } }
         // Unless PluralKit refused it, the edit may have landed: cached names may be old.
         if (!result.refusedByPluralKit()) membersChangedHere()
         if (result is PkResult.Success) {

@@ -62,6 +62,7 @@ class MemberScreensTest {
         description = "Likes tea.",
         birthday = "0004-03-15",
         proxyTags = listOf(ProxyTag("[", "]")),
+        aliases = listOf("Lex"),
         privateParts = setOf(MemberPrivacy.Birthday),
     )
     private val events = mutableListOf<String>()
@@ -361,8 +362,41 @@ class MemberScreensTest {
         for (f in MemberField.entries) field(f).assertIsNotEnabled()
         tag("prefix", 0).assertIsNotEnabled()
         tag("remove", 0).assertIsNotEnabled()
+        alias("name", 0).assertIsNotEnabled()
+        alias("remove", 0).assertIsNotEnabled()
+        compose.onNodeWithText("Add alias").performScrollTo().assertIsNotEnabled()
         privacy(MemberPrivacy.Name).assertIsNotEnabled()
         compose.onNodeWithText("Add proxy tag").performScrollTo().assertIsNotEnabled()
+    }
+
+    private fun alias(part: String, index: Int) = compose.onNodeWithTag("alias-$part-$index").performScrollTo()
+
+    @Test
+    fun `aliases can be added, changed and removed, and are saved whole`() {
+        showEditor(loaded())
+
+        alias("name", 0).assertTextContains("Lex")
+        compose.onNodeWithText("Add alias").performScrollTo().performClick()
+        alias("name", 1).performTextReplacement("Xan")
+        alias("name", 0).performTextReplacement("Lexi")
+        compose.onNodeWithText("Add alias").performScrollTo().performClick()
+        alias("name", 2).performTextReplacement("gone")
+        alias("remove", 2).performClick()
+        compose.onNodeWithText("Save").performClick()
+
+        assertEquals(listOf(alex to MemberDraft.of(alex).copy(aliases = listOf("Lexi", "Xan"))), saves)
+    }
+
+    @Test
+    fun `an alias PluralKit would refuse blocks Save, saying why`() {
+        showEditor(loaded())
+
+        compose.onNodeWithText("Add alias").performScrollTo().performClick()
+
+        compose.onNodeWithText("An alias can't be blank.").assertExists()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        alias("name", 1).performTextReplacement("Xan")
+        compose.onNodeWithText("Save").assertIsEnabled()
     }
 
     private fun privacy(part: MemberPrivacy) = compose.onNodeWithTag("privacy-${part.apiKey}").performScrollTo()

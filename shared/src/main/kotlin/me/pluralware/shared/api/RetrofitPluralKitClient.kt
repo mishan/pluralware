@@ -128,15 +128,18 @@ class RetrofitPluralKitClient internal constructor(
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>?,
         privacy: Map<MemberPrivacy, Boolean>,
+        aliases: List<String>?,
     ): Member {
-        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty()) { "An edit that changes nothing isn't sent" }
+        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty() || aliases != null) {
+            "An edit that changes nothing isn't sent"
+        }
         val tags = proxyTags?.let { list ->
             "proxy_tags" to JsonArray(list.map { JsonObject(mapOf("prefix" to JsonPrimitive(it.prefix), "suffix" to JsonPrimitive(it.suffix))) })
         }
         val parts = privacy.takeIf { it.isNotEmpty() }?.let { parts ->
             "privacy" to JsonObject(parts.entries.associate { (part, private) -> part.apiKey to JsonPrimitive(if (private) "private" else "public") })
         }
-        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags, parts))
+        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags, parts, aliases?.let { "aliases" to JsonArray(it.map(::JsonPrimitive)) }))
         // History resolves members from the lookup cache; keep the edit visible there.
         return http { api.updateMember(uuid, body) }.toDomain().also { remember(listOf(it)) }
     }
@@ -243,6 +246,7 @@ class RetrofitPluralKitClient internal constructor(
         description = description,
         birthday = birthday,
         proxyTags = proxyTags.map { ProxyTag(it.prefix, it.suffix) },
+        aliases = aliases.orEmpty(),
         privateParts = MemberPrivacy.entries.filterTo(HashSet()) { privacy?.get(it.apiKey) == "private" },
     )
 

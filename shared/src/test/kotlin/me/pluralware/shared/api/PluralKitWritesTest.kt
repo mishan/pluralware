@@ -230,6 +230,24 @@ class PluralKitWritesTest {
     }
 
     @Test
+    fun `aliases are sent whole, and read back, absent ones as none`() = runTest {
+        respond(body = alexJson.dropLast(1) + ""","aliases":["Lex","Al"]}""")
+
+        val member = client.updateMember("uuid-alex", emptyMap(), aliases = listOf("Lex", "Al"))
+
+        assertEquals(Json.parseToJsonElement("""{"aliases":["Lex","Al"]}"""), server.takeRequest().json())
+        assertEquals(listOf("Lex", "Al"), member.aliases)
+
+        // Absent, or null as PluralKit sends a list it hides: none either way.
+        respond(body = alexJson.dropLast(1) + ""","aliases":null}""")
+        assertEquals(emptyList<String>(), client.updateMember("uuid-alex", emptyMap(), aliases = emptyList()).aliases)
+        server.takeRequest()
+        respond(body = alexJson)
+        assertEquals(emptyList<String>(), client.updateMember("uuid-alex", emptyMap(), aliases = emptyList()).aliases)
+        assertEquals("clearing them", Json.parseToJsonElement("""{"aliases":[]}"""), server.takeRequest().json())
+    }
+
+    @Test
     fun `each part's privacy comes through, and changed ones are sent`() = runTest {
         respond(body = alexJson.dropLast(1) + ""","privacy":{"visibility":"public","name_privacy":"private","pronoun_privacy":"private","alias_privacy":null}}""")
 

@@ -7,7 +7,7 @@ later, on the same foundations.
 ## 1. Scope
 
 - **Edit a member:** name, display name, pronouns, color, description, avatar URL, birthday,
-  proxy tags, and which parts are private.
+  proxy tags, aliases, and which parts are private.
 - **Fix a switch** in the history the phone shows (the last 10): change when it started, change
   its members, or delete it.
 - Corrections reach everything that shows them: the phone's screens, the watch, its complication
@@ -28,9 +28,11 @@ history older than the last 10 switches.
   when edited, and then overwrites tags changed elsewhere since the editor loaded. Each tag
   needs one of them (PluralKit silently drops one with neither), and `prefix + "text" + suffix`
   can be up to 100 characters, so 96 for the two together. PluralKit doesn't trim tags, and
-  neither does the app. `privacy` is an object of each part's `"private"` or `"public"`
-  (`visibility`, `name_privacy`, `pronoun_privacy` and so on); a PATCH changes only the parts
-  it names, so only the ones toggled are sent.
+  neither does the app. `aliases`, the member's other names, is also a list replaced whole and
+  sent only when edited; PluralKit trims each, and takes up to 10, each up to 100 characters,
+  none blank and none the same as another ignoring case. `privacy` is an object of each part's
+  `"private"` or `"public"` (`visibility`, `name_privacy`, `pronoun_privacy` and so on); a PATCH
+  changes only the parts it names, so only the ones toggled are sent.
 - `PATCH /systems/@me/switches/{uuid}` with `{"timestamp": ...}` moves a switch. PluralKit only
   rejects a time any switch already has (40005), **including the switch being moved**. It does
   not check neighbors or the future, so the app enforces both (section 5).

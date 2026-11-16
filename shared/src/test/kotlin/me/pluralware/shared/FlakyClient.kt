@@ -85,8 +85,9 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>?,
         privacy: Map<MemberPrivacy, Boolean>,
+        aliases: List<String>?,
     ) =
-        write { pk.updateMember(uuid, changes, proxyTags, privacy) }
+        write { pk.updateMember(uuid, changes, proxyTags, privacy, aliases) }
     override suspend fun moveSwitch(uuid: String, to: Instant) = write { pk.moveSwitch(uuid, to) }
     override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>) =
         write { pk.setSwitchMembers(uuid, memberUuids) }

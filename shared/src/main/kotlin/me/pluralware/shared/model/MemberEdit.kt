@@ -26,6 +26,7 @@ data class MemberDraft(
     val birthday: String,
     val proxyTags: List<ProxyTagDraft>,
     val privateParts: Set<MemberPrivacy>,
+    val aliases: List<String>,
 ) {
     operator fun get(field: MemberField): String = when (field) {
         MemberField.Name -> name
@@ -48,6 +49,7 @@ data class MemberDraft(
             birthday = member.birthday.orEmpty().removePrefix(MemberEdit.NO_YEAR),
             proxyTags = member.proxyTags.map { ProxyTagDraft(it.prefix.orEmpty(), it.suffix.orEmpty()) },
             privateParts = member.privateParts,
+            aliases = member.aliases,
         )
     }
 }
@@ -133,9 +135,34 @@ object MemberEdit {
         MemberPrivacy.entries.filter { (it in draft.privateParts) != (it in original.privateParts) }
             .associateWith { it in draft.privateParts }
 
-    /** Whether [draft] can be sent: no field [validate] objects to, and no [proxyTagProblem]. */
+    /**
+     * All of [draft]'s aliases, trimmed as PluralKit trims them, or null when
+     * they're as [original] has them: PluralKit replaces the whole list.
+     */
+    fun aliasChanges(original: Member, draft: MemberDraft): List<String>? {
+        val aliases = draft.aliases.map { it.trim() }
+        return aliases.takeIf { it != original.aliases.map { alias -> alias.trim() } }
+    }
+
+    /** Why PluralKit would refuse [draft]'s aliases, if they changed; null if it wouldn't. */
+    fun aliasProblem(original: Member, draft: MemberDraft): String? {
+        val aliases = aliasChanges(original, draft) ?: return null
+        val longest = MemberField.Name.maxLength!!
+        return when {
+            aliases.any { it.isEmpty() } -> "An alias can't be blank."
+            aliases.any { it.length > longest } -> "An alias can be up to $longest characters."
+            aliases.size > MAX_ALIASES -> "Up to $MAX_ALIASES aliases."
+            // PluralKit compares them ignoring case.
+            aliases.map { it.lowercase() }.toSet().size < aliases.size -> "Two aliases are the same."
+            else -> null
+        }
+    }
+
+    private const val MAX_ALIASES = 10
+
+    /** Whether [draft] can be sent: no field [validate] objects to, no [proxyTagProblem], no [aliasProblem]. */
     fun isValid(original: Member, draft: MemberDraft) =
-        validate(original, draft).isEmpty() && proxyTagProblem(original, draft) == null
+        validate(original, draft).isEmpty() && proxyTagProblem(original, draft) == null && aliasProblem(original, draft) == null
 
     /** Why PluralKit would refuse [draft]'s proxy tags, if they changed; null if it wouldn't. */
     fun proxyTagProblem(original: Member, draft: MemberDraft): String? {

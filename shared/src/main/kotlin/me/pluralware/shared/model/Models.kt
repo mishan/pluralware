@@ -22,6 +22,8 @@ data class Member(
     /** "YYYY-MM-DD"; year 0004 means PluralKit keeps it without a year. */
     val birthday: String? = null,
     val proxyTags: List<ProxyTag> = emptyList(),
+    /** Other names the member goes by, as PluralKit's alias command sets them. */
+    val aliases: List<String> = emptyList(),
     /** The parts of this member PluralKit shows only to its system. */
     val privateParts: Set<MemberPrivacy> = emptySet(),
 ) {
