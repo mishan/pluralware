@@ -1,5 +1,6 @@
 package me.pluralware.shared.model
 
+import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** The member fields the phone can edit, with PluralKit's key and length limit for each. */
@@ -14,6 +15,7 @@ enum class MemberField(val apiKey: String, val maxLength: Int?) {
 }
 
 /** A member edit form's fields, exactly as typed. */
+@Serializable
 data class MemberDraft(
     val name: String,
     val displayName: String,
@@ -51,6 +53,7 @@ data class MemberDraft(
 }
 
 /** A proxy tag's fields, exactly as typed. */
+@Serializable
 data class ProxyTagDraft(val prefix: String, val suffix: String)
 
 /**
