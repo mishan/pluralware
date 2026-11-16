@@ -30,6 +30,11 @@ data class EditorState(
     val saveError: String? = null,
     /** PluralKit rejected the token: the screen offers a sign-out. */
     val unauthorized: Boolean = false,
+    val deleting: Boolean = false,
+    /** The member is gone from PluralKit; the screen closes. */
+    val deleted: Boolean = false,
+    /** Why the last delete failed. */
+    val deleteError: String? = null,
 )
 
 /**
@@ -64,7 +69,7 @@ class MemberEditorViewModel(
     /** Sends the fields of [draft] that differ from [original], the member as the form loaded it. */
     fun save(original: Member, draft: MemberDraft) {
         val now = _state.value
-        if (now.saving || now.saved || !MemberEdit.isValid(original, draft)) return
+        if (now.saving || now.saved || now.deleting || now.deleted || !MemberEdit.isValid(original, draft)) return
         val changes = MemberEdit.changes(original, draft)
         val proxyTags = MemberEdit.proxyTagChanges(original, draft)
         val privacy = MemberEdit.privacyChanges(original, draft)
@@ -81,6 +86,26 @@ class MemberEditorViewModel(
         }
     }
 
+    /** Deletes the member from PluralKit; the screen closes once they're gone. */
+    fun delete() {
+        val now = _state.value
+        if (now.saving || now.saved || now.deleting || now.deleted) return
+        _state.update { it.copy(deleting = true, deleteError = null) }
+        viewModelScope.launch {
+            when (val result = repository.deleteMember(uuid)) {
+                is PkResult.Success -> _state.update { it.copy(deleting = false, deleted = true) }
+                is PkResult.Failure -> _state.update {
+                    it.copy(deleting = false, deleteError = whyFailed(result, "delete them"), unauthorized = it.unauthorized || result.isUnauthorized)
+                }
+            }
+        }
+    }
+
+    /** The delete dialog closed: a failure it showed is done with. */
+    fun deleteDismissed() {
+        if (!_state.value.deleting) _state.update { it.copy(deleteError = null) }
+    }
+
     /** The user changed [field]: PluralKit's complaint about its old value no longer applies. */
     fun edited(field: MemberField) {
         if (field in _state.value.fieldErrors) _state.update { it.copy(fieldErrors = it.fieldErrors - field) }
@@ -88,9 +113,7 @@ class MemberEditorViewModel(
 
     private fun failed(state: EditorState, failure: PkResult.Failure): EditorState {
         val error = failure.error
-        if (failure.isUnauthorized) {
-            return state.copy(unauthorized = true, saveError = "PluralKit no longer accepts this token. Sign out, then connect again.")
-        }
+        if (failure.isUnauthorized) return state.copy(unauthorized = true, saveError = whyFailed(failure, "save this"))
         if (error is PluralKitHttpException && error.fieldErrors.isNotEmpty()) {
             // Under the field it's about, or said plainly if the form has no such field.
             val (known, other) = error.fieldErrors.entries.partition { (key, _) -> MemberField.entries.any { it.apiKey == key } }
@@ -101,15 +124,8 @@ class MemberEditorViewModel(
                 saveError = other.flatMap { it.value }.joinToString(" ").ifEmpty { null },
             )
         }
-        val why = when {
-            error is PluralKitHttpException && error.isRateLimited ->
-                "PluralKit is busy: try again in " + (error.retryAfter?.seconds?.let { if (it == 1L) "1 second" else "$it seconds" } ?: "a minute") + "."
-            error is PluralKitHttpException && error.code == MEMBER_NOT_FOUND -> GONE
-            error is PluralKitHttpException -> "PluralKit couldn't save this: ${error.reason}"
-            error is IOException -> "Couldn't reach PluralKit. Check your connection and try again."
-            else -> "Couldn't save this: ${error.message}"
-        }
-        return state.copy(saveError = why)
+        val gone = error is PluralKitHttpException && !error.isRateLimited && error.code == MEMBER_NOT_FOUND
+        return state.copy(saveError = if (gone) GONE else whyFailed(failure, "save this"))
     }
 
     private companion object {
@@ -120,5 +136,18 @@ class MemberEditorViewModel(
     @Suppress("UNCHECKED_CAST")
     class Factory(private val repository: PluralKitRepository, private val uuid: String) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T = MemberEditorViewModel(repository, uuid) as T
+    }
+}
+
+/** Why [failure] happened, worded for a person; [doing] is what failed, as in "couldn't save this". */
+internal fun whyFailed(failure: PkResult.Failure, doing: String): String {
+    val error = failure.error
+    return when {
+        failure.isUnauthorized -> "PluralKit no longer accepts this token. Sign out, then connect again."
+        error is PluralKitHttpException && error.isRateLimited ->
+            "PluralKit is busy: try again in " + (error.retryAfter?.seconds?.let { if (it == 1L) "1 second" else "$it seconds" } ?: "a minute") + "."
+        error is PluralKitHttpException -> "PluralKit couldn't $doing: ${error.reason}"
+        error is IOException -> "Couldn't reach PluralKit. Check your connection and try again."
+        else -> "Couldn't $doing: ${error.message}"
     }
 }

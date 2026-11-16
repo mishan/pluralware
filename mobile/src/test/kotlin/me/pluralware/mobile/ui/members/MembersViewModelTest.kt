@@ -35,6 +35,39 @@ class MembersViewModelTest {
     private fun MembersViewModel.shown() = (state.value as UiState.Content<List<Member>>).value
 
     @Test
+    fun `adding a member makes them, and keeps them to open until the screen has`() = runTest {
+        val vm = MembersViewModel(PluralKitRepository(pk))
+
+        // Nobody watching yet: the screen may be rotating, or in the background.
+        vm.add(" Gale ")
+
+        val gale = pk.getOwnMembers().single { it.name == "Gale" }
+        assertEquals(gale.uuid, vm.toOpen.value)
+        assertEquals(AddState(), vm.addState.value)
+        assertTrue("the list reloads", gale in vm.shown())
+        vm.opened()
+        assertEquals(null, vm.toOpen.value)
+    }
+
+    @Test
+    fun `a member PluralKit won't add says why, and a blank name isn't sent`() = runTest {
+        var creates = 0
+        val refusing = object : PluralKitClient by pk {
+            override suspend fun createMember(name: String): Member {
+                creates++
+                throw PluralKitHttpException(400, "Member limit reached.")
+            }
+        }
+        val vm = MembersViewModel(PluralKitRepository(refusing))
+
+        vm.add("   ")
+        assertEquals(0, creates)
+        vm.add("Gale")
+
+        assertEquals(AddState(error = "PluralKit couldn't add them: Member limit reached."), vm.addState.value)
+    }
+
+    @Test
     fun `it lists the members, fresh each time it loads`() = runTest {
         val vm = MembersViewModel(PluralKitRepository(pk))
         val first = vm.shown()

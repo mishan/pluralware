@@ -9,12 +9,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 import me.pluralware.shared.ui.state.toUiError
+
+/** The add-member dialog: whether it's open, a create under way, or why one failed. */
+data class AddState(val open: Boolean = false, val adding: Boolean = false, val error: String? = null)
 
 /** The system's members, for choosing one to edit. */
 class MembersViewModel(private val repository: PluralKitRepository) : ViewModel() {
@@ -26,6 +30,45 @@ class MembersViewModel(private val repository: PluralKitRepository) : ViewModel(
 
     /** Why the last reload failed, while the list from before stays on screen. */
     val reloadError: StateFlow<String?> = _reloadError.asStateFlow()
+
+    private val _addState = MutableStateFlow(AddState())
+    val addState: StateFlow<AddState> = _addState.asStateFlow()
+
+    private val _toOpen = MutableStateFlow<String?>(null)
+
+    /**
+     * A member just added here, until the screen has opened them: held, not
+     * sent once, as the screen may be rotating or in the background.
+     */
+    val toOpen: StateFlow<String?> = _toOpen.asStateFlow()
+
+    /** Adds a member named [name]; [toOpen] then has them, for the editor to open. */
+    fun add(name: String) {
+        if (_addState.value.adding || name.isBlank()) return
+        _addState.update { it.copy(adding = true, error = null) }
+        viewModelScope.launch {
+            when (val result = repository.createMember(name)) {
+                is PkResult.Success -> {
+                    _addState.value = AddState()
+                    _toOpen.value = result.value.uuid
+                }
+                is PkResult.Failure -> _addState.update { it.copy(adding = false, error = whyFailed(result, "add them")) }
+            }
+        }
+    }
+
+    fun startAdd() {
+        _addState.value = AddState(open = true)
+    }
+
+    fun opened() {
+        _toOpen.value = null
+    }
+
+    /** The add dialog closed: a failure it showed is done with. */
+    fun addDismissed() {
+        if (!_addState.value.adding) _addState.value = AddState()
+    }
 
     // Only the newest load's answer is shown; an older one finishing late is stale.
     private var latestLoad = 0

@@ -21,10 +21,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -83,7 +87,10 @@ fun MemberEditorScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.saved) { if (state.saved) onSaved() }
-    MemberEditorContent(state, vm::save, vm::edited, onBack, onRetry = vm::load, onSignOut)
+    MemberEditorContent(
+        state, vm::save, vm::edited, onBack, onRetry = vm::load, onSignOut,
+        onDelete = vm::delete, onDeleteDismissed = vm::deleteDismissed, onDeleted = onSaved,
+    )
 }
 
 @Composable
@@ -94,6 +101,9 @@ internal fun MemberEditorContent(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
+    onDelete: () -> Unit = {},
+    onDeleteDismissed: () -> Unit = {},
+    onDeleted: () -> Unit = {},
 ) {
     // The form and the member it started from are kept across process death. Saving diffs
     // against that member, not one fetched since: that would undo edits made elsewhere.
@@ -124,12 +134,15 @@ internal fun MemberEditorContent(
         }
     }
     BackHandler(enabled = changed || state.saving, onBack = leave)
+    // Gone from PluralKit: the edits are moot, so no asking about them.
+    LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
+    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = { BackTopBar(from?.let { "Edit ${it.displayLabel}" } ?: "Edit member", onBack = leave) },
         bottomBar = {
             if (from != null && form != null) {
-                SaveBar(state, enabled = changed && MemberEdit.isValid(from, form), { onSave(from, form) }, onSignOut)
+                SaveBar(state, enabled = changed && MemberEdit.isValid(from, form) && !state.deleting, { onSave(from, form) }, onSignOut)
             }
         },
     ) { padding ->
@@ -145,6 +158,7 @@ internal fun MemberEditorContent(
                 },
                 onTagsChange = { draft = form.copy(proxyTags = it) },
                 onPrivacyChange = { draft = form.copy(privateParts = it) },
+                onDeleteClick = { confirmingDelete = true },
                 modifier = modifier,
             )
             state.member is UiState.Error -> ErrorView(state.member, onRetry = onRetry, onSignOut = onSignOut, modifier = modifier)
@@ -164,6 +178,13 @@ internal fun MemberEditorContent(
                 TextButton(onClick = { confirmingLeaveWhileSaving = false }) { Text("Stay") }
             },
         )
+    }
+
+    if (confirmingDelete && from != null) {
+        DeleteDialog(from, state, onDelete, onDismiss = {
+            confirmingDelete = false
+            onDeleteDismissed()
+        })
     }
 
     if (confirmingDiscard) {
@@ -189,9 +210,12 @@ private fun MemberForm(
     onChange: (MemberField, String) -> Unit,
     onTagsChange: (List<ProxyTagDraft>) -> Unit,
     onPrivacyChange: (Set<MemberPrivacy>) -> Unit,
+    onDeleteClick: () -> Unit,
     modifier: Modifier,
 ) {
     val problems = MemberEdit.validate(original, draft)
+    // A save sends the draft as it was, and a delete makes it moot: no changes meanwhile.
+    val locked = state.saving || state.deleting
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -205,7 +229,7 @@ private fun MemberForm(
                 value = draft[field],
                 onValueChange = { onChange(field, it) },
                 // A save sends the draft as it was: a change made meanwhile would be lost when it closes.
-                enabled = !state.saving,
+                enabled = !locked,
                 modifier = Modifier.fillMaxWidth().testTag("field-${field.apiKey}"),
                 label = { Text(field.label) },
                 leadingIcon = when {
@@ -236,8 +260,57 @@ private fun MemberForm(
                 ),
             )
         }
-        ProxyTags(draft.proxyTags, MemberEdit.proxyTagProblem(original, draft), enabled = !state.saving, onChange = onTagsChange)
-        Privacy(draft.privateParts, enabled = !state.saving, onChange = onPrivacyChange)
+        ProxyTags(draft.proxyTags, MemberEdit.proxyTagProblem(original, draft), enabled = !locked, onChange = onTagsChange)
+        Privacy(draft.privateParts, enabled = !locked, onChange = onPrivacyChange)
+        OutlinedButton(
+            onClick = onDeleteClick,
+            enabled = !locked,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        ) { Text("Delete member") }
+    }
+}
+
+/** Deleting can't be undone, so the member's name must be typed first, as PluralKit asks for their ID. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeleteDialog(member: Member, state: EditorState, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    BasicAlertDialog(onDismissRequest = { if (!state.deleting) onDismiss() }) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp) { DeleteForm(member, state, onDelete, onDismiss) }
+    }
+}
+
+// Apart from its dialog so tests can show it: Robolectric never settles with a text field in a dialog window.
+@Composable
+internal fun DeleteForm(member: Member, state: EditorState, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    var typed by rememberSaveable { mutableStateOf("") }
+    val matches = typed.trim().equals(member.name.trim(), ignoreCase = true)
+    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Delete ${member.displayLabel}?", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "This deletes ${member.displayLabel} from PluralKit for good, and takes them out of every " +
+                "switch they were in. Type ${member.name} to confirm.",
+        )
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { typed = it },
+            label = { Text("Member's name") },
+            singleLine = true,
+            enabled = !state.deleting,
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+            modifier = Modifier.fillMaxWidth().testTag("delete-confirm"),
+        )
+        state.deleteError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
+        Row(modifier = Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onDismiss, enabled = !state.deleting) { Text("Cancel") }
+            TextButton(
+                onClick = onDelete,
+                enabled = matches && !state.deleting,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text(if (state.deleting) "Deleting…" else "Delete") }
+        }
     }
 }
 

@@ -63,17 +63,56 @@ class MemberScreensTest {
 
     // --- Members -------------------------------------------------------------------------------
 
-    private fun showMembers(state: UiState<List<Member>>, reloadError: String? = null) = compose.setContent {
-        PluralWareTheme {
-            MembersContent(
-                state = state,
-                reloadError = reloadError,
-                onBack = { events += "back" },
-                onOpenMember = { events += "open:$it" },
-                onRetry = { events += "retry" },
-                onSignOut = { events += "signout" },
-            )
+    private fun showMembers(state: UiState<List<Member>>, reloadError: String? = null, add: AddState = AddState()) =
+        compose.setContent {
+            PluralWareTheme {
+                MembersContent(
+                    state = state,
+                    reloadError = reloadError,
+                    onBack = { events += "back" },
+                    onOpenMember = { events += "open:$it" },
+                    onRetry = { events += "retry" },
+                    onSignOut = { events += "signout" },
+                    addState = add,
+                    onStartAdd = { events += "start-add" },
+                    onAdd = { events += "add:$it" },
+                    onAddDismissed = { events += "add-dismissed" },
+                )
+            }
         }
+
+    @Test
+    fun `Add member asks for a name, and Create waits for one PluralKit would take`() {
+        compose.setContent { PluralWareTheme { AddMemberForm(AddState(open = true), { events += "add:$it" }, {}) } }
+        val name = compose.onNodeWithTag("new-member-name")
+
+        compose.onNodeWithText("Create").assertIsNotEnabled()
+        name.performTextReplacement("x".repeat(101))
+        compose.onNodeWithText("Up to 100 characters.").assertExists()
+        compose.onNodeWithText("Create").assertIsNotEnabled()
+        name.performTextReplacement("Gale")
+        compose.onNodeWithText("Create").performClick()
+
+        assertEquals(listOf("add:Gale"), events)
+    }
+
+    @Test
+    fun `the add button opens the dialog`() {
+        showMembers(UiState.Content(members))
+
+        compose.onNodeWithText("Add member", useUnmergedTree = true).performClick()
+
+        assertEquals(listOf("start-add"), events)
+    }
+
+    @Test
+    fun `adding shows a create under way, and why one failed`() {
+        var add by mutableStateOf(AddState(open = true, adding = true))
+        compose.setContent { PluralWareTheme { AddMemberForm(add, {}, {}) } }
+
+        compose.onNodeWithText("Adding…").assertIsNotEnabled()
+        add = AddState(open = true, error = "PluralKit couldn't add them: Member limit reached.")
+        compose.onNodeWithText("PluralKit couldn't add them: Member limit reached.").assertExists()
     }
 
     @Test
@@ -167,7 +206,58 @@ class MemberScreensTest {
         onBack = { events += "back" },
         onRetry = { events += "retry" },
         onSignOut = { events += "signout" },
+        onDelete = { events += "delete" },
+        onDeleted = { events += "deleted" },
     )
+
+    @Test
+    fun `deleting asks for the member's name, typed in any case`() {
+        compose.setContent { PluralWareTheme { DeleteForm(alex, loaded(), { events += "delete" }, {}) } }
+
+        val confirm = compose.onNodeWithText("Delete")
+        confirm.assertIsNotEnabled()
+        compose.onNodeWithTag("delete-confirm").performTextReplacement("Ale")
+        confirm.assertIsNotEnabled()
+        compose.onNodeWithTag("delete-confirm").performTextReplacement(" alex ")
+        confirm.performClick()
+
+        assertEquals(listOf("delete"), events)
+    }
+
+    @Test
+    fun `while deleting, nothing else can be done`() {
+        var state by mutableStateOf(loaded())
+        compose.setContent { PluralWareTheme { editor(state) } }
+        field(MemberField.Pronouns).performTextReplacement("xe/xem")
+
+        state = state.copy(deleting = true)
+
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Delete member").performScrollTo().assertIsNotEnabled()
+        field(MemberField.Pronouns).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a delete under way says so, and a failed one says why`() {
+        var state by mutableStateOf(loaded().copy(deleting = true))
+        compose.setContent { PluralWareTheme { DeleteForm(alex, state, {}, {}) } }
+
+        compose.onNodeWithText("Deleting…").assertIsNotEnabled()
+        state = state.copy(deleting = false, deleteError = "Couldn't reach PluralKit. Check your connection and try again.")
+        compose.onNodeWithText("Couldn't reach PluralKit. Check your connection and try again.").assertExists()
+    }
+
+    @Test
+    fun `once the member is deleted the editor closes, unsaved changes or not`() {
+        var state by mutableStateOf(loaded())
+        compose.setContent { PluralWareTheme { editor(state) } }
+        field(MemberField.Pronouns).performTextReplacement("xe/xem")
+
+        state = state.copy(deleted = true)
+        compose.waitForIdle()
+
+        assertEquals(listOf("deleted"), events.filterNot { it.startsWith("edited:") })
+    }
 
     private fun loaded(member: Member = alex) = EditorState(member = UiState.Content(member))
     private fun field(field: MemberField) = compose.onNodeWithTag("field-${field.apiKey}")
