@@ -123,4 +123,18 @@ class HistoryViewModelTest {
 
         assertEquals(UiState.Content(pk.getRecentSwitches(10)), vm.state.value)
     }
+
+    @Test
+    fun `a member change elsewhere reloads history, which may have taken them out of switches`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val pk = MockPluralKitClient(artificialLatencyMillis = 0)
+            val repository = PluralKitRepository(pk)
+            val vm = HistoryViewModel(repository)
+            pk.deleteMember(pk.getOwnMembers().first().uuid)
+
+            // What the watch does on a MemberSync notice.
+            repository.forgetMembers()
+
+            assertEquals(UiState.Content(pk.getRecentSwitches(10)), vm.state.value)
+        }
 }

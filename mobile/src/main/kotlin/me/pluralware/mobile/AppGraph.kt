@@ -68,6 +68,9 @@ class AppGraph private constructor(context: Context) {
             onMemberEdited = { member, fields ->
                 scope.launch { relayNames.memberEdited(member, fields) { (repository.refreshMembers() as? PkResult.Success)?.value } }
             },
+            onMemberDeleted = { uuid ->
+                scope.launch { relayNames.memberDeleted(uuid) { (repository.refreshMembers() as? PkResult.Success)?.value } }
+            },
         ) { switch -> announcer.onSwitchRegistered(appContext, switch) }
         return repository
     }

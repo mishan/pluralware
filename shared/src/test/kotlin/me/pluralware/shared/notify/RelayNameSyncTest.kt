@@ -117,4 +117,28 @@ class RelayNameSyncTest {
 
         assertEquals(2, memberFetches)
     }
+
+    @Test
+    fun `deleting a shared member uploads the relay's names without them`() = runTest {
+        store.set(sharingAlex.copy(sharedMemberUuids = setOf(alex.uuid, bea.uuid)))
+        current = current - alex
+
+        sync.memberDeleted(alex.uuid, members)
+
+        assertEquals(listOf(mapOf(bea.uuid to bea.displayLabel)), uploads)
+    }
+
+    @Test
+    fun `deleting a member the relay doesn't name uploads nothing`() = runTest {
+        val cases = listOf(
+            "a member who isn't shared" to sharingAlex,
+            "no relay" to sharingAlex.copy(sharedMemberUuids = setOf(bea.uuid), relay = null),
+        )
+        for ((what, config) in cases) {
+            store.set(config)
+            sync.memberDeleted(bea.uuid, members)
+            assertEquals(what, emptyList<Map<String, String>>(), uploads)
+        }
+        assertEquals("not even a member fetch", 0, memberFetches)
+    }
 }

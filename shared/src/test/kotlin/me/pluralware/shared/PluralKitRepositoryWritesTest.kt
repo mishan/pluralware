@@ -34,6 +34,7 @@ class PluralKitRepositoryWritesTest {
     private val replaced = mutableListOf<Switch?>()
     private val registered = mutableListOf<Switch>()
     private val edited = mutableListOf<Pair<Member, Set<MemberField>>>()
+    private val deleted = mutableListOf<String>()
     private val repository = PluralKitRepository(
         client,
         onFrontCorrected = { before, after ->
@@ -41,6 +42,7 @@ class PluralKitRepositoryWritesTest {
             corrected += after
         },
         onMemberEdited = { member, fields -> edited += member to fields },
+        onMemberDeleted = { deleted += it },
     ) { registered += it }
 
     private suspend fun members() = client.pk.getOwnMembers()
@@ -314,6 +316,19 @@ class PluralKitRepositoryWritesTest {
         fetching.await()
 
         assertTrue((repository.refreshMembers() as PkResult.Success).value.none { it.uuid == gone.uuid })
+    }
+
+    @Test
+    fun `a member gone, deleted here or elsewhere, is handed on, and one that couldn't be isn't`() = runTest {
+        val (here, elsewhere, kept) = members().takeLast(3)
+        client.pk.deleteMember(elsewhere.uuid)
+
+        repository.deleteMember(here.uuid)
+        repository.deleteMember(elsewhere.uuid)
+        client.refuseNextWrite = PluralKitHttpException(403, "Forbidden")
+        repository.deleteMember(kept.uuid)
+
+        assertEquals(listOf(here.uuid, elsewhere.uuid), deleted)
     }
 
     @Test

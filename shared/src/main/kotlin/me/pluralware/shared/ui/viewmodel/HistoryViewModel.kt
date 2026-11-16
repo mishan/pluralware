@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import me.pluralware.shared.model.Switch
@@ -27,7 +28,10 @@ class HistoryViewModel(
     init {
         load()
         // A fix made from this list, or another screen: show the switches as they are now.
-        repository.switchesChanged.drop(1).onEach { fetch(keepOnFailure = true) }.launchIn(viewModelScope)
+        // A member gone leaves their switches too, and a rename shows in them.
+        merge(repository.switchesChanged.drop(1), repository.membersChanged.drop(1))
+            .onEach { fetch(keepOnFailure = true) }
+            .launchIn(viewModelScope)
     }
 
     fun load() {

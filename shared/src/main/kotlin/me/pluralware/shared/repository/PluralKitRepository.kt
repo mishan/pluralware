@@ -57,6 +57,8 @@ class PluralKitRepository(
     private val onFrontCorrected: (before: Switch?, after: Switch?) -> Unit = { _, _ -> },
     /** Called with a member as PluralKit has it after an edit made here, and the fields it changed. Must not block. */
     private val onMemberEdited: (Member, Set<MemberField>) -> Unit = { _, _ -> },
+    /** Called with a member's uuid once they're gone, deleted here or before. Must not block. */
+    private val onMemberDeleted: (String) -> Unit = {},
     /**
      * Called with each switch this repository registers — never with ones it
      * merely observes on a refresh. Friend sharing hangs off it: telling
@@ -334,6 +336,7 @@ class PluralKitRepository(
             membersChangedHere()
             _switchesChanged.update { it + 1 }
         }
+        if (result is PkResult.Success) onMemberDeleted(uuid)
         if (result is PkResult.Success) afterWrite(
             // A member delete never removes a switch: a different one was made since, elsewhere.
             before?.let { front -> { after -> if (after?.uuid == front.uuid) onFrontCorrected(front, after) } },

@@ -49,6 +49,27 @@ class PickerViewModelTest {
         assertTrue(chosen in vm.state.value.selectedUuids)
     }
 
+    @Test
+    fun `a member deleted while the picker is open leaves the selection`() = runTest {
+        val vm = viewModel()
+        val chosen = vm.pickSomeoneElse()
+        coEvery { client.getOwnMembers() } returns PreviewData.members.filter { it.uuid != chosen }
+
+        repository.forgetMembers()
+
+        assertTrue(chosen !in vm.state.value.selectedUuids)
+    }
+
+    @Test
+    fun `a fronter the member list no longer has isn't selected when the picker opens`() = runTest {
+        val gone = PreviewData.currentSwitch.members.first()
+        coEvery { client.getOwnMembers() } returns PreviewData.members - gone
+
+        val vm = viewModel()
+
+        assertTrue(gone.uuid !in vm.state.value.selectedUuids)
+    }
+
     /** Pick a member who isn't fronting, so submit() really registers a switch. */
     private fun PickerViewModel.pickSomeoneElse(): String {
         val fronting = PreviewData.currentSwitch.members.map { it.uuid }
