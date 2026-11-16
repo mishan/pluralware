@@ -185,7 +185,8 @@ private fun MemberDirectory(
     val shown = if (query.isBlank()) members else members.filter { it.matches(query.trim()) }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        // Room at the end for the Add member button (56dp, inset 16dp), so the last row scrolls clear of it.
+        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (reloadError != null) {

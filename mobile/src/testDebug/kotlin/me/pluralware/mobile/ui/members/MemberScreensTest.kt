@@ -17,6 +17,11 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onAncestors
+import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -42,6 +47,7 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,6 +100,19 @@ class MemberScreensTest {
         compose.onNodeWithText("Create").performClick()
 
         assertEquals(listOf("add:Gale"), events)
+    }
+
+    @Test
+    fun `the last member scrolls clear of the add button`() {
+        val many = (1..30).map { members[0].copy(uuid = "uuid-$it", name = "Member $it") }
+        showMembers(UiState.Content(many))
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Member 30"))
+
+        val last = compose.onNodeWithText("Member 30").getUnclippedBoundsInRoot()
+        val button = compose.onNodeWithText("Add member", useUnmergedTree = true)
+            .onAncestors().filterToOne(hasClickAction()).getUnclippedBoundsInRoot()
+        assertTrue("$last ends under $button", last.bottom <= button.top)
     }
 
     @Test
