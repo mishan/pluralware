@@ -426,6 +426,9 @@ private fun MemberDraft.with(field: MemberField, value: String) = when (field) {
     MemberField.Birthday -> copy(birthday = value)
 }
 
-private val DraftSaver: Saver<MemberDraft?, String> = Saver(save = { it?.let(SavedForm::encode) }, restore = SavedForm::draft)
+// Restored as Any: the version before saved each as a list, under the same key.
+internal val DraftSaver: Saver<MemberDraft?, Any> =
+    Saver(save = { it?.let(SavedForm::encode) }, restore = { (it as? String)?.let(SavedForm::draft) })
 
-private val MemberSaver: Saver<Member?, String> = Saver(save = { it?.let(SavedForm::encode) }, restore = SavedForm::member)
+internal val MemberSaver: Saver<Member?, Any> =
+    Saver(save = { it?.let(SavedForm::encode) }, restore = { (it as? String)?.let(SavedForm::member) })

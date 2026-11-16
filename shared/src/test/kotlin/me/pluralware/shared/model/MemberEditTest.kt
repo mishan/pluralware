@@ -85,6 +85,8 @@ class MemberEditTest {
             ok.copy(birthday = "15/03/2002") to setOf(MemberField.Birthday),
             ok.copy(birthday = "3-15") to setOf(MemberField.Birthday),
             ok.copy(birthday = "March 15") to setOf(MemberField.Birthday),
+            // Java's parser takes a signed year beyond 9999; PluralKit wants four digits.
+            ok.copy(birthday = "+10000-03-15") to setOf(MemberField.Birthday),
         )
         for ((draft, invalid) in cases) {
             val errors = MemberEdit.validate(alex, draft)
