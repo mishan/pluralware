@@ -153,8 +153,10 @@ class MemberEditTest {
             assertEquals(tags.toString(), expected, MemberEdit.proxyTagChanges(alex, untouched.copy(proxyTags = tags)))
         }
         // PluralKit keeps an empty part as null; a "" from anywhere is the same tag.
-        val withEmpty = alex.copy(proxyTags = listOf(ProxyTag("A:", "")))
-        assertEquals(null, MemberEdit.proxyTagChanges(withEmpty, MemberDraft.of(withEmpty)))
+        for (tag in listOf(ProxyTag("A:", ""), ProxyTag("", "-a"), ProxyTag(null, "-a"))) {
+            val withEmpty = alex.copy(proxyTags = listOf(tag))
+            assertEquals(tag.toString(), null, MemberEdit.proxyTagChanges(withEmpty, MemberDraft.of(withEmpty)))
+        }
     }
 
     @Test
@@ -168,12 +170,26 @@ class MemberEditTest {
             listOf(ProxyTagDraft("x".repeat(50), "y".repeat(47))) to
                 "A proxy tag's prefix and suffix can be up to 96 characters together.",
             listOf(ProxyTagDraft("[", "]"), ProxyTagDraft("[", "]")) to "Two proxy tags are the same.",
+            listOf(ProxyTagDraft("", "-a"), ProxyTagDraft("A:", "")) to null,
+            listOf(ProxyTagDraft("x".repeat(97), "")) to "A proxy tag's prefix and suffix can be up to 96 characters together.",
+            listOf(ProxyTagDraft("", "y".repeat(97))) to "A proxy tag's prefix and suffix can be up to 96 characters together.",
         )
         for ((tags, expected) in cases) {
             assertEquals(tags.toString(), expected, MemberEdit.proxyTagProblem(alex, ok.copy(proxyTags = tags)))
         }
         val stored = alex.copy(proxyTags = listOf(ProxyTag("x".repeat(99), null)))
         assertEquals(null, MemberEdit.proxyTagProblem(stored, MemberDraft.of(stored)))
+    }
+
+    @Test
+    fun `a draft can be sent only with no field or proxy tag PluralKit would refuse`() {
+        val ok = MemberDraft.of(alex)
+        val cases = listOf(
+            ok to true,
+            ok.copy(color = "red") to false,
+            ok.copy(proxyTags = listOf(ProxyTagDraft("", ""))) to false,
+        )
+        for ((draft, valid) in cases) assertEquals(draft.toString(), valid, MemberEdit.isValid(alex, draft))
     }
 
     @Test

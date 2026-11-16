@@ -151,10 +151,8 @@ object MemberEdit {
 
     private val HEX_COLOR = Regex("^[0-9a-f]{6}$")
     private val MONTH_DAY = Regex("^\\d{2}-\\d{2}$")
-    private val DATE = Regex("^\\d{4}-\\d{2}-\\d{2}$")
-
-    private fun isDate(value: String) =
-        DATE.matches(value) && runCatching { java.time.LocalDate.parse(value) }.isSuccess
+    // ISO dates only, as PluralKit stores them: the parser wants four digits, then two and two.
+    private fun isDate(value: String) = runCatching { java.time.LocalDate.parse(value) }.isSuccess
 
     internal fun valueOf(member: Member, field: MemberField): String? = when (field) {
         MemberField.Name -> member.name
