@@ -21,6 +21,7 @@ import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.SwitchTimeOutOfRange
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -189,6 +190,7 @@ class PluralKitRepositoryWritesTest {
             val gone = launch { repository.createMember("Gale") }
             gone.cancel()
             val again = async { repository.createMember("Gale") }
+            assertFalse("it waits for the first create, still out", again.isCompleted)
 
             hold.complete(Unit)
 
@@ -296,6 +298,22 @@ class PluralKitRepositoryWritesTest {
 
         assertEquals(counts, Triple(repository.memberEdits.value, repository.membersChanged.value, repository.switchesChanged.value))
         assertTrue(members().any { it.uuid == member.uuid })
+    }
+
+    @Test
+    fun `a member list fetched before a delete settled can't bring the member back`() = runTest(UnconfinedTestDispatcher()) {
+        val gone = members().last()
+        val hold = CompletableDeferred<Unit>()
+        client.holdMemberFetch = hold
+        val fetching = async { repository.refreshMembers(force = true) }
+        // Deleted elsewhere first, so this delete finds them gone and sends nothing that lands.
+        client.pk.deleteMember(gone.uuid)
+        repository.deleteMember(gone.uuid)
+
+        hold.complete(Unit)
+        fetching.await()
+
+        assertTrue((repository.refreshMembers() as PkResult.Success).value.none { it.uuid == gone.uuid })
     }
 
     @Test

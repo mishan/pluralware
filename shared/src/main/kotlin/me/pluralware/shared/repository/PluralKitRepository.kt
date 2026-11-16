@@ -343,7 +343,11 @@ class PluralKitRepository(
 
     /** A member was made, edited or deleted here: screens reload, and the other device is told. */
     private suspend fun membersChangedHere() {
-        membersCacheMutex.withLock { membersCache = null }
+        membersCacheMutex.withLock {
+            membersCache = null
+            // A list being fetched now may be from before the change: too old to keep.
+            cachedMemberFetch = memberFetches.get()
+        }
         _memberEdits.update { it + 1 }
         _membersChanged.update { it + 1 }
     }
