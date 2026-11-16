@@ -285,7 +285,7 @@ chosen for sharing already do.
   ("deletes Alex from PluralKit for good, and takes them out of every switch they were in"), and
   enables Delete only once the member's name is typed, matched ignoring case and surrounding
   spaces. Save and Delete can't run at once. Afterwards the editor closes without asking about
-  unsaved changes; a member already gone says so.
+  unsaved changes, whether this delete removed the member or found them already gone.
 
 **Failures.**
 - Over the member limit or another refusal: PluralKit's message, in the dialog.
@@ -309,7 +309,8 @@ chosen for sharing already do.
   change.
 - Screens: the add dialog's checks and its flow into the editor; the delete dialog enabling only
   on the typed name; Save and Delete excluding each other; closing after a delete without a
-  prompt.
+  prompt. The dialogs' contents are tested apart from their dialogs: Robolectric never settles
+  with a text field in a dialog window.
 
 **Slices.** (1) Client, mock and repository. (2) The rest of the app: relay names, pickers and
 History. (3) The two screens.

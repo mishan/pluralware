@@ -55,6 +55,17 @@ class MemberEditorViewModelTest {
             editFailure?.let { throw it }
             return pk.updateMember(uuid, changes, proxyTags, privacy)
         }
+
+        val deletes = mutableListOf<String>()
+        var deleteFailure: Exception? = null
+        var holdDelete: CompletableDeferred<Unit>? = null
+
+        override suspend fun deleteMember(uuid: String) {
+            deletes += uuid
+            holdDelete?.await()
+            deleteFailure?.let { throw it }
+            pk.deleteMember(uuid)
+        }
     }
 
     private val client = RecordingClient()
@@ -128,6 +139,61 @@ class MemberEditorViewModelTest {
         assertEquals(listOf(mapOf(MemberPrivacy.Pronouns to true)), client.privacyEdits)
         assertTrue(vm.state.value.saved)
         assertTrue(MemberPrivacy.Pronouns in client.pk.getOwnMembers().first().privateParts)
+    }
+
+    @Test
+    fun `deleting the member closes the editor once they're gone`() = runTest {
+        val vm = editor()
+
+        vm.delete()
+
+        assertTrue(vm.state.value.deleted)
+        assertTrue(client.pk.getOwnMembers().none { it.uuid == alex.uuid })
+    }
+
+    @Test
+    fun `a failed delete says why, and the editor stays`() = runTest {
+        val vm = editor()
+        client.deleteFailure = IOException("offline")
+
+        vm.delete()
+
+        assertEquals("Couldn't reach PluralKit. Check your connection and try again.", vm.state.value.deleteError)
+        assertFalse(vm.state.value.deleted)
+        assertFalse(vm.state.value.deleting)
+        vm.deleteDismissed()
+        assertNull("gone with its dialog", vm.state.value.deleteError)
+    }
+
+    @Test
+    fun `a delete that fails for another reason keeps the offer to sign out a rejected token made`() = runTest {
+        val vm = editor()
+        client.editFailure = PluralKitHttpException(401, "Unauthorized")
+        vm.save(alex, MemberDraft.of(alex).copy(pronouns = "xe/xem"))
+        client.deleteFailure = IOException("offline")
+
+        vm.delete()
+
+        assertTrue(vm.state.value.unauthorized)
+    }
+
+    @Test
+    fun `saving and deleting can't run at once`() = runTest {
+        val draft = MemberDraft.of(alex).copy(pronouns = "xe/xem")
+        val saving = editor()
+        client.holdEdit = CompletableDeferred()
+        saving.save(alex, draft)
+        saving.delete()
+        assertEquals("no delete while saving", emptyList<String>(), client.deletes)
+        client.holdEdit!!.complete(Unit)
+
+        val deleting = editor()
+        client.holdDelete = CompletableDeferred()
+        deleting.delete()
+        assertTrue(deleting.state.value.deleting)
+        deleting.save(alex, draft.copy(pronouns = "ze/zir"))
+        assertEquals("no save while deleting", 1, client.edits.size)
+        client.holdDelete!!.complete(Unit)
     }
 
     @Test
