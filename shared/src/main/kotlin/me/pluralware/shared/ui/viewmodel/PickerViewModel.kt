@@ -79,12 +79,10 @@ class PickerViewModel(
     }
 
     private fun showMembers(members: List<Member>) {
-        _state.update { it.copy(members = UiState.Content(members)) }
-        if (editing == null) return
-        // A member deleted since the switch was listed: PluralKit dropped them from it too,
-        // and there's no row here to deselect them with.
+        // A member deleted since they were selected: there's no row to deselect them with, and
+        // PluralKit would refuse a switch with them (or, fixing one, has dropped them from it).
         val known = members.mapTo(HashSet()) { it.uuid }
-        _state.update { it.copy(selectedUuids = it.selectedUuids.filter { uuid -> uuid in known }) }
+        _state.update { it.copy(members = UiState.Content(members), selectedUuids = it.selectedUuids.filter { uuid -> uuid in known }) }
         unchangedFrom = unchangedFrom?.filter { it in known }
     }
 
@@ -104,8 +102,10 @@ class PickerViewModel(
             val fronterUuids = result.value?.members?.map { it.uuid }.orEmpty()
             _state.update { current ->
                 if (current.seeded) return@update current
-                // Don't clobber user toggles that landed before the fetch did.
-                val selection = current.selectedUuids.ifEmpty { fronterUuids }
+                // Don't clobber user toggles that landed before the fetch did, and leave out
+                // fronters the member list shown no longer has (deleted meanwhile).
+                val known = (current.members as? UiState.Content)?.value?.mapTo(HashSet()) { it.uuid }
+                val selection = current.selectedUuids.ifEmpty { fronterUuids.filter { known == null || it in known } }
                 current.copy(selectedUuids = selection, seeded = true)
             }
         }
