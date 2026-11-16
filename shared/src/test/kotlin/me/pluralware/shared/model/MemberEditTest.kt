@@ -19,6 +19,7 @@ class MemberEditTest {
         description = "Likes tea.",
         birthday = "2002-03-15",
         proxyTags = listOf(ProxyTag("[", "]"), ProxyTag("A:", null)),
+        aliases = listOf("Lex", "Al"),
     )
 
     @Test
@@ -190,8 +191,44 @@ class MemberEditTest {
             ok to true,
             ok.copy(color = "red") to false,
             ok.copy(proxyTags = listOf(ProxyTagDraft("", ""))) to false,
+            ok.copy(aliases = listOf("")) to false,
         )
         for ((draft, valid) in cases) assertEquals(draft.toString(), valid, MemberEdit.isValid(alex, draft))
+    }
+
+    @Test
+    fun `aliases are sent whole, trimmed as PluralKit trims them, and only when they changed`() {
+        val untouched = MemberDraft.of(alex)
+        val cases = listOf(
+            untouched.aliases to null,
+            listOf(" Lex ", "Al") to null,
+            listOf("Al", "Lex") to listOf("Al", "Lex"),
+            untouched.aliases + "Xan" to listOf("Lex", "Al", "Xan"),
+            emptyList<String>() to emptyList(),
+        )
+        for ((aliases, expected) in cases) {
+            assertEquals(aliases.toString(), expected, MemberEdit.aliasChanges(alex, untouched.copy(aliases = aliases)))
+        }
+    }
+
+    @Test
+    fun `aliases PluralKit would refuse are caught, unless they're as PluralKit has them`() {
+        val ok = MemberDraft.of(alex)
+        val cases = listOf(
+            ok.aliases to null,
+            listOf("Lex", "  ") to "An alias can't be blank.",
+            listOf("x".repeat(100)) to null,
+            listOf("x".repeat(101)) to "An alias can be up to 100 characters.",
+            List(10) { "a$it" } to null,
+            List(11) { "a$it" } to "Up to 10 aliases.",
+            // PluralKit compares them ignoring case.
+            listOf("Lex", "lex") to "Two aliases are the same.",
+        )
+        for ((aliases, expected) in cases) {
+            assertEquals(aliases.toString(), expected, MemberEdit.aliasProblem(alex, ok.copy(aliases = aliases)))
+        }
+        val stored = alex.copy(aliases = List(11) { "a$it" })
+        assertEquals(null, MemberEdit.aliasProblem(stored, MemberDraft.of(stored)))
     }
 
     @Test
@@ -305,6 +342,7 @@ class MemberEditTest {
             birthday = keepOr(draft.birthday) { listOf("", "03-15", "2001-01-01", "02-29").random(random) },
             proxyTags = draft.proxyTags,
             privateParts = draft.privateParts,
+            aliases = draft.aliases,
         )
     }
 }

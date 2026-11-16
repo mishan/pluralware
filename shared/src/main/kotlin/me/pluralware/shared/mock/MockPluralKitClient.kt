@@ -89,8 +89,11 @@ class MockPluralKitClient(
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>?,
         privacy: Map<MemberPrivacy, Boolean>,
+        aliases: List<String>?,
     ): Member {
-        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty()) { "An edit that changes nothing isn't sent" }
+        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty() || aliases != null) {
+            "An edit that changes nothing isn't sent"
+        }
         delayLike()
         val index = members.indexOfFirst { it.uuid == uuid }
         if (index < 0) throw refused(404, 20002, "Member not found.")
@@ -107,7 +110,7 @@ class MockPluralKitClient(
             }
         }
         val private = updated.privateParts + privacy.filterValues { it }.keys - privacy.filterValues { !it }.keys
-        members[index] = updated.copy(proxyTags = proxyTags ?: updated.proxyTags, privateParts = private)
+        members[index] = updated.copy(proxyTags = proxyTags ?: updated.proxyTags, privateParts = private, aliases = aliases ?: updated.aliases)
         return members[index]
     }
 

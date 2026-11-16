@@ -39,6 +39,7 @@ class MemberEditorViewModelTest {
         val edits = mutableListOf<Map<MemberField, String?>>()
         val tagEdits = mutableListOf<List<ProxyTag>?>()
         val privacyEdits = mutableListOf<Map<MemberPrivacy, Boolean>>()
+        val aliasEdits = mutableListOf<List<String>?>()
         var editFailure: Exception? = null
         var holdEdit: CompletableDeferred<Unit>? = null
 
@@ -47,13 +48,15 @@ class MemberEditorViewModelTest {
             changes: Map<MemberField, String?>,
             proxyTags: List<ProxyTag>?,
             privacy: Map<MemberPrivacy, Boolean>,
+            aliases: List<String>?,
         ): Member {
             edits += changes
+            aliasEdits += aliases
             tagEdits += proxyTags
             privacyEdits += privacy
             holdEdit?.await()
             editFailure?.let { throw it }
-            return pk.updateMember(uuid, changes, proxyTags, privacy)
+            return pk.updateMember(uuid, changes, proxyTags, privacy, aliases)
         }
 
         val deletes = mutableListOf<String>()
@@ -128,6 +131,19 @@ class MemberEditorViewModelTest {
         assertEquals(listOf(listOf(ProxyTag("[", "]"))), client.tagEdits)
         assertTrue(vm.state.value.saved)
         assertEquals(listOf(ProxyTag("[", "]")), client.pk.getOwnMembers().first().proxyTags)
+    }
+
+    @Test
+    fun `aliases alone are an edit, and ones PluralKit would refuse aren't sent`() = runTest {
+        val vm = editor()
+        vm.save(alex, MemberDraft.of(alex).copy(aliases = listOf(" ")))
+        assertEquals("refused before sending", emptyList<List<String>?>(), client.aliasEdits)
+
+        vm.save(alex, MemberDraft.of(alex).copy(aliases = listOf(" Lex ")))
+
+        assertEquals(listOf(listOf("Lex")), client.aliasEdits)
+        assertTrue(vm.state.value.saved)
+        assertEquals(listOf("Lex"), client.pk.getOwnMembers().first().aliases)
     }
 
     @Test

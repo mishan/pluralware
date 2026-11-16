@@ -66,6 +66,7 @@ interface PluralKitClient {
         changes: Map<MemberField, String?>,
         proxyTags: List<ProxyTag>? = null,
         privacy: Map<MemberPrivacy, Boolean> = emptyMap(),
+        aliases: List<String>? = null,
     ): Member
 
     /** PATCH /systems/@me/switches/{uuid}: moves when the switch started. */

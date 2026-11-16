@@ -47,6 +47,7 @@ internal data class MemberDto(
     /** "YYYY-MM-DD"; year 0004 when PluralKit keeps it without a year. */
     val birthday: String? = null,
     @SerialName("proxy_tags") val proxyTags: List<ProxyTagDto> = emptyList(),
+    val aliases: List<String>? = null,
     /**
      * Each part's "private" or "public" (null: public), by
      * [me.pluralware.shared.model.MemberPrivacy.apiKey]. Present only when the

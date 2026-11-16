@@ -120,7 +120,8 @@ internal fun MemberEditorContent(
     val changed = from != null && form != null && (
         MemberField.entries.any { MemberEdit.normalize(it, form[it]) != MemberEdit.normalize(it, MemberDraft.of(from)[it]) } ||
             MemberEdit.proxyTagChanges(from, form) != null ||
-            MemberEdit.privacyChanges(from, form).isNotEmpty()
+            MemberEdit.privacyChanges(from, form).isNotEmpty() ||
+            MemberEdit.aliasChanges(from, form) != null
         )
 
     var confirmingDiscard by rememberSaveable { mutableStateOf(false) }
@@ -158,6 +159,7 @@ internal fun MemberEditorContent(
                 },
                 onTagsChange = { draft = form.copy(proxyTags = it) },
                 onPrivacyChange = { draft = form.copy(privateParts = it) },
+                onAliasesChange = { draft = form.copy(aliases = it) },
                 onDeleteClick = { confirmingDelete = true },
                 modifier = modifier,
             )
@@ -210,6 +212,7 @@ private fun MemberForm(
     onChange: (MemberField, String) -> Unit,
     onTagsChange: (List<ProxyTagDraft>) -> Unit,
     onPrivacyChange: (Set<MemberPrivacy>) -> Unit,
+    onAliasesChange: (List<String>) -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier,
 ) {
@@ -261,6 +264,7 @@ private fun MemberForm(
             )
         }
         ProxyTags(draft.proxyTags, MemberEdit.proxyTagProblem(original, draft), enabled = !locked, onChange = onTagsChange)
+        Aliases(draft.aliases, MemberEdit.aliasProblem(original, draft), enabled = !locked, onChange = onAliasesChange)
         Privacy(draft.privateParts, enabled = !locked, onChange = onPrivacyChange)
         OutlinedButton(
             onClick = onDeleteClick,
@@ -354,6 +358,34 @@ private val MemberPrivacy.label: String
         MemberPrivacy.ProxyTags -> "Proxy tags"
         MemberPrivacy.Aliases -> "Aliases"
     }
+
+/** Other names the member goes by, one per row. */
+@Composable
+private fun Aliases(aliases: List<String>, problem: String?, enabled: Boolean, onChange: (List<String>) -> Unit) {
+    Text("Aliases", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    aliases.forEachIndexed { i, alias ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = alias,
+                onValueChange = { onChange(aliases.toMutableList().apply { set(i, it) }) },
+                enabled = enabled,
+                label = { Text("Alias") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                modifier = Modifier.weight(1f).testTag("alias-name-$i"),
+            )
+            IconButton(
+                onClick = { onChange(aliases.filterIndexed { j, _ -> j != i }) },
+                enabled = enabled,
+                modifier = Modifier.testTag("alias-remove-$i"),
+            ) { Icon(Icons.Filled.Close, contentDescription = "Remove alias ${i + 1}") }
+        }
+    }
+    if (problem != null) {
+        Text(problem, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    TextButton(onClick = { onChange(aliases + "") }, enabled = enabled) { Text("Add alias") }
+}
 
 /** Each tag as prefix, "text", suffix: how a message is marked as this member's in Discord. */
 @Composable
