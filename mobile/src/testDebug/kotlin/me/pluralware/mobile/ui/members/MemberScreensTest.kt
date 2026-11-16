@@ -41,6 +41,7 @@ import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -415,6 +416,15 @@ class MemberScreensTest {
         field(MemberField.Birthday).performTextReplacement("2002-03-15")
         compose.onNodeWithText("Save").performClick()
         assertEquals(listOf(alex to MemberDraft.of(alex).copy(birthday = "2002-03-15")), saves)
+    }
+
+    @Test
+    fun `state the previous version saved is set aside, not read as something else`() {
+        // That version saved each as a list of its fields.
+        val old = listOf("alpha", "uuid-alpha", "Alex")
+
+        assertNull(DraftSaver.restore(old))
+        assertNull(MemberSaver.restore(old))
     }
 
     @Test

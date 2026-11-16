@@ -37,7 +37,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,8 +66,8 @@ import me.pluralware.shared.model.MemberDraft
 import me.pluralware.shared.model.MemberEdit
 import me.pluralware.shared.model.MemberField
 import me.pluralware.shared.model.MemberPrivacy
-import me.pluralware.shared.model.ProxyTag
 import me.pluralware.shared.model.ProxyTagDraft
+import me.pluralware.shared.model.SavedForm
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.ui.state.UiState
 
@@ -101,7 +100,8 @@ internal fun MemberEditorContent(
     var original by rememberSaveable(stateSaver = MemberSaver) { mutableStateOf<Member?>(null) }
     var draft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf<MemberDraft?>(null) }
     val loaded = (state.member as? UiState.Content)?.value
-    if (original == null && loaded != null) {
+    // Both from the member as loaded, unless both were restored: a form must diff against its own start.
+    if ((original == null || draft == null) && loaded != null) {
         original = loaded
         draft = MemberDraft.of(loaded)
     }
@@ -426,43 +426,9 @@ private fun MemberDraft.with(field: MemberField, value: String) = when (field) {
     MemberField.Birthday -> copy(birthday = value)
 }
 
-// The text fields in order, the private parts, then each proxy tag's prefix and suffix.
-private val DraftSaver: Saver<MemberDraft?, Any> = listSaver(
-    save = { draft ->
-        draft?.let { d ->
-            MemberField.entries.map { d[it] } + d.privateParts.toSaved() + d.proxyTags.flatMap { listOf(it.prefix, it.suffix) }
-        }.orEmpty()
-    },
-    restore = { values ->
-        val fields = MemberField.entries.size
-        values.takeIf { it.size > fields && (it.size - fields - 1) % 2 == 0 }?.let {
-            val tags = it.drop(fields + 1).chunked(2) { (prefix, suffix) -> ProxyTagDraft(prefix, suffix) }
-            val blank = MemberDraft("", "", "", "", "", "", "", tags, privateParts(it[fields]))
-            MemberField.entries.zip(it).fold(blank) { draft, (field, value) -> draft.with(field, value) }
-        }
-    },
-)
+// Restored as Any: the version before saved each as a list, under the same key.
+internal val DraftSaver: Saver<MemberDraft?, Any> =
+    Saver(save = { it?.let(SavedForm::encode) }, restore = { (it as? String)?.let(SavedForm::draft) })
 
-private fun Set<MemberPrivacy>.toSaved() = joinToString(",") { it.apiKey }
-
-private fun privateParts(saved: String?) = saved.orEmpty().split(",").mapNotNullTo(HashSet()) { key ->
-    MemberPrivacy.entries.firstOrNull { it.apiKey == key }
-}
-
-// Ten fields, then each proxy tag's prefix and suffix.
-private val MemberSaver: Saver<Member?, Any> = listSaver(
-    save = { m ->
-        m?.let {
-            listOf(it.id, it.uuid, it.name, it.displayName, it.pronouns, it.color, it.avatarUrl, it.privateParts.toSaved(), it.description, it.birthday) +
-                it.proxyTags.flatMap { tag -> listOf(tag.prefix, tag.suffix) }
-        }.orEmpty()
-    },
-    restore = { v ->
-        v.takeIf { it.size >= 10 && (it.size - 10) % 2 == 0 }?.let {
-            Member(
-                it[0]!!, it[1]!!, it[2]!!, it[3], it[4], it[5], it[6], privateParts = privateParts(it[7]), description = it[8], birthday = it[9],
-                proxyTags = it.drop(10).chunked(2) { (prefix, suffix) -> ProxyTag(prefix, suffix) },
-            )
-        }
-    },
-)
+internal val MemberSaver: Saver<Member?, Any> =
+    Saver(save = { it?.let(SavedForm::encode) }, restore = { (it as? String)?.let(SavedForm::member) })

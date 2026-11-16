@@ -1,5 +1,6 @@
 package me.pluralware.shared.model
 
+import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** The member fields the phone can edit, with PluralKit's key and length limit for each. */
@@ -14,6 +15,7 @@ enum class MemberField(val apiKey: String, val maxLength: Int?) {
 }
 
 /** A member edit form's fields, exactly as typed. */
+@Serializable
 data class MemberDraft(
     val name: String,
     val displayName: String,
@@ -51,6 +53,7 @@ data class MemberDraft(
 }
 
 /** A proxy tag's fields, exactly as typed. */
+@Serializable
 data class ProxyTagDraft(val prefix: String, val suffix: String)
 
 /**
@@ -151,6 +154,7 @@ object MemberEdit {
 
     private val HEX_COLOR = Regex("^[0-9a-f]{6}$")
     private val MONTH_DAY = Regex("^\\d{2}-\\d{2}$")
+    // The shape PluralKit stores: Java's parser alone also takes a signed year beyond 9999.
     private val DATE = Regex("^\\d{4}-\\d{2}-\\d{2}$")
 
     private fun isDate(value: String) =

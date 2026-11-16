@@ -1,6 +1,7 @@
 package me.pluralware.shared.model
 
 import java.time.Instant
+import kotlinx.serialization.Serializable
 
 /**
  * A PluralKit system member, reduced to the fields the watch UI actually uses.
@@ -8,6 +9,7 @@ import java.time.Instant
  * Intentionally narrower than the full API model — adding fields later is cheap,
  * but every field here is one we promise to keep stable for the UI.
  */
+@Serializable
 data class Member(
     val id: String,           // 5–6 char short ID (the user-facing one).
     val uuid: String,         // Stable UUID; what we send to the API.
@@ -48,6 +50,7 @@ enum class MemberPrivacy(val apiKey: String) {
 }
 
 /** What marks a message as this member's in Discord: `prefix` + text + `suffix`, either one optional. */
+@Serializable
 data class ProxyTag(val prefix: String?, val suffix: String?)
 
 /**
