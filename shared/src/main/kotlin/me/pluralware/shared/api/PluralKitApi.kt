@@ -63,6 +63,12 @@ internal interface PluralKitApi {
     @PATCH("members/{uuid}")
     suspend fun updateMember(@Path("uuid") uuid: String, @Body changes: JsonObject): MemberDto
 
+    @POST("members")
+    suspend fun createMember(@Body member: JsonObject): MemberDto
+
+    @DELETE("members/{uuid}")
+    suspend fun deleteMember(@Path("uuid") uuid: String): Response<Unit>
+
     @PATCH("systems/@me/switches/{uuid}")
     suspend fun moveSwitch(@Path("uuid") uuid: String, @Body body: MoveSwitchRequest): SwitchFullDto
 

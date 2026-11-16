@@ -156,6 +156,14 @@ class RetrofitPluralKitClient internal constructor(
         if (!response.isSuccessful) throw response.toPluralKitException()
     }
 
+    override suspend fun createMember(name: String): Member =
+        http { api.createMember(JsonObject(mapOf("name" to JsonPrimitive(name)))) }.toDomain().also { remember(listOf(it)) }
+
+    override suspend fun deleteMember(uuid: String) {
+        val response = api.deleteMember(uuid)
+        if (!response.isSuccessful) throw response.toPluralKitException()
+    }
+
     override suspend fun forgetMembers() {
         cacheMutex.withLock {
             memberCache = null

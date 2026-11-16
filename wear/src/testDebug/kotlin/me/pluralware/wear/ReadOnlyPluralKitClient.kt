@@ -16,6 +16,8 @@ abstract class ReadOnlyPluralKitClient : PluralKitClient {
         proxyTags: List<ProxyTag>?,
         privacy: Map<MemberPrivacy, Boolean>,
     ): Member = noEdits()
+    override suspend fun createMember(name: String): Member = noEdits()
+    override suspend fun deleteMember(uuid: String): Unit = noEdits()
     override suspend fun moveSwitch(uuid: String, to: Instant): Switch = noEdits()
     override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): Switch = noEdits()
     override suspend fun deleteSwitch(uuid: String): Unit = noEdits()

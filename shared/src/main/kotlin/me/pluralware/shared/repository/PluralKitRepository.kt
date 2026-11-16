@@ -4,6 +4,8 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -191,11 +193,7 @@ class PluralKitRepository(
     ): PkResult<Member> = detached {
         val result = runCatchingPk { sent { client.updateMember(uuid, changes, proxyTags, privacy) } }
         // Unless PluralKit refused it, the edit may have landed: cached names may be old.
-        if (!result.refusedByPluralKit()) {
-            membersCacheMutex.withLock { membersCache = null }
-            _memberEdits.update { it + 1 }
-            _membersChanged.update { it + 1 }
-        }
+        if (!result.refusedByPluralKit()) membersChangedHere()
         if (result is PkResult.Success) {
             onMemberEdited(result.value, changes.keys)
             afterWrite()
@@ -250,6 +248,110 @@ class PluralKitRepository(
         result
     }
 
+    /**
+     * Makes a member named [name]. PluralKit allows two of the same name, so a
+     * create whose answer was lost is checked for, and a second create for a
+     * name still being made waits for the first rather than making another.
+     */
+    suspend fun createMember(name: String): PkResult<Member> {
+        val trimmed = name.trim()
+        val dispatcher = currentCoroutineContext()[ContinuationInterceptor] ?: EmptyCoroutineContext
+        // The write holds its name until it's done, not its caller: a screen that went away
+        // leaves the create still out.
+        val write = creating.computeIfAbsent(trimmed) {
+            writeScope.async(dispatcher, start = CoroutineStart.LAZY) { create(trimmed) }
+                .also { started -> started.invokeOnCompletion { creating.remove(trimmed, started) } }
+        }
+        write.start()
+        return write.await()
+    }
+
+    private suspend fun create(name: String): PkResult<Member> {
+        var sending = false
+        var refused = false
+        val result = runCatchingPk {
+            val earlier = unsettledCreates[name]
+            // A retry: the last try may have landed after all.
+            if (earlier != null) landed(name, earlier)?.let { return@runCatchingPk it }
+            val before = earlier ?: client.getOwnMembers().mapTo(HashSet()) { it.uuid }
+            unsettledCreates[name] = before
+            sending = true
+            try {
+                sent { client.createMember(name) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A 4xx is PluralKit's refusal. A 5xx may be a proxy's, for a create that landed.
+                if (e is PluralKitHttpException && e.statusCode < 500) {
+                    refused = true
+                    throw e
+                }
+                if (e is PluralKitHttpException) writes.incrementAndGet()
+                landed(name, before) ?: throw e
+            }
+        }
+        if (result is PkResult.Success || refused) unsettledCreates.remove(name)
+        if (result is PkResult.Success || (sending && !refused)) membersChangedHere()
+        return result
+    }
+
+    /** The member named [name] that wasn't among [before]: a create that landed. */
+    private suspend fun landed(name: String, before: Set<String>): Member? =
+        client.getOwnMembers().firstOrNull { it.name == name && it.uuid !in before }
+
+    /**
+     * Deletes a member: [Deletion.AlreadyGone] if PluralKit no longer had them.
+     * PluralKit takes them out of every switch; if they were fronting, the
+     * front is corrected.
+     */
+    suspend fun deleteMember(uuid: String): PkResult<Deletion> = detached {
+        val retrying = unsettledMemberDeletes.containsKey(uuid)
+        var sending = false
+        var refused = false
+        val result = runCatchingPk {
+            // Asked fresh: a retry finds them already gone if the first try landed, so keep its front.
+            val front = client.getCurrentFronters()?.takeIf { switch -> switch.members.any { it.uuid == uuid } }
+            unsettledMemberDeletes[uuid] = UnsettledDelete(unsettledMemberDeletes[uuid]?.front ?: front)
+            sending = true
+            try {
+                sent { client.deleteMember(uuid) }
+                Deletion.Done
+            } catch (e: PluralKitHttpException) {
+                // A proxy's error, for a delete that may have landed: settled by a retry.
+                if (e.statusCode >= 500) {
+                    writes.incrementAndGet()
+                    throw e
+                }
+                refused = e.code != MEMBER_GONE
+                if (refused) throw e
+                if (retrying) Deletion.Done else Deletion.AlreadyGone
+            }
+        }
+        val before = unsettledMemberDeletes[uuid]?.front
+        if (result is PkResult.Success || refused) unsettledMemberDeletes.remove(uuid)
+        if (sending && !refused) {
+            client.forgetMembers()
+            membersChangedHere()
+            _switchesChanged.update { it + 1 }
+        }
+        if (result is PkResult.Success) afterWrite(
+            // A member delete never removes a switch: a different one was made since, elsewhere.
+            before?.let { front -> { after -> if (after?.uuid == front.uuid) onFrontCorrected(front, after) } },
+        )
+        result
+    }
+
+    /** A member was made, edited or deleted here: screens reload, and the other device is told. */
+    private suspend fun membersChangedHere() {
+        membersCacheMutex.withLock {
+            membersCache = null
+            // A list being fetched now may be from before the change: too old to keep.
+            cachedMemberFetch = memberFetches.get()
+        }
+        _memberEdits.update { it + 1 }
+        _membersChanged.update { it + 1 }
+    }
+
     /** Deletes a switch: [Deletion.AlreadyGone] if PluralKit no longer had it. */
     suspend fun deleteSwitch(uuid: String): PkResult<Deletion> = detached {
         val retrying = unsettledDeletes.containsKey(uuid)
@@ -294,11 +396,18 @@ class PluralKitRepository(
     // Writes whose response was lost, so it's not known whether they landed.
     private val unsettledFixes = ConcurrentHashMap<String, UnsettledFix>()
     private val unsettledDeletes = ConcurrentHashMap<String, UnsettledDelete>()
+    private val unsettledMemberDeletes = ConcurrentHashMap<String, UnsettledDelete>()
+
+    // Creates whose answer was lost, by name: the member uuids there before the first try.
+    private val unsettledCreates = ConcurrentHashMap<String, Set<String>>()
+
+    // Creates in flight, by name.
+    private val creating = ConcurrentHashMap<String, Deferred<PkResult<Member>>>()
 
     /** [before]: the current switch the fix started from, if it was this one. */
     private class UnsettledFix(val members: List<String>, val before: Switch?)
 
-    /** [front]: the switch being deleted, if it was the current one. */
+    /** [front]: the current switch, if the delete reaches into it. */
     private class UnsettledDelete(val front: Switch?)
 
     // Corrections whose fetch after the write failed; the next fetch that works delivers them.
@@ -368,6 +477,7 @@ class PluralKitRepository(
 
         /** PluralKit's refusal of a members fix: the switch already has exactly those members. */
         const val SAME_MEMBERS = 40004
+        private const val MEMBER_GONE = 20002
         private val SWITCH_GONE = setOf(20007, 20008)
     }
 

@@ -220,3 +220,96 @@ the next fetch that works.
 | UI (Robolectric) | The editor (including restore after process death) and the switch sheet | Wiring and labels |
 
 The property test uses a seeded generator written for it, not a new library.
+
+## 11. Adding and deleting members
+
+A later round: add a member from the phone, and delete one, so that a new member shows
+everywhere the app shows members and a deleted one is gone everywhere, with nothing still using
+them. Undo, bulk deletes and imports are out of scope.
+
+**What PluralKit does.** `POST /members` takes a partial member; only `name` is required, and it
+answers with the member. A system holds up to 1000 members unless PluralKit raised its limit.
+`DELETE /members/{uuid}` answers 204, or 404 (20002) for a member it doesn't have. Deleting
+removes the member from every switch, as the database's `switch_members` rows cascade; the
+switches stay, so one the member fronted alone becomes a switch-out. Uuids are never reused.
+
+**Client and repository.**
+- `PluralKitClient.createMember(name)` and `deleteMember(uuid)`.
+- `PluralKitRepository.createMember(name): PkResult<Member>` and
+  `deleteMember(uuid): PkResult<Deletion>`, run detached like the other writes. Each, unless
+  PluralKit refused it or it never went out, drops the member caches (a delete, the client's
+  history lookup too; a create adds itself there) and counts a member edit (so the watch catches up, section 7) and a member change (so screens
+  reload). A delete also counts a switch change, since it reaches into switches; a create
+  doesn't.
+- **A create whose answer was lost** must not make a second member: PluralKit allows two with the
+  same name. Before sending, the repository fetches the members. If the answer is lost (a
+  dropped connection, or a 5xx, which a proxy in front of PluralKit can return for a create that
+  landed), it fetches them again: a member with that name (trimmed, as sent) that wasn't there
+  before is the create, landed. The name and the first list are kept as an unsettled create, so
+  a retry runs the check again before sending; only if every check fails can a retry duplicate.
+  A create for a name still in flight waits for it rather than sending another, for as long as
+  the write is out, even if the screen that asked has gone. A 4xx from a check (a rate limit,
+  say) is the check failing, not PluralKit refusing the create.
+- **A delete whose answer was lost** (a dropped connection, or a 5xx) is kept as an unsettled delete, with the front seen before
+  the first try, as for switches: a retry's 404 is `Done` (a first try's is `AlreadyGone`), and
+  the correction below still goes out, from that first front.
+
+**The front.** Before deleting, the repository asks PluralKit for the current front, as
+`deleteSwitch` does. If the member is in it, the fetch after the delete is a correction: the same
+switch, without them, or a switch-out if they fronted alone. It goes to `onFrontCorrected` (so
+friends get "Correction: Bea is fronting"), only while that fetch still shows the same switch: a
+member delete never removes a switch, so another one was made elsewhere and announced there.
+The announcer's "can friends tell?" check (section 6) applies as usual, so deleting an unshared
+co-fronter still tells friends ("Bea and someone else" becomes "Bea"). `SwitchSync` carries the
+new member hash to the other device, and the complication and tile follow `loadedFronters`.
+
+**Friend sharing.** The sharing config is left alone. Its shared set may keep a deleted member's
+uuid, which nothing can match again; removing it would race the correction, which reads the set
+to word "before". But the relay announces with the names it was last given, so a new
+`onMemberDeleted(uuid)` hook re-uploads the relay's names, from the members as they are now,
+under the relay-write lock, when the member was shared and a relay is set up (as
+`RelayNameSync.memberEdited` does for renames). A new member starts unshared, as members not
+chosen for sharing already do.
+
+**Other screens.**
+- Both pickers drop a member they no longer have from the selection when the member list
+  reloads, as the edit-mode picker already does, so a deleted member can't be sent in a new
+  switch. This covers the watch's picker, which reloads on `MemberSync`.
+- History reloads on member changes as well as switch changes: on the watch, a `MemberSync`
+  notice is the only sign a member left old switches.
+
+**Screens.**
+- Members gets an **Add member** button. It asks for a name only (required, up to 100
+  characters), creates the member, and opens the editor for the rest.
+- The editor gets **Delete member** at the bottom. Its dialog names the member, says what happens
+  ("deletes Alex from PluralKit for good, and takes them out of every switch they were in"), and
+  enables Delete only once the member's name is typed, matched ignoring case and surrounding
+  spaces. Save and Delete can't run at once. Afterwards the editor closes without asking about
+  unsaved changes; a member already gone says so.
+
+**Failures.**
+- Over the member limit or another refusal: PluralKit's message, in the dialog.
+- Lost answers: above.
+- The session ending mid-write cancels it, as for the other writes.
+- An editor restored after the process died mid-delete may hold a deleted member; a Save then
+  gets PluralKit's "member not found", which the editor already shows.
+
+**Tests.**
+- Client: the request bodies and paths; a delete's empty 204; a 404's code, and a 404 without
+  20002 staying a failure.
+- Mock: creates; deletes that take the member out of each stored switch, leaving one empty.
+- Repository: the counters and caches (a create counts no switch change); a lost create found
+  landed, not mistaken for a same-named member that was there before, and its check re-run on a
+  retry after the check itself failed; a 5xx taking the same path; a second create for the same
+  name waiting; the delete's correction for a member fronting with others, alone, or not at all,
+  with an unshared co-fronter; a lost delete retried still correcting; no correction about a
+  switch made since.
+- Relay: names re-uploaded under the lock for a shared member with a relay, and nothing otherwise.
+- Pickers: a deleted member leaves the selection, in both modes. History: reloads on a member
+  change.
+- Screens: the add dialog's checks and its flow into the editor; the delete dialog enabling only
+  on the typed name; Save and Delete excluding each other; closing after a delete without a
+  prompt.
+
+**Slices.** (1) Client, mock and repository. (2) The rest of the app: relay names, pickers and
+History. (3) The two screens.

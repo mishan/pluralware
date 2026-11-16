@@ -3,6 +3,7 @@ package me.pluralware.shared
 import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -20,6 +21,7 @@ import me.pluralware.shared.repository.PkResult
 import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.repository.SwitchTimeOutOfRange
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -104,6 +106,222 @@ class PluralKitRepositoryWritesTest {
         repository.updateMember("no-such-member", mapOf(MemberField.Name to "X"))
 
         assertEquals(listOf(member.copy(name = "Renamed") to setOf(MemberField.Name)), edited)
+    }
+
+    // --- Adding and deleting members ---------------------------------------------------------
+
+    @Test
+    fun `a new member shows everywhere members do, and touches no switch`() = runTest {
+        val before = Triple(repository.memberEdits.value, repository.membersChanged.value, repository.switchesChanged.value)
+        repository.refreshMembers()
+
+        val made = (repository.createMember(" Gale ") as PkResult.Success).value
+
+        assertEquals("Gale", made.name)
+        assertTrue("the member cache was dropped", made in (repository.refreshMembers() as PkResult.Success).value)
+        assertEquals(
+            Triple(before.first + 1, before.second + 1, before.third),
+            Triple(repository.memberEdits.value, repository.membersChanged.value, repository.switchesChanged.value),
+        )
+    }
+
+    @Test
+    fun `a create whose answer was lost is found landed, not mistaken for a member of that name already there`() =
+        runTest {
+            for (lost in listOf<Exception>(IOException("Connection reset"), PluralKitHttpException(502, "Bad Gateway"))) {
+                val before = members()
+                client.lostResponse = lost
+                client.loseNextResponse = true
+
+                val made = repository.createMember("Alex")
+
+                val created = members() - before.toSet()
+                assertEquals(lost.toString(), listOf(created.single()), listOf((made as PkResult.Success).value))
+            }
+        }
+
+    @Test
+    fun `when the check after a lost create fails too, a retry checks again rather than making a second`() = runTest {
+        val before = members()
+        client.loseNextResponse = true
+        // The list fetched before sending comes; the one after the lost answer doesn't.
+        client.failMemberFetchesAfterWrite = 1
+        assertTrue(repository.createMember("Gale") is PkResult.Failure)
+        client.failMemberFetchesAfterWrite = 0
+
+        val retry = repository.createMember("Gale")
+
+        assertEquals(listOf("Gale"), client.creates)
+        assertEquals((members() - before.toSet()).single(), (retry as PkResult.Success).value)
+    }
+
+    @Test
+    fun `a check that PluralKit turns away, after a lost create, isn't taken for it refusing the create`() = runTest {
+        val before = members()
+        client.loseNextResponse = true
+        client.memberFetchError = PluralKitHttpException(429, "Too Many Requests")
+        client.failMemberFetchesAfterWrite = 1
+        assertTrue(repository.createMember("Gale") is PkResult.Failure)
+        client.failMemberFetchesAfterWrite = 0
+
+        val retry = repository.createMember("Gale")
+
+        assertEquals(listOf("Gale"), client.creates)
+        assertEquals((members() - before.toSet()).single(), (retry as PkResult.Success).value)
+    }
+
+    @Test
+    fun `a create PluralKit refuses, or one that couldn't start, counts nothing`() = runTest {
+        val counts = repository.memberEdits.value to repository.membersChanged.value
+
+        repository.createMember("  ")
+        client.memberFetchFailures = 1
+        repository.createMember("Gale")
+
+        assertEquals(counts, repository.memberEdits.value to repository.membersChanged.value)
+        assertEquals("the refused one was sent; the other never was", listOf(""), client.creates)
+    }
+
+    @Test
+    fun `a create keeps going, and keeps others of its name waiting, when the screen that asked goes away`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val hold = CompletableDeferred<Unit>()
+            client.holdNextWrite = hold
+            val gone = launch { repository.createMember("Gale") }
+            gone.cancel()
+            val again = async { repository.createMember("Gale") }
+            assertFalse("it waits for the first create, still out", again.isCompleted)
+
+            hold.complete(Unit)
+
+            assertTrue(again.await() is PkResult.Success)
+            assertEquals(listOf("Gale"), client.creates)
+        }
+
+    @Test
+    fun `a second create for a name still being made waits for the first`() = runTest(UnconfinedTestDispatcher()) {
+        val hold = CompletableDeferred<Unit>()
+        client.holdNextWrite = hold
+        val first = async { repository.createMember("Gale") }
+        val second = async { repository.createMember("Gale") }
+
+        hold.complete(Unit)
+
+        assertEquals(first.await(), second.await())
+        assertEquals(listOf("Gale"), client.creates)
+    }
+
+    @Test
+    fun `deleting someone fronting corrects the front, as the same switch without them`() = runTest {
+        val m = members()
+        val cases = listOf(
+            "with others" to listOf(m[0], m[3]),
+            "alone, leaving a switch-out" to listOf(m[1]),
+        )
+        for ((what, fronting) in cases) {
+            corrected.clear()
+            replaced.clear()
+            val front = client.pk.registerSwitch(fronting.map { it.uuid })
+            val gone = fronting.first()
+
+            assertEquals(what, Deletion.Done, (repository.deleteMember(gone.uuid) as PkResult.Success).value)
+
+            assertEquals(what, listOf(front), replaced)
+            assertEquals(what, listOf(front.copy(members = fronting - gone)), corrected)
+        }
+    }
+
+    @Test
+    fun `deleting someone not fronting tells nobody, but History and the member lists reload`() = runTest {
+        val fronting = repository.refreshFronters().let { (it as PkResult.Success).value!!.members.map { m -> m.uuid } }
+        val other = members().first { it.uuid !in fronting }
+        val counts = repository.switchesChanged.value to repository.membersChanged.value
+
+        repository.deleteMember(other.uuid)
+
+        assertEquals(emptyList<Switch?>(), corrected)
+        assertEquals(counts.first + 1 to counts.second + 1, repository.switchesChanged.value to repository.membersChanged.value)
+        assertTrue(members().none { it.uuid == other.uuid })
+        assertTrue("taken out of past switches", history().none { s -> s.members.any { it.uuid == other.uuid } })
+    }
+
+    @Test
+    fun `a delete whose answer was lost, retried, still corrects the front from before the first try`() = runTest {
+        val m = members()
+        val front = client.pk.registerSwitch(listOf(m[0].uuid, m[3].uuid))
+        client.loseNextResponse = true
+        assertTrue(repository.deleteMember(m[0].uuid) is PkResult.Failure)
+
+        assertEquals(Deletion.Done, (repository.deleteMember(m[0].uuid) as PkResult.Success).value)
+
+        assertEquals(listOf(front), replaced)
+        assertEquals(listOf(front.copy(members = listOf(m[3]))), corrected)
+    }
+
+    @Test
+    fun `a member delete's correction that had to wait isn't sent about a switch made since`() = runTest {
+        val m = members()
+        client.pk.registerSwitch(listOf(m[0].uuid, m[3].uuid))
+        client.failFetchesAfterWrite = 3
+        assertTrue(repository.deleteMember(m[0].uuid).isSuccess())
+        client.failFetchesAfterWrite = 0
+
+        client.pk.registerSwitch(listOf(m[2].uuid))
+        repository.refreshFronters()
+
+        assertEquals(emptyList<Switch?>(), corrected)
+    }
+
+    @Test
+    fun `a delete answered with a proxy's error, retried, still corrects the front`() = runTest {
+        val m = members()
+        val front = client.pk.registerSwitch(listOf(m[0].uuid, m[3].uuid))
+        client.lostResponse = PluralKitHttpException(502, "Bad Gateway")
+        client.loseNextResponse = true
+        assertTrue(repository.deleteMember(m[0].uuid) is PkResult.Failure)
+
+        assertEquals(Deletion.Done, (repository.deleteMember(m[0].uuid) as PkResult.Success).value)
+
+        assertEquals(listOf(front.copy(members = listOf(m[3]))), corrected)
+    }
+
+    @Test
+    fun `a delete PluralKit refuses, or one that couldn't start, counts nothing`() = runTest {
+        val counts = Triple(repository.memberEdits.value, repository.membersChanged.value, repository.switchesChanged.value)
+        val member = members().first()
+
+        client.refuseNextWrite = PluralKitHttpException(404, "Not Found")
+        assertTrue(repository.deleteMember(member.uuid) is PkResult.Failure)
+        client.fronterFetchError = IOException("Network unreachable")
+        assertTrue(repository.deleteMember(member.uuid) is PkResult.Failure)
+        client.fronterFetchError = null
+
+        assertEquals(counts, Triple(repository.memberEdits.value, repository.membersChanged.value, repository.switchesChanged.value))
+        assertTrue(members().any { it.uuid == member.uuid })
+    }
+
+    @Test
+    fun `a member list fetched before a delete settled can't bring the member back`() = runTest(UnconfinedTestDispatcher()) {
+        val gone = members().last()
+        val hold = CompletableDeferred<Unit>()
+        client.holdMemberFetch = hold
+        val fetching = async { repository.refreshMembers(force = true) }
+        // Deleted elsewhere first, so this delete finds them gone and sends nothing that lands.
+        client.pk.deleteMember(gone.uuid)
+        repository.deleteMember(gone.uuid)
+
+        hold.complete(Unit)
+        fetching.await()
+
+        assertTrue((repository.refreshMembers() as PkResult.Success).value.none { it.uuid == gone.uuid })
+    }
+
+    @Test
+    fun `deleting a member already gone says so`() = runTest {
+        val gone = members().last()
+        client.pk.deleteMember(gone.uuid)
+
+        assertEquals(Deletion.AlreadyGone, (repository.deleteMember(gone.uuid) as PkResult.Success).value)
     }
 
     @Test
