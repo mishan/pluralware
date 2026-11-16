@@ -48,6 +48,12 @@ interface PluralKitClient {
      */
     suspend fun registerSwitch(memberUuids: List<String>): Switch
 
+    /** POST /members: a member with [name]; the rest is set with [updateMember]. */
+    suspend fun createMember(name: String): Member
+
+    /** DELETE /members/{uuid}. PluralKit takes the member out of every switch, which stay. */
+    suspend fun deleteMember(uuid: String)
+
     /**
      * PATCH /members/{uuid} with only [changes]: PluralKit leaves a field it
      * isn't sent alone and clears one sent as null. [proxyTags], unless null,

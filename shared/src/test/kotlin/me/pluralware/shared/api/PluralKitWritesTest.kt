@@ -82,6 +82,38 @@ class PluralKitWritesTest {
     }
 
     @Test
+    fun `a new member is sent with its name, and comes back as PluralKit made it`() = runTest {
+        respond(body = alexJson)
+
+        val member = client.createMember("Alexis")
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/v2/members", request.path)
+        assertEquals(Json.parseToJsonElement("""{"name":"Alexis"}"""), request.json())
+        assertEquals("uuid-alex", member.uuid)
+    }
+
+    @Test
+    fun `deleting a member says nothing on success, and PluralKit's code when it refuses`() = runTest {
+        respond(code = 204)
+        client.deleteMember("uuid-alex")
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/v2/members/uuid-alex", request.path)
+
+        val cases = listOf(
+            """{"code":20002,"message":"Member not found."}""" to 20002,
+            "Not Found" to null,
+        )
+        for ((body, code) in cases) {
+            respond(code = 404, body = body)
+            val e = runCatching { client.deleteMember("uuid-gone") }.exceptionOrNull() as PluralKitHttpException
+            assertEquals(body, code, e.code)
+        }
+    }
+
+    @Test
     fun `an edit that changes nothing sends nothing`() = runTest {
         assertEquals(
             IllegalArgumentException::class,

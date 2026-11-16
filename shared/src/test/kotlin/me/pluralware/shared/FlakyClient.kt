@@ -18,6 +18,16 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
     /** The next write is applied, then its response is lost. */
     var loseNextResponse = false
 
+    /** What a lost response looks like: a dropped connection, or a proxy's error. */
+    var lostResponse: Exception = IOException("Connection reset")
+
+    /** After each write, this many member list fetches fail, with [memberFetchError]. */
+    var failMemberFetchesAfterWrite = 0
+    var memberFetchFailures = 0
+    var memberFetchError: Exception = IOException("Network unreachable")
+
+    val creates = mutableListOf<String>()
+
     /** The next write is refused with this, and not applied. */
     var refuseNextWrite: Exception? = null
 
@@ -58,13 +68,14 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
             throw e
         }
         fronterFetchFailures += failFetchesAfterWrite
+        memberFetchFailures += failMemberFetchesAfterWrite
         return lost(result)
     }
 
     private fun <T> lost(result: T): T {
         if (loseNextResponse) {
             loseNextResponse = false
-            throw IOException("Connection reset")
+            throw lostResponse
         }
         return result
     }
@@ -80,6 +91,11 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
     override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>) =
         write { pk.setSwitchMembers(uuid, memberUuids) }
     override suspend fun deleteSwitch(uuid: String) = write { pk.deleteSwitch(uuid) }
+    override suspend fun createMember(name: String) = write {
+        creates += name
+        pk.createMember(name)
+    }
+    override suspend fun deleteMember(uuid: String) = write { pk.deleteMember(uuid) }
 
     override suspend fun getCurrentFronters(): Switch? {
         fronterFetches++
@@ -101,6 +117,10 @@ internal class FlakyClient(val pk: MockPluralKitClient = MockPluralKitClient(art
     }
 
     override suspend fun getOwnMembers(): List<Member> {
+        if (memberFetchFailures > 0) {
+            memberFetchFailures--
+            throw memberFetchError
+        }
         val answer = pk.getOwnMembers()
         holdMemberFetch?.also { holdMemberFetch = null }?.await()
         return answer

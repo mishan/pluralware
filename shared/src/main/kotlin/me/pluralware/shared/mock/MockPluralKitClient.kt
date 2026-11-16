@@ -111,6 +111,29 @@ class MockPluralKitClient(
         return members[index]
     }
 
+    override suspend fun createMember(name: String): Member {
+        delayLike()
+        if (name.isBlank()) throw nameRequired()
+        val made = Member(
+            id = List(5) { ('a'..'z').random() }.joinToString(""),
+            uuid = UUID.randomUUID().toString(),
+            name = name,
+            displayName = null,
+            pronouns = null,
+            color = null,
+            avatarUrl = null,
+        )
+        members += made
+        return made
+    }
+
+    override suspend fun deleteMember(uuid: String) {
+        delayLike()
+        if (!members.removeIf { it.uuid == uuid }) throw refused(404, 20002, "Member not found.")
+        // Like PluralKit's cascade: the member leaves every switch, and the switches stay.
+        switches.forEach { it.memberUuids -= uuid }
+    }
+
     override suspend fun moveSwitch(uuid: String, to: Instant): Switch {
         delayLike()
         val switch = find(uuid)
