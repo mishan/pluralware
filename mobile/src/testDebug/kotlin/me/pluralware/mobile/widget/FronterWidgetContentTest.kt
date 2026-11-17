@@ -74,6 +74,14 @@ class FronterWidgetContentTest {
     }
 
     @Test
+    fun `signed out, the wide size has no Switch button`() = runGlanceAppWidgetUnitTest {
+        setContext(context)
+        provideComposable { FronterWidgetContent(PHONE_WORDING.setup, clock, wide = true) }
+
+        onNode(hasTextEqualTo("Switch")).assertDoesNotExist()
+    }
+
+    @Test
     fun `a last known line says so`() = runGlanceAppWidgetUnitTest {
         setContext(context)
         provideComposable { FronterWidgetContent(alex.copy(title = "Last known"), clock, wide = false) }

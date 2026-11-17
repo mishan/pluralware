@@ -11,6 +11,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,21 +58,21 @@ class WidgetSurfaces(
     private val generation = AtomicLong()
     private var shownGeneration = -1L
     private val lock = Mutex()
-    private var flight: Pair<Long, Deferred<FronterDisplay>>? = null
+    private var flight: Pair<Long, Deferred<Unit>>? = null
 
     /** The app has a new current switch in hand, fetched with [token]. */
-    suspend fun publish(switch: Switch?, token: PluralKitToken) {
+    suspend fun publish(switch: Switch?, token: PluralKitToken) = guarded {
         source.remember(switch, token)
         requestUpdates()
     }
 
     /** The watch reports [notice] as its current switch. */
-    suspend fun onRemoteSwitch(notice: SwitchSync.Notice) {
+    suspend fun onRemoteSwitch(notice: SwitchSync.Notice) = guarded {
         if (source.expire(notice)) requestUpdates()
     }
 
     /** A member was edited, here or on the watch: the line may name them as they were. */
-    suspend fun onMemberEdit(notice: MemberSync.Notice) {
+    suspend fun onMemberEdit(notice: MemberSync.Notice) = guarded {
         if (source.expireMembers(notice)) requestUpdates()
     }
 
@@ -82,61 +83,63 @@ class WidgetSurfaces(
      */
     suspend fun followToken(tokens: StateFlow<PluralKitToken?>) {
         tokens.drop(1).collect {
-            // One failed update mustn't stop it following later changes.
-            try {
+            guarded {
                 cache.clear()
                 requestUpdates()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w("WidgetSurfaces", "Couldn't update the widgets", e)
             }
         }
     }
 
-    /** Android's periodic update: the next widget to draw asks again. */
-    fun invalidate() {
-        generation.incrementAndGet()
-    }
+    /** Android's periodic update: ask again, including for widgets already showing. */
+    fun poll() = requestUpdates()
 
     /** Called by each widget before it draws: refreshes [display] unless it's already current. */
-    suspend fun prepare() {
-        if (lock.withLock { shownGeneration != generation.get() }) refresh()
-    }
+    suspend fun prepare() = guarded { refresh() }
 
-    private suspend fun requestUpdates() {
-        invalidate()
-        if (!hasWidgets()) return
-        refresh()
-        updateWidgets()
+    // In the background: callers are the listener service and the app, which mustn't wait on PluralKit.
+    private fun requestUpdates() {
+        generation.incrementAndGet()
+        scope.launch { guarded { if (hasWidgets()) refresh() } }
     }
 
     private suspend fun refresh() {
         while (true) {
-            val (started, fetch) = lock.withLock {
+            val fetch = lock.withLock {
                 val current = generation.get()
-                // A newer fetch already finished while this one's went stale.
                 if (shownGeneration == current) return
                 flight?.takeIf { it.first == current && it.second.isActive }
-                    ?: (current to scope.async { fetchWithToken() }).also { flight = it }
-            }
-            val shown = fetch.await()
-            lock.withLock {
-                if (started == generation.get()) {
-                    _display.value = shown
-                    shownGeneration = started
-                    return
-                }
-            }
+                    ?: (current to scope.async { fetchAndShow(current) }).also { flight = it }
+            }.second
+            fetch.await()
         }
     }
 
-    private suspend fun fetchWithToken(): FronterDisplay {
+    // Shows what it fetched itself, so a widget that stopped waiting doesn't leave it unshown.
+    private suspend fun fetchAndShow(started: Long) {
         val before = token()?.fingerprint
         val shown = source.current()
-        // Fetched for a system that's since signed out or been replaced.
-        if (token()?.fingerprint != before) invalidate()
-        return shown
+        // Not if it's for a system that's since signed out or been replaced, or the line expired meanwhile.
+        if (token()?.fingerprint != before) generation.incrementAndGet()
+        val current = lock.withLock {
+            (started == generation.get()).also {
+                if (it) {
+                    _display.value = shown
+                    shownGeneration = started
+                }
+            }
+        }
+        if (current) updateWidgets()
+    }
+
+    // The widgets are a best-effort display: their failing mustn't stop the app's or the listener's work.
+    private suspend fun guarded(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { Log.w("WidgetSurfaces", "Couldn't update the widgets", e) }
+        }
     }
 }
 
@@ -179,7 +182,7 @@ object PhoneWidgetSurfaces {
     }
 }
 
-private val PHONE_WORDING = FronterWording(
+internal val PHONE_WORDING = FronterWording(
     setup = FronterDisplay(
         title = FronterFormatter.TITLE,
         text = "Tap to sign in",

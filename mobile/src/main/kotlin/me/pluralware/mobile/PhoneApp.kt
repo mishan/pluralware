@@ -143,8 +143,12 @@ fun PhoneApp(graph: AppGraph, requestedRoute: String?, onRequestHandled: () -> U
             LaunchedEffect(requestedRoute) {
                 when (requestedRoute) {
                     Routes.FOLLOWING -> nav.navigate(Routes.FOLLOWING) { launchSingleTop = true }
-                    // Signed out, Connect is showing, which is where that leads.
-                    Routes.PICK -> if (session != null) nav.navigate(Routes.PICK) { launchSingleTop = true }
+                    // Signed out, the picker's way in is Connect.
+                    Routes.PICK -> if (session != null) {
+                        nav.navigate(Routes.PICK) { launchSingleTop = true }
+                    } else {
+                        nav.popBackStack(Routes.CONNECT, inclusive = false)
+                    }
                     else -> return@LaunchedEffect
                 }
                 onRequestHandled()

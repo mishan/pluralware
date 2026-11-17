@@ -4,6 +4,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -61,6 +64,8 @@ class WidgetSurfacesTest {
 
         surfaces.publish(alex, PluralKitToken("token"))
 
+        runCurrent()
+
         assertEquals("Fronting: Alex", shown(surfaces))
         assertEquals(1, updates)
         coVerify(exactly = 0) { client.getCurrentFronters() }
@@ -82,21 +87,61 @@ class WidgetSurfacesTest {
     }
 
     @Test
-    fun `a fetch begun before the watch reports a new switch isn't shown`() = runTest {
+    fun `Android's poll fetches again, and a fetch begun before the watch reports a new switch isn't shown`() = runTest {
         val surfaces = surfaces()
         surfaces.publish(alex, PluralKitToken("token"))
-        surfaces.invalidate()
+        runCurrent()
         cache.set(cache.get()!!.copy(fetchedAtEpochMillis = 0L))
         val first = CompletableDeferred<Switch>()
         coEvery { client.getCurrentFronters() } coAnswers { first.await() } andThen sam
 
-        launch { surfaces.prepare() }
+        surfaces.poll()
         runCurrent()
         surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("token")))
+        runCurrent()
         first.complete(alex)
         runCurrent()
 
         assertEquals("Fronting: Sam", shown(surfaces))
+    }
+
+    @Test
+    fun `a fetch is shown even if the widget that asked stopped waiting`() = runTest {
+        val surfaces = surfaces()
+        val reply = CompletableDeferred<Switch>()
+        coEvery { client.getCurrentFronters() } coAnswers { reply.await() }
+
+        val waiting = launch { surfaces.prepare() }
+        runCurrent()
+        waiting.cancel()
+        reply.complete(alex)
+        runCurrent()
+
+        assertEquals("Fronting: Alex", shown(surfaces))
+        assertEquals(1, updates)
+    }
+
+    @Test
+    fun `widgets that fail to update don't stop the next update`() = runTest {
+        var failing = true
+        val surfaces = WidgetSurfaces(
+            source = FronterSource({ tokens.value }, { PluralKitRepository(client) }, cache, FronterWording(FronterDisplay("", "", ""), FronterDisplay("", "", ""))),
+            token = { tokens.value },
+            cache = cache,
+            hasWidgets = { true },
+            updateWidgets = { if (failing) error("launcher went away") else updates++ },
+            // Supervised, as the app's is.
+            scope = CoroutineScope(backgroundScope.coroutineContext + SupervisorJob(backgroundScope.coroutineContext.job)),
+        )
+
+        surfaces.publish(alex, PluralKitToken("token"))
+        runCurrent()
+        failing = false
+        surfaces.publish(sam, PluralKitToken("token"))
+        runCurrent()
+
+        assertEquals("Fronting: Sam", shown(surfaces))
+        assertEquals(1, updates)
     }
 
     @Test
@@ -118,9 +163,12 @@ class WidgetSurfacesTest {
     fun `a member edit for this system fetches again, so a rename shows`() = runTest {
         val surfaces = surfaces()
         surfaces.publish(alex, PluralKitToken("token"))
+        runCurrent()
         coEvery { client.getCurrentFronters() } returns switchOf("s1", "Alexis")
 
         surfaces.onMemberEdit(MemberSync.noticeOf(PluralKitToken("token"), 1L))
+
+        runCurrent()
 
         assertEquals("Fronting: Alexis", shown(surfaces))
         assertEquals(2, updates)
@@ -130,11 +178,14 @@ class WidgetSurfacesTest {
     fun `news about another system, or with no widgets placed, fetches nothing`() = runTest {
         val surfaces = surfaces()
         surfaces.publish(alex, PluralKitToken("token"))
+        runCurrent()
 
         surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("another")))
+        runCurrent()
         surfaces.onMemberEdit(MemberSync.noticeOf(PluralKitToken("another"), 1L))
         widgets = 0
         surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("token")))
+        runCurrent()
 
         assertEquals("Fronting: Alex", shown(surfaces))
         assertEquals(1, updates)
@@ -145,6 +196,7 @@ class WidgetSurfacesTest {
     fun `a new token or signing out forgets the old system's line, but the token it starts with doesn't`() = runTest {
         val surfaces = surfaces()
         surfaces.publish(alex, PluralKitToken("token"))
+        runCurrent()
         backgroundScope.launch { surfaces.followToken(tokens) }
         runCurrent()
         assertEquals("Fronting: Alex", cache.get()?.text)

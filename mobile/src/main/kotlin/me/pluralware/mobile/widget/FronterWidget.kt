@@ -76,7 +76,7 @@ class FronterWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         // The 30-minute poll: ask PluralKit again rather than redraw what's held.
-        PhoneWidgetSurfaces.get(context).invalidate()
+        PhoneWidgetSurfaces.get(context).poll()
         super.onUpdate(context, appWidgetManager, appWidgetIds)
     }
 }
@@ -114,7 +114,8 @@ internal fun FronterWidgetContent(display: FronterDisplay, clock: Clock, wide: B
                 Text(since(it, clock), style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp), maxLines = 1)
             }
         }
-        if (wide) {
+        // Signed out, the whole widget leads to Connect.
+        if (wide && display != PHONE_WORDING.setup) {
             Spacer(GlanceModifier.width(8.dp))
             Button(
                 text = "Switch",
