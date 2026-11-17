@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import me.pluralware.shared.repository.EncryptedPrefs
 
 /**
@@ -35,6 +37,12 @@ interface SharingStore {
      * until a delete gets through. Survives [clear].
      */
     val orphanedRelays: StateFlow<List<RelaySettings>>
+
+    /** Why the last send to each friend failed, if it did, from this device's own sends. */
+    val failuresFlow: StateFlow<Map<String, String>>
+
+    /** Records [failed] friends' reasons, and forgets those of friends since [delivered] to. */
+    suspend fun recordFailures(failed: Map<String, String>, delivered: Set<String>)
 
     suspend fun set(config: SharingConfig)
     suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long)
@@ -63,8 +71,8 @@ object GoneFriends {
     fun merged(own: Map<String, Long>, peer: Map<String, Long>): Map<String, Long> =
         own + peer.mapValues { (id, at) -> own[id]?.let { maxOf(it, at) } ?: at }
 
-    /** Only marks for friends still in [config]; shared by both stores. */
-    internal fun retain(gone: Map<String, Long>, config: SharingConfig): Map<String, Long> {
+    /** Only entries for friends still in [config]; shared by both stores. */
+    internal fun <T> retain(gone: Map<String, T>, config: SharingConfig): Map<String, T> {
         val ids = config.friends.mapTo(HashSet()) { it.id }
         return gone.filterKeys { it in ids }
     }
@@ -79,6 +87,12 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
     override val peerGoneFlow: StateFlow<Map<String, Long>> = _peerGone.asStateFlow()
     override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
+    private val _failures = MutableStateFlow(emptyMap<String, String>())
+    override val failuresFlow: StateFlow<Map<String, String>> = _failures.asStateFlow()
+    override suspend fun recordFailures(failed: Map<String, String>, delivered: Set<String>) {
+        // Only current friends: a send can finish after its friend was removed.
+        _failures.value = GoneFriends.retain(_failures.value - delivered + failed, _config.value)
+    }
     override suspend fun setPeerGone(gone: Map<String, Long>) {
         _peerGone.value = GoneFriends.retain(gone, _config.value)
     }
@@ -90,6 +104,7 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
         _config.value = config
         _gone.value = GoneFriends.retain(_gone.value, config)
         _peerGone.value = GoneFriends.retain(_peerGone.value, config)
+        _failures.value = GoneFriends.retain(_failures.value, config)
     }
     override suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long) {
         _gone.value = _gone.value + friendIds.associateWith { atEpochMillis }
@@ -100,6 +115,7 @@ class InMemorySharingStore(initial: SharingConfig = SharingConfig()) : SharingSt
         _config.value = SharingConfig()
         _gone.value = emptyMap()
         _peerGone.value = emptyMap()
+        _failures.value = emptyMap()
     }
 }
 
@@ -117,6 +133,20 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
     override val goneFlow: StateFlow<Map<String, Long>> = _gone.asStateFlow()
     override val peerGoneFlow: StateFlow<Map<String, Long>> = _peerGone.asStateFlow()
     override val orphanedRelays: StateFlow<List<RelaySettings>> = _orphans.asStateFlow()
+    private val _failures = MutableStateFlow(readFailures())
+    override val failuresFlow: StateFlow<Map<String, String>> = _failures.asStateFlow()
+
+    override suspend fun recordFailures(failed: Map<String, String>, delivered: Set<String>) = write {
+        // Only current friends: a send can finish after its friend was removed.
+        val failures = GoneFriends.retain(_failures.value - delivered + failed, _config.value)
+        prefs.edit().putString(KEY_FAILURES, failuresJson.encodeToString(failuresSerializer, failures)).commit()
+        _failures.value = failures
+    }
+
+    private fun readFailures(): Map<String, String> =
+        prefs.getString(KEY_FAILURES, null)
+            ?.let { runCatching { failuresJson.decodeFromString(failuresSerializer, it) }.getOrNull() }
+            .orEmpty()
 
     override suspend fun addOrphan(relay: RelaySettings) =
         if (relay in _orphans.value) Unit else writeOrphans(_orphans.value + relay)
@@ -136,14 +166,17 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
     override suspend fun set(config: SharingConfig) = write {
         val gone = GoneFriends.retain(_gone.value, config)
         val peerGone = GoneFriends.retain(_peerGone.value, config)
+        val failures = GoneFriends.retain(_failures.value, config)
         prefs.edit()
             .putString(KEY_CONFIG, config.toJson())
             .putStringSet(KEY_GONE, gone.encoded())
             .putStringSet(KEY_PEER_GONE, peerGone.encoded())
+            .putString(KEY_FAILURES, failuresJson.encodeToString(failuresSerializer, failures))
             .commit()
         _config.value = config
         _gone.value = gone
         _peerGone.value = peerGone
+        _failures.value = failures
     }
 
     override suspend fun markGone(friendIds: Set<String>, atEpochMillis: Long) =
@@ -168,10 +201,11 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
 
     override suspend fun clear() = write {
         // Orphaned relays outlive a sign-out: they're exactly what it leaves behind.
-        prefs.edit().remove(KEY_CONFIG).remove(KEY_GONE).remove(KEY_PEER_GONE).commit()
+        prefs.edit().remove(KEY_CONFIG).remove(KEY_GONE).remove(KEY_PEER_GONE).remove(KEY_FAILURES).commit()
         _config.value = SharingConfig()
         _gone.value = emptyMap()
         _peerGone.value = emptyMap()
+        _failures.value = emptyMap()
     }
 
     // Writes use commit(), not apply(): they already run on IO, and the watch
@@ -191,6 +225,9 @@ class EncryptedSharingStore private constructor(appContext: Context) : SharingSt
         private const val KEY_GONE = "gone_friends"
         private const val KEY_PEER_GONE = "peer_gone_friends"
         private const val KEY_ORPHANS = "orphaned_relays"
+        private const val KEY_FAILURES = "failures"
+        private val failuresJson = kotlinx.serialization.json.Json
+        private val failuresSerializer = MapSerializer(String.serializer(), String.serializer())
         private val orphansJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
         private val orphansSerializer = kotlinx.serialization.builtins.ListSerializer(RelaySettings.serializer())
 
