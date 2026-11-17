@@ -180,9 +180,12 @@ class PickerViewModel(
     }
 
     @Suppress("UNCHECKED_CAST")
-    class Factory(private val repository: PluralKitRepository, private val editing: Editing? = null) :
-        ViewModelProvider.Factory {
+    class Factory(
+        private val repository: PluralKitRepository,
+        private val editing: Editing? = null,
+        private val confirmationLingerMillis: Long = 700L,
+    ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            PickerViewModel(repository, editing = editing) as T
+            PickerViewModel(repository, confirmationLingerMillis, editing) as T
     }
 }
