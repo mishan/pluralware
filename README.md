@@ -101,7 +101,7 @@ from your phone.
 ## Letting friends know when you switch
 
 On your phone, open **Share with friends**, choose **Who may be named**, then
-add friends in one of two ways.
+add friends in one of three ways.
 
 **Private (encrypted)**, recommended. Only your friend can read the
 notifications.
@@ -117,6 +117,12 @@ notifications.
 [ntfy](https://ntfy.sh) app. You enter an ntfy server and send your friend
 the topic to subscribe to. Whoever runs that ntfy server can read the
 messages.
+
+**Discord channel**: each switch is posted to a channel. In Discord, make a
+webhook for the channel (channel settings, **Integrations**, **Webhooks**),
+copy its link, and paste it under **Add a Discord channel**. PluralWare posts
+a test message first and adds the channel once Discord takes it. Discord and
+everyone in the channel can read the posts.
 
 By default, friends hear about switches you make **in PluralWare**, on your
 phone or your watch. To

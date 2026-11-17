@@ -49,6 +49,7 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val config by viewModel.config.collectAsState()
     val orphans by viewModel.orphanedRelays.collectAsState()
+    val failures by viewModel.failures.collectAsState()
     val context = LocalContext.current
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -106,7 +107,7 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
                 }
             }
 
-            FriendsSection(config, state.goneFriendIds, onRemove = viewModel::removeFriend)
+            FriendsSection(config, state.goneFriendIds, failures, onRemove = viewModel::removeFriend)
 
             PrivateInviteSection(
                 error = state.followCodeError,
@@ -129,6 +130,12 @@ fun SharingScreen(viewModel: SharingViewModel, onBack: () -> Unit) {
                 onAddFriend = viewModel::addSimpleFriend,
                 onShareTopic = { shareText(context, it) },
                 onDismissTopic = viewModel::dismissNewTopic,
+            )
+
+            DiscordSection(
+                error = state.discordError,
+                testing = state.discordTesting,
+                onAdd = viewModel::addDiscordChannel,
             )
 
             RelaySection(
@@ -179,7 +186,7 @@ private fun TitleSection(title: String, onSave: (String) -> Unit) {
 }
 
 @Composable
-private fun FriendsSection(config: SharingConfig, gone: Set<String>, onRemove: (String) -> Unit) {
+internal fun FriendsSection(config: SharingConfig, gone: Set<String>, failures: Map<String, String>, onRemove: (String) -> Unit) {
     Section(title = "Friends") {
         if (config.friends.isEmpty()) {
             Text("Nobody yet. Sharing is off until you add someone.", style = MaterialTheme.typography.bodySmall)
@@ -191,15 +198,18 @@ private fun FriendsSection(config: SharingConfig, gone: Set<String>, onRemove: (
                     val how = when (friend) {
                         is Friend.Private -> "Private (encrypted)"
                         is Friend.Simple -> "Simple (ntfy topic)"
-                        is Friend.Discord -> "Discord channel"
+                        // Never the webhook's link: it's the channel's credential.
+                        is Friend.Discord -> "Discord webhook"
                     }
                     Text(how, style = MaterialTheme.typography.labelSmall)
-                    if (friend.id in gone) {
-                        Text(
-                            "Stopped receiving. Ask them for a new follow code.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                    val problem = when {
+                        friend.id in gone && friend is Friend.Discord ->
+                            "Discord deleted or reset this webhook. Make a new one and add the channel again."
+                        friend.id in gone -> "Stopped receiving. Ask them for a new follow code."
+                        else -> failures[friend.id]?.let { "The last send failed: $it" }
+                    }
+                    if (problem != null) {
+                        Text(problem, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
                 TextButton(onClick = { onRemove(friend.id) }) { Text("Remove") }
@@ -260,6 +270,35 @@ private fun PrivateInviteSection(
             onClick = { if (onAddFollowCode(code, label)) { code = ""; label = "" } },
             enabled = code.isNotBlank(),
         ) { Text("Add friend") }
+    }
+}
+
+@Composable
+internal fun DiscordSection(error: String?, testing: Boolean, onAdd: (String, String, () -> Unit) -> Unit) {
+    var url by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf("") }
+    Section(title = "Add a Discord channel") {
+        Text(
+            "Posts each switch to a channel, through a webhook its server made (channel settings, Integrations, " +
+                "Webhooks). Discord and everyone in the channel can read the posts, and they stay. Removing " +
+                "the channel here stops the posts; to stop the link working, delete the webhook in Discord.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = label,
+            onValueChange = { label = it },
+            label = { Text("Name, e.g. the server's") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        SecretField(value = url, onValueChange = { url = it }, label = "Webhook link")
+        if (error != null) {
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(
+            onClick = { onAdd(url, label) { url = ""; label = "" } },
+            enabled = url.isNotBlank() && !testing,
+        ) { Text(if (testing) "Posting a test message…" else "Post a test message and add") }
     }
 }
 

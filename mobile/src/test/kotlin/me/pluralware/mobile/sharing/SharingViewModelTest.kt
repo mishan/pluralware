@@ -16,10 +16,12 @@ import kotlinx.coroutines.withTimeout
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.SystemInfo
+import me.pluralware.shared.notify.DiscordWebhook
 import me.pluralware.shared.notify.Friend
 import me.pluralware.shared.notify.InMemorySharingStore
 import me.pluralware.shared.notify.RelayClient
 import me.pluralware.shared.notify.RelaySettings
+import me.pluralware.shared.notify.SendOutcome
 import me.pluralware.shared.notify.SharingConfig
 import me.pluralware.shared.repository.InMemoryTokenStore
 import okhttp3.mockwebserver.MockResponse
@@ -92,6 +94,9 @@ class SharingViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private val discordPosts = mutableListOf<Pair<DiscordWebhook.Address, String>>()
+    private var discordAnswer: suspend () -> SendOutcome = { SendOutcome.Delivered }
+
     private fun viewModel(membersLoad: Boolean = true) = SharingViewModel(
         tokenStore = InMemoryTokenStore(PluralKitToken("token")),
         sharingStore = store,
@@ -101,6 +106,7 @@ class SharingViewModelTest {
         pushToWatch = { pushedToWatch += it },
         readWatchStatus = { emptySet() },
         relayWrites = relayWrites,
+        testDiscord = { address, title -> discordPosts += address to title; discordAnswer() },
     ).also { created += it }
 
     /** The relay calls run on OkHttp's threads; wait for them in real time. */
@@ -230,5 +236,69 @@ class SharingViewModelTest {
         vm.removeRelayAnyway()
         eventually("removed") { store.configFlow.value.relay == null }
         assertEquals(listOf(relay), store.orphanedRelays.value)
+    }
+
+    private val webhook = "https://discord.com/api/webhooks/123456789012345678/tok_en"
+
+    @Test
+    fun `a Discord channel is added only once Discord takes its test post`() {
+        val cases = listOf<Triple<suspend () -> SendOutcome, Boolean, String?>>(
+            Triple({ SendOutcome.Delivered }, true, null),
+            Triple({ SendOutcome.Gone }, false, "copied the whole link"),
+            Triple({ SendOutcome.Failed("HTTP 400") }, false, "forum channel"),
+            Triple({ SendOutcome.Failed("HTTP 429") }, false, "busy (HTTP 429)"),
+            Triple({ SendOutcome.Failed("HTTP 403") }, false, "refused the test post (HTTP 403)"),
+            Triple({ throw java.io.IOException("Couldn't reach Discord (UnknownHostException)") }, false, "Check your connection"),
+        )
+        for ((answer, added, says) in cases) {
+            runBlocking { store.set(store.configFlow.value.copy(title = "Sample", friends = emptyList())) }
+            discordPosts.clear()
+            discordAnswer = answer
+            val vm = viewModel()
+            var done = false
+
+            vm.addDiscordChannel(" $webhook ", "Server", onAdded = { done = true })
+
+            assertEquals(listOf(DiscordWebhook.Address("123456789012345678", "tok_en") to "Sample"), discordPosts)
+            val friends = store.configFlow.value.friends
+            assertEquals(says, added, friends == listOf(Friend.Discord(friends.firstOrNull()?.id.orEmpty(), "Server", "123456789012345678", "tok_en")))
+            assertEquals(says, added, done)
+            val error = vm.state.value.discordError
+            if (says == null) assertNull(error) else assertTrue("$error", error!!.contains(says))
+            assertFalse(vm.state.value.discordTesting)
+        }
+    }
+
+    @Test
+    fun `a link that isn't a Discord webhook, or a channel already added, is refused without posting`() {
+        runBlocking {
+            store.set(store.configFlow.value.copy(friends = listOf(Friend.Discord("d1", "Server", "123456789012345678", "tok_en"))))
+        }
+        val vm = viewModel()
+        for ((link, says) in listOf(
+            "https://discord.example/api/webhooks/123456789012345678/tok_en" to "isn't a Discord webhook link",
+            webhook to "Remove it first",
+        )) {
+            vm.addDiscordChannel(link, "", onAdded = { error("added") })
+
+            assertTrue(link, vm.state.value.discordError!!.contains(says))
+        }
+        assertEquals(emptyList<Any>(), discordPosts)
+        assertEquals(1, store.configFlow.value.friends.size)
+    }
+
+    @Test
+    fun `a second tap while the test post is out adds nothing more`() {
+        runBlocking { store.set(store.configFlow.value.copy(friends = emptyList())) }
+        val reply = kotlinx.coroutines.CompletableDeferred<SendOutcome>()
+        discordAnswer = { reply.await() }
+        val vm = viewModel()
+
+        vm.addDiscordChannel(webhook, "Server", onAdded = {})
+        vm.addDiscordChannel(webhook, "Server", onAdded = {})
+        reply.complete(SendOutcome.Delivered)
+
+        assertEquals(1, discordPosts.size)
+        assertEquals(1, store.configFlow.value.friends.size)
     }
 }

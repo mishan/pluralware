@@ -117,6 +117,11 @@ In PluralWare on your phone, open **Settings → Share with friends**, and scrol
 Now make a switch in Discord with `pk;switch`. Your friends should hear about it within a few
 seconds.
 
+To have switches posted to a Discord channel, add it under **Add a Discord channel** on the same
+screen: in Discord, open the channel's settings, then **Integrations** → **Webhooks** → **New
+Webhook**, and **Copy Webhook URL**. Paste that link into the app and tap **Post a test message
+and add**. The relay posts there too, as long as it's up to date (see "Updating the relay").
+
 PluralKit allows **one** webhook per system. If you already had something else using it, such as
 a Discord bot or an automation service that announces your switches, the relay replaces it.
 
