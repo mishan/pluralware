@@ -56,6 +56,8 @@ class SwitchSharer(
                     val server = config.ntfy ?: return SendOutcome.Failed("no ntfy server")
                     withOneRetry { ntfy.send(server, friend.topic, payload.system, payload.text) }
                 }
+                // Posting comes with the sender; until then a Discord friend can't be added.
+                is Friend.Discord -> SendOutcome.Failed("Discord isn't sent to yet")
             }
         } catch (e: CancellationException) {
             throw e

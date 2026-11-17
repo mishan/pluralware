@@ -191,6 +191,7 @@ private fun FriendsSection(config: SharingConfig, gone: Set<String>, onRemove: (
                     val how = when (friend) {
                         is Friend.Private -> "Private (encrypted)"
                         is Friend.Simple -> "Simple (ntfy topic)"
+                        is Friend.Discord -> "Discord channel"
                     }
                     Text(how, style = MaterialTheme.typography.labelSmall)
                     if (friend.id in gone) {

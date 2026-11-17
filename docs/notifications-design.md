@@ -533,3 +533,84 @@ Still needing real devices:
 - Safari/iOS;
 - `EncryptedSharedPreferences` on Tink 1.23 (section 4.2).
 
+
+## 15. Discord channels
+
+A friend can be a Discord channel: each switch is posted there as a message, through a Discord
+webhook the channel's server made. It's for a system (or its friends) that lives in Discord and
+would otherwise reach for a bot or a Pipedream-style workflow. Plain text in v1; a message the
+user words themselves is a later option, which the shared wording fixtures below are meant to
+make easy.
+
+**The friend.** `Friend.Discord(id, label, webhookId, webhookToken)`, beside Private and Simple,
+so it gets the rest for free: which members may be named and "someone else" (section 6), the
+apps sending for switches they register (section 7) and corrections, the relay for switches
+made anywhere, gone friends, and the watch's copy.
+
+**Peers that don't know a friend type.** Phone, watch and relay update separately, and a friend
+type one doesn't know made it fail on the whole config: the watch kept its old one (still naming
+members since unshared, still sending to friends since removed), and a relay refused every
+upload. From this release, each skips friends of a type it doesn't know and keeps the rest; a
+Discord channel then posts from whichever devices know it. A watch or relay from before this
+release still refuses, which the sharing screen's existing relay error and an update cover.
+
+**The webhook is a credential**: anyone holding its URL can post to the channel.
+- Only the id (a snowflake, 17 to 20 digits) and token (`[A-Za-z0-9_-]+`) are kept, parsed from
+  a pasted `https://` URL on `discord.com`, `discordapp.com`, `canary.discord.com` or
+  `ptb.discord.com` with path `/api/webhooks/{id}/{token}` and nothing else. Posts always go to
+  `https://discord.com/api/webhooks/{id}/{token}`, rebuilt from the two, so no near-miss host,
+  userinfo or path trick can be stored. The same check is the relay's.
+- Encrypted on the phone and the watch. The relay's copy is plaintext, like the ntfy topics and
+  follow codes it already holds (a `0600` state file on Node, Durable Object storage on Workers).
+- After saving, the sharing screen shows the label and "Discord webhook", never the URL. No log
+  line, failure reason or relay status entry includes it.
+- Removing the friend stops the posts but doesn't revoke the webhook: the screen says to delete
+  it in Discord (Server Settings → Integrations → Webhooks) if it shouldn't be usable any more.
+
+**The message.** `POST` with JSON:
+`{"content": <text>, "username": <system title>, "allowed_mentions": {"parse": []}, "flags": 4}`.
+- `content` is the announcement ("Alex is fronting", "Correction: ..."), with Discord's markdown
+  characters in member names escaped, so a name can't make a heading or a link, and capped at
+  Discord's 2,000 characters.
+- `username` shows the system's title as the poster. If Discord refuses it (a 400 naming
+  `username`: it bars "discord" and "clyde", and more besides), the post is sent once more
+  without it, and the webhook's own name shows.
+- `allowed_mentions` allows nothing, so no name pings anyone; flag 4 suppresses link previews.
+
+**Answers.**
+- 204: delivered.
+- 404 or 401: the webhook was deleted, or its token reset. The friend is gone, and unlike other
+  friends, for good: Discord asks that a webhook answering 404 not be tried again, so it isn't
+  retried daily, only after the user pastes a new URL. The sharing screen says to make a new
+  webhook and paste it.
+- 429, or any other failure: not retried (there are no HTTP retries for any friend; one retry
+  is for a dropped connection). Real rate limits are unlikely at a switch's pace.
+- Each friend's last failure is kept, by device, and shown on the sharing screen, so a failure
+  that repeats on every switch (a forum channel's webhook, which needs a thread) is visible.
+
+**Adding one.** Share with friends gains "Discord channel": a label and the webhook URL. Saving
+first posts a test message ("PluralWare will post switches here.") with `?wait=true`, and saves
+only once Discord accepts it, which catches a mistyped URL, a deleted webhook and a forum
+channel before any switch depends on it.
+
+**One wording, two implementations.** The announcement text exists in Kotlin
+(`SwitchAnnouncement`) and in the relay (`announce.js`), and the Discord payload will too. Both
+test suites read one fixture file, `relay/test/fixtures/announcements.json`:
+- each case: the members in front order (uuid, label, shared or not), the system title, and the
+  expected text and Discord payload, compared as JSON;
+- corrections, which only the apps send, marked so the relay skips them;
+- webhook URLs, accepted and refused, for both checks.
+Gradle declares the file an input of `:shared`'s tests, so a change to it alone reruns them.
+
+**Threat model** (section 11): a Discord channel is read by Discord and by everyone in the
+channel, in plaintext, and the messages stay; the system's title shows as the poster. That's
+broader than Simple mode, and the add screen says so.
+
+**Tests.**
+- Shared fixtures, run by both: wording, payloads, URL checks.
+- Kotlin and relay: 204; 404 and 401 as gone for good; the username retry; other failures kept;
+  no URL in a failure, log or status.
+- Config: a Discord friend in the upload's JSON (interop test), in the watch's copy and through
+  the `SharingHandoff` round trip; removing one drops its gone mark.
+- Sharing screen: the test post gating the save, the URL's errors, the last failure, the gone
+  wording.

@@ -2,9 +2,19 @@ package me.pluralware.shared.notify
 
 import java.security.SecureRandom
 import java.util.UUID
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.elementNames
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Everything the watch needs to tell friends about a switch. The phone owns it
@@ -20,7 +30,7 @@ data class SharingConfig(
     val title: String = DEFAULT_TITLE,
     /** Members who may be named; everyone else collapses into "someone". */
     val sharedMemberUuids: Set<String> = emptySet(),
-    val friends: List<Friend> = emptyList(),
+    @Serializable(with = KnownFriends::class) val friends: List<Friend> = emptyList(),
     /** Signs Private-mode pushes; generated on first invite (§4.3). */
     val vapid: VapidKeys? = null,
     /** Carries Simple-mode messages. */
@@ -80,6 +90,16 @@ sealed interface Friend {
         val topic: String,
     ) : Friend
 
+    /** Messages posted to a Discord channel through one of its webhooks (§15). */
+    @Serializable
+    @SerialName("discord")
+    data class Discord(
+        override val id: String,
+        override val label: String,
+        val webhookId: String,
+        val webhookToken: String,
+    ) : Friend
+
     companion object {
         fun newId(): String = UUID.randomUUID().toString()
     }
@@ -135,4 +155,25 @@ object NtfyTopics {
 
     /** `https://server/topic`: what the friend subscribes to. */
     fun url(server: NtfyServer, topic: String): String = server.baseUrl.trimEnd('/') + "/" + topic
+}
+
+/**
+ * Friends as stored, skipping any of a type this version doesn't know (one a
+ * newer phone added), so the rest of the config still reads. A friend of a
+ * known type that won't read still fails it, rather than being lost unnoticed.
+ */
+internal object KnownFriends : KSerializer<List<Friend>> {
+    private val list = ListSerializer(Friend.serializer())
+    override val descriptor: SerialDescriptor = list.descriptor
+
+    private val KNOWN_TYPES = Friend.serializer().descriptor.getElementDescriptor(1).elementNames.toSet()
+
+    override fun serialize(encoder: Encoder, value: List<Friend>) = list.serialize(encoder, value)
+
+    override fun deserialize(decoder: Decoder): List<Friend> {
+        val input = decoder as? JsonDecoder ?: return list.deserialize(decoder)
+        return input.decodeJsonElement().jsonArray
+            .filter { (it.jsonObject["type"] as? JsonPrimitive)?.content in KNOWN_TYPES }
+            .map { input.json.decodeFromJsonElement(Friend.serializer(), it) }
+    }
 }
