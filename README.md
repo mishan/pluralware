@@ -144,17 +144,8 @@ receive notifications.
 
 ## Privacy
 
-- Your PluralKit token is stored encrypted on your phone, and on your watch
-  if you have one. It goes from your phone to your watch and to PluralKit,
-  and nowhere else. There
-  are no accounts, ads or analytics, and nothing is sent to the developers.
-- Private notifications are end-to-end encrypted. The push service that
-  delivers them can't read them.
-- Simple (ntfy) notifications can be read by whoever runs the ntfy server.
-- A relay, if you host one, holds your friends' follow codes and the names
-  of the members you chose to share. It never holds your PluralKit token.
-- Sharing tells friends who's fronting even if your front is private in
-  PluralKit. Only the friends you add hear anything.
+No accounts, ads or analytics, and nothing is sent to the developer. What the apps handle, and
+where it goes, is in the [privacy policy](PRIVACY.md).
 
 ## For developers
 

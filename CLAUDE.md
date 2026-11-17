@@ -271,4 +271,5 @@ what's built. In short:
   deliberately, since every field is a UI stability promise.
 - Both apps take their version from `pluralware.version` in `gradle.properties`; releases are
   cut by pushing a matching `vX.Y.Z` tag, which runs `.github/workflows/release.yml`.
+  It publishes the APKs on GitHub and the bundles Play takes; `docs/play-release.md` covers Play.
 - Commit messages: short imperative subject, capitalized. **Do not add a `Co-Authored-By` trailer.**
