@@ -185,11 +185,11 @@ filter are what register us in the system's complication picker. A small monochr
 | `wear/.../complication/FronterComplicationFormatter.kt` | New. Pure `Switch? -> text` formatting, unit-tested. |
 | `wear/src/main/AndroidManifest.xml` | Register the service (section 8). |
 | `wear/src/main/res/drawable/ic_complication.xml` | New. Picker icon. |
-| `wear/.../complication/FronterSource.kt` | New. What both surfaces show (section 6), unit-tested. |
+| `shared/.../fronter/FronterSource.kt` | New (in `:wear` at first). What both surfaces show (section 6), unit-tested. |
 | `wear/.../complication/FronterSurfaces.kt` | New. Android wiring for `FronterSource`; `publish` and `onTokenChanged` (section 5). |
 | `wear/.../MainActivity.kt` / `WatchDataListenerService.kt` | Publish `loadedFronters` changes; report token changes. |
 | `shared/.../settings/LastFronterStore.kt` | Non-sensitive last-known cache (section 6). |
-| `wear/src/test/...` | Formatter, `FronterSource` and ViewModel tests. |
+| `wear/src/test/...`, `shared/src/test/.../fronter/` | ViewModel tests; formatter and `FronterSource` tests. |
 
 ## 11. Decisions & future options
 

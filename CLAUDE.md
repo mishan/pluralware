@@ -215,8 +215,9 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
 
 - **One answer for both.** The fronter complication and the tile both ask `FronterSource` what to
   show — setup prompt, fresh cache, fetch, `Last known` fallback, or `Sign in again` on a 401 —
-  so they can't disagree. It's pure Kotlin and unit-tested; `FronterSurfaces` wires it to the real
-  token store, a per-process client, and `LastFronterStore`.
+  so they can't disagree. It's pure Kotlin and unit-tested, in `:shared`'s `fronter/` for the
+  phone's widget too, with each surface's own setup and sign-in wording; `FronterSurfaces` wires
+  it to the real token store, a per-process client, and `LastFronterStore`.
 - **Freshness is pushed.** `MainActivity` sends every `loadedFronters` change to
   `FronterSurfaces.publish`, along with the session's token. That caches the line (keyed by a hash
   of the token, so a stale fetch can't cross systems) and requests updates; token changes (pairing,

@@ -1,5 +1,6 @@
-package me.pluralware.wear.complication
+package me.pluralware.shared.fronter
 
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -12,12 +13,19 @@ import me.pluralware.shared.repository.PluralKitRepository
 import me.pluralware.shared.settings.LastFronter
 import me.pluralware.shared.settings.LastFronterCache
 
-/** What a glanceable surface shows: a title, the fronter line, and its screen-reader text. */
-internal data class FronterDisplay(
+/**
+ * What a glanceable surface shows: a title, the fronter line, its screen-reader
+ * text, and when the switch it describes started, if there is one.
+ */
+data class FronterDisplay(
     val title: String,
     val text: String,
     val description: String,
+    val since: Instant? = null,
 )
+
+/** What each surface says when there's no token, or PluralKit rejected it: its own words, as the way to fix it differs. */
+data class FronterWording(val setup: FronterDisplay, val signInAgain: FronterDisplay)
 
 /**
  * Decides what the complication and the tile show, so the two can't disagree.
@@ -35,14 +43,15 @@ internal data class FronterDisplay(
  * ([remember]), so after a switch the surfaces answer without a fetch of their own.
  * A switch made on the phone [expire]s it instead, so the next request fetches.
  */
-internal class FronterSource(
+class FronterSource(
     private val token: suspend () -> PluralKitToken?,
     private val repositoryFor: (PluralKitToken) -> PluralKitRepository,
     private val cache: LastFronterCache,
+    private val wording: FronterWording,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun current(): FronterDisplay {
-        val token = token() ?: return SETUP
+        val token = token() ?: return wording.setup
         // A line fetched with another token belongs to another system.
         val cached = cache.get()?.takeIf { it.tokenId == token.fingerprint }
         if (cached != null && clock() - cached.fetchedAtEpochMillis in 0 until FRESH_FOR_MILLIS) {
@@ -62,7 +71,7 @@ internal class FronterSource(
             is PkResult.Failure -> when {
                 result.isUnauthorized -> {
                     cache.clear()
-                    SIGN_IN_AGAIN
+                    wording.signInAgain
                 }
                 cached != null -> cached.toDisplay(lastKnown = true)
                 else -> UNAVAILABLE
@@ -123,8 +132,8 @@ internal class FronterSource(
     }
 
     private fun lineFor(switch: Switch?, token: PluralKitToken) = LastFronter(
-        text = FronterComplicationFormatter.body(switch),
-        description = FronterComplicationFormatter.contentDescription(switch),
+        text = FronterFormatter.body(switch),
+        description = FronterFormatter.contentDescription(switch),
         fetchedAtEpochMillis = clock(),
         tokenId = token.fingerprint,
         switchUuid = switch?.uuid,
@@ -132,10 +141,13 @@ internal class FronterSource(
         switchMembersHash = switch?.let(SwitchSync::membersHash),
     )
 
-    private fun LastFronter.toDisplay(lastKnown: Boolean) = if (lastKnown) {
-        FronterDisplay(title = "Last known", text = text, description = "Last known. $description")
-    } else {
-        FronterDisplay(title = FronterComplicationFormatter.TITLE, text = text, description = description)
+    private fun LastFronter.toDisplay(lastKnown: Boolean): FronterDisplay {
+        val since = switchAtEpochMillis?.let(Instant::ofEpochMilli)
+        return if (lastKnown) {
+            FronterDisplay(title = "Last known", text = text, description = "Last known. $description", since = since)
+        } else {
+            FronterDisplay(title = FronterFormatter.TITLE, text = text, description = description, since = since)
+        }
     }
 
     companion object {
@@ -156,18 +168,8 @@ internal class FronterSource(
          */
         const val FRESH_FOR_MILLIS = 5L * 60L * 1000L
 
-        val SETUP = FronterDisplay(
-            title = FronterComplicationFormatter.TITLE,
-            text = "Tap to set up",
-            description = "PluralWare isn't paired with your phone yet. Tap to set up.",
-        )
-        val SIGN_IN_AGAIN = FronterDisplay(
-            title = FronterComplicationFormatter.TITLE,
-            text = "Sign in again",
-            description = "PluralKit no longer accepts this token. Tap to open PluralWare.",
-        )
         val UNAVAILABLE = FronterDisplay(
-            title = FronterComplicationFormatter.TITLE,
+            title = FronterFormatter.TITLE,
             text = "Unavailable",
             description = "Couldn't reach PluralKit.",
         )

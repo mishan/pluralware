@@ -8,6 +8,9 @@ import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import me.pluralware.shared.fronter.FronterDisplay
+import me.pluralware.shared.fronter.FronterFormatter
+import me.pluralware.shared.fronter.FronterSource
 import me.pluralware.wear.MainActivity
 
 /**
@@ -33,7 +36,7 @@ class FronterComplicationService : SuspendingComplicationDataSourceService() {
         if (type != ComplicationType.LONG_TEXT) return null
         return longText(
             FronterDisplay(
-                title = FronterComplicationFormatter.TITLE,
+                title = FronterFormatter.TITLE,
                 text = "Fronting: Alex",
                 description = "Current fronter: Alex",
             ),
