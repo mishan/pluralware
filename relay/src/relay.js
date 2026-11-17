@@ -3,6 +3,7 @@
 // docs/notifications-design.md §10.
 
 import { announce } from './announce.js';
+import { isWebhookId, isWebhookToken, postToDiscord } from './discord.js';
 import { encrypt, vapidAuthorization } from './webpush.js';
 
 /** Switches older than this are backdated or imported, not news (§10 step 2). */
@@ -12,6 +13,8 @@ const MAX_CLOCK_SKEW_MS = 60 * 1000;
 const TTL_SECONDS = 12 * 3600;
 /** Gone friends are retried once a day, like the watch does (GoneFriends.kt). */
 export const GONE_RETRY_MS = 24 * 3600 * 1000;
+/** The kinds of friend this relay can send to. A newer phone's other kinds are kept and skipped. */
+const KNOWN_TYPES = new Set(['private', 'simple', 'discord']);
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -61,9 +64,10 @@ export function configProblem(c) {
       if (!c.vapid || !isPublicHttpsUrl(f.followCode?.endpoint)) return `friend ${f.id}: bad follow code`;
     } else if (f.type === 'simple') {
       if (!isPublicHttpsUrl(c.ntfy?.baseUrl) || typeof f.topic !== 'string') return `friend ${f.id}: bad ntfy setup`;
-    } else {
-      return `friend ${f.id}: unknown type`;
+    } else if (f.type === 'discord') {
+      if (!isWebhookId(f.webhookId) || !isWebhookToken(f.webhookToken)) return `friend ${f.id}: bad Discord webhook`;
     }
+    // Any other type is a newer phone's: kept, not sent to, rather than refusing the rest.
   }
   return null;
 }
@@ -94,6 +98,7 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
   };
 
   async function sendTo(friend, config, payload, text) {
+    if (friend.type === 'discord') return postToDiscord(fetch, friend, config.title, text);
     try {
       let response;
       if (friend.type === 'private') {
@@ -138,7 +143,10 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
     }));
     const at = now();
     const goneBefore = (await store.get('gone')) ?? {};
-    const friends = config.friends.filter((f) => !(at - (goneBefore[f.id] ?? -Infinity) < GONE_RETRY_MS));
+    const friends = config.friends.filter((f) => KNOWN_TYPES.has(f.type) && !(
+      // A Discord webhook that's gone isn't tried again: Discord asks so.
+      (f.type === 'discord' && Object.hasOwn(goneBefore, f.id)) || at - (goneBefore[f.id] ?? -Infinity) < GONE_RETRY_MS
+    ));
     const outcomes = await Promise.all(friends.map((f) => sendTo(f, config, payload, text)));
     await serially(async () => {
       const gone = (await store.get('gone')) ?? {};

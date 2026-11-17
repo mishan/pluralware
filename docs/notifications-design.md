@@ -559,7 +559,8 @@ release still refuses, which the sharing screen's existing relay error and an up
   a pasted `https://` URL on `discord.com`, `discordapp.com`, `canary.discord.com` or
   `ptb.discord.com` with path `/api/webhooks/{id}/{token}` and nothing else. Posts always go to
   `https://discord.com/api/webhooks/{id}/{token}`, rebuilt from the two, so no near-miss host,
-  userinfo or path trick can be stored. The same check is the relay's.
+  userinfo or path trick can be stored. The relay, which is uploaded the two parts rather than a
+  URL, checks their shapes, and posts to the same rebuilt address.
 - Encrypted on the phone and the watch. The relay's copy is plaintext, like the ntfy topics and
   follow codes it already holds (a `0600` state file on Node, Durable Object storage on Workers).
 - After saving, the sharing screen shows the label and "Discord webhook", never the URL. No log
@@ -599,7 +600,7 @@ test suites read one fixture file, `relay/test/fixtures/announcements.json`:
 - each case: the members in front order (uuid, label, shared or not), the system title, and the
   expected text and Discord payload, compared as JSON;
 - corrections, which only the apps send, marked so the relay skips them;
-- webhook URLs, accepted and refused, for both checks.
+- webhook URLs, accepted and refused, for the apps' check (the relay is never given a URL).
 Gradle declares the file an input of `:shared`'s tests, so a change to it alone reruns them.
 
 **Threat model** (section 11): a Discord channel is read by Discord and by everyone in the

@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRelay, sameSecret, MAX_SWITCH_AGE_MS } from '../src/relay.js';
 import { b64urlEncode } from '../src/webpush.js';
+import { announce } from '../src/announce.js';
+import { discordPayload } from '../src/discord.js';
 
 const ADMIN = 'admin-secret-0123456789';
 const NOW = Date.parse('2026-09-27T14:02:30Z');
@@ -32,10 +35,16 @@ async function vapidKeys() {
   };
 }
 
-async function setup({ pushStatus = 201, enabled = true } = {}) {
+// discord: Discord's answers in turn (a status, a Response, or an Error to throw); 204 after.
+async function setup({ pushStatus = 201, enabled = true, extraFriends = [], discord = [] } = {}) {
   const sent = [];
   const fetch = async (url, init) => {
     sent.push({ url: String(url), init });
+    if (String(url).startsWith('https://discord.com/')) {
+      const answer = discord.shift() ?? 204;
+      if (answer instanceof Error) throw answer;
+      return answer instanceof Response ? answer : new Response(null, { status: answer });
+    }
     const status = String(url).startsWith('https://push.example/gone') ? 410 : String(url).startsWith('https://push.example') ? pushStatus : 200;
     return new Response(null, { status });
   };
@@ -52,6 +61,7 @@ async function setup({ pushStatus = 201, enabled = true } = {}) {
       { type: 'private', id: 'p1', label: 'Sam', followCode: { name: 'Sam', endpoint: 'https://push.example/sam', ...(await receiverKeys()) } },
       { type: 'private', id: 'p2', label: 'Old', followCode: { name: 'Old', endpoint: 'https://push.example/gone', ...(await receiverKeys()) } },
       { type: 'simple', id: 's1', label: 'Kit', topic: 'pw_kit' },
+      ...extraFriends,
     ],
     vapid: await vapidKeys(),
     ntfy: { baseUrl: 'https://ntfy.example.org/', accessToken: 'tk_x' },
@@ -227,4 +237,96 @@ test('a gone friend is retried after a day, and a delivery clears the mark', asy
   await (await handle(event(switchEvent(['uuid-alex'], at(now))))).background;
   assert.equal(sent.length, 1, 'retried after a day');
   assert.deepEqual(await store.get('gone'), {});
+});
+
+// --- Discord channels (docs/notifications-design.md §15) ----------------------------------------
+
+const DISCORD = { type: 'discord', id: 'd1', label: 'Server', webhookId: '123456789012345678', webhookToken: 'tok_en' };
+const DISCORD_URL = 'https://discord.com/api/webhooks/123456789012345678/tok_en?wait=true';
+
+test('a switch is posted to a Discord channel as the system, waiting for Discord to keep it', async () => {
+  const { handle, sent } = await setup({ extraFriends: [DISCORD] });
+  const { background } = await handle(event(switchEvent(['uuid-alex'])));
+  await background;
+
+  const post = sent.find((s) => s.url.startsWith('https://discord.com/'));
+  assert.equal(post.url, DISCORD_URL);
+  assert.equal(post.init.method, 'POST');
+  assert.deepEqual(JSON.parse(post.init.body), discordPayload('Sample', 'Alex is fronting'));
+});
+
+test('a Discord webhook deleted or reset is gone, and not tried again even after a day', async () => {
+  for (const status of [404, 401]) {
+    const { handle, sent, store } = await setup({ extraFriends: [DISCORD], discord: [status] });
+    await (await handle(event(switchEvent(['uuid-alex'])))).background;
+    assert.ok((await store.get('gone')).d1, `HTTP ${status}`);
+
+    const later = '2026-09-28T14:02:00Z';
+    const posts = () => sent.filter((s) => s.url.startsWith('https://discord.com/')).length;
+    const before = posts();
+    const fetch = async (url, init) => { sent.push({ url: String(url), init }); return new Response(null, { status: 204 }); };
+    const relay = createRelay({ store, adminSecret: ADMIN, fetch, now: () => Date.parse(later) + 30_000 });
+    await (await relay(event(switchEvent(['uuid-alex'], later)))).background;
+    assert.equal(posts(), before, `HTTP ${status}: not posted to again`);
+    assert.deepEqual(Object.keys((await store.get('last')).outcomes).includes('d1'), false);
+  }
+});
+
+test('a poster name Discord refuses is left off, and the post sent once more', async () => {
+  const refused = new Response('{"code":50035,"errors":{"username":{"_errors":[]}}}', { status: 400 });
+  const { handle, sent, store } = await setup({ extraFriends: [DISCORD], discord: [refused, 200] });
+  await (await handle(event(switchEvent(['uuid-alex'])))).background;
+
+  const posts = sent.filter((s) => s.url.startsWith('https://discord.com/')).map((s) => JSON.parse(s.init.body));
+  assert.deepEqual(posts.map((p) => 'username' in p), [true, false]);
+  assert.equal((await store.get('last')).outcomes.d1, 'delivered');
+});
+
+test('any other Discord refusal is a failure, sent once, that never shows the webhook token', async () => {
+  for (const status of [400, 429, 500]) {
+    const { handle, sent, store } = await setup({ extraFriends: [DISCORD], discord: [status] });
+    await (await handle(event(switchEvent(['uuid-alex'])))).background;
+
+    assert.equal(sent.filter((s) => s.url.startsWith('https://discord.com/')).length, 1, `HTTP ${status}`);
+    const outcome = (await store.get('last')).outcomes.d1;
+    assert.equal(outcome, `failed: HTTP ${status}`);
+  }
+  const { handle, store } = await setup({ extraFriends: [DISCORD], discord: [new Error('connect ECONNREFUSED https://discord.com/api/webhooks/123456789012345678/tok_en')] });
+  await (await handle(event(switchEvent(['uuid-alex'])))).background;
+  assert.ok(!JSON.stringify(await store.get('last')).includes('tok_en'));
+});
+
+test('a Discord friend needs a webhook id and token in the shape Discord gives them', async () => {
+  const { handle } = await setup();
+  for (const friend of [
+    { ...DISCORD, webhookId: '1234' },
+    { ...DISCORD, webhookToken: 'tok/../en' },
+    { ...DISCORD, webhookToken: undefined },
+  ]) {
+    const config = { ...(await setup()).config, friends: [friend] };
+    const put = await handle(new Request('https://relay.example/config', { method: 'PUT', headers: { authorization: `Bearer ${ADMIN}` }, body: JSON.stringify(config) }));
+    assert.equal(put.response.status, 400, JSON.stringify(friend));
+  }
+});
+
+test('a friend of a type this relay doesn\'t know is kept but not sent to, and the rest still are', async () => {
+  const { handle, sent, store } = await setup({ extraFriends: [{ type: 'pigeon', id: 'x1', label: 'Coo', loft: 'https://roof.example/' }] });
+  await (await handle(event(switchEvent(['uuid-alex'])))).background;
+
+  const ntfyPosts = sent.filter((s) => s.url.startsWith('https://ntfy.example.org'));
+  assert.deepEqual(ntfyPosts.map((s) => JSON.parse(s.init.body).topic), ['pw_kit']);
+  assert.ok(!sent.some((s) => s.url.startsWith('https://roof.example')));
+  assert.ok(!('x1' in (await store.get('last')).outcomes));
+});
+
+// The wording, and what Discord is sent, from the fixtures :shared's tests read too.
+const fixtures = JSON.parse(readFileSync(new URL('./fixtures/announcements.json', import.meta.url)));
+
+test('each switch is worded, and posted to Discord, as the shared fixtures say', () => {
+  for (const c of fixtures.announcements) {
+    const names = Object.fromEntries(c.front.filter((m) => m.shared).map((m) => [m.uuid, m.label]));
+    const text = announce(c.front.map((m) => m.uuid), names);
+    assert.equal(text, c.text, c.case);
+    assert.deepEqual(discordPayload(c.title, text), c.discord, c.case);
+  }
 });

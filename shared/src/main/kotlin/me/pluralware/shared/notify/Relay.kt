@@ -42,8 +42,7 @@ data class RelayConfig(
                 names = members
                     .filter { it.uuid in config.sharedMemberUuids }
                     .associate { it.uuid to it.displayLabel },
-                // Not Discord channels yet: a relay that can't post to them refuses the whole upload.
-                friends = config.friends.filter { it !is Friend.Discord },
+                friends = config.friends,
                 vapid = config.vapid,
                 ntfy = config.ntfy,
             )

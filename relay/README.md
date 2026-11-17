@@ -14,13 +14,16 @@ short:
 - It **names only the members you chose to share.** Your phone uploads their display labels. The
   relay never holds your PluralKit token, so it can't read or change your system.
 - It **sends** to each friend the same way your watch would: encrypted Web Push for Private
-  friends, ntfy for Simple ones.
+  friends, ntfy for Simple ones, and a post to a Discord channel's webhook for Discord channels.
 
 It has no dependencies. The same code runs as a Cloudflare Worker or under Node 20+.
 
 It accepts push endpoints and ntfy servers only at https addresses on public host names. An IP
 address, `localhost` or an internal name is refused, so a friend's follow code can't aim your
-relay at your own network. A friend whose subscription is gone is skipped, and retried once a day.
+relay at your own network. Discord posts go only to `discord.com`. A friend whose subscription
+is gone is skipped, and retried once a day; a Discord webhook that's gone isn't tried again, as
+Discord asks. A friend of a kind this relay doesn't know (from a newer phone) is kept but not sent
+to; update the relay to send to it.
 
 ## Deploy
 

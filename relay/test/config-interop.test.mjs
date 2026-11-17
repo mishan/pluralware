@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { configProblem } from '../src/relay.js';
 import { announce } from '../src/announce.js';
 
-const FROM_PHONE = '{"enabled":true,"webhookPath":"hook_abcdefghijklmnop","signingToken":"pk-signing-token","title":"Sample","names":{"uuid-alex":"Alex"},"friends":[{"type":"private","id":"p1","label":"Sam","followCode":{"name":"Sam","endpoint":"https://push.example/sam","p256dh":"PUB","auth":"AUTH"}},{"type":"simple","id":"s1","label":"Kit","topic":"pw_kit"}],"vapid":{"publicKey":"VPUB","privateKey":"VPRIV"},"ntfy":{"baseUrl":"https://ntfy.example.org","accessToken":"tk_x"}}';
+const FROM_PHONE = '{"enabled":true,"webhookPath":"hook_abcdefghijklmnop","signingToken":"pk-signing-token","title":"Sample","names":{"uuid-alex":"Alex"},"friends":[{"type":"private","id":"p1","label":"Sam","followCode":{"name":"Sam","endpoint":"https://push.example/sam","p256dh":"PUB","auth":"AUTH"}},{"type":"simple","id":"s1","label":"Kit","topic":"pw_kit"},{"type":"discord","id":"d1","label":"Server","webhookId":"123456789012345678","webhookToken":"tok"}],"vapid":{"publicKey":"VPUB","privateKey":"VPRIV"},"ntfy":{"baseUrl":"https://ntfy.example.org","accessToken":"tk_x"}}';
 
 test('the phone\'s upload is a valid relay config', () => {
   assert.equal(configProblem(JSON.parse(FROM_PHONE)), null);
@@ -20,6 +20,6 @@ test('its names map is keyed the way switch events name members', () => {
 
 test('friends arrive tagged with their delivery mode', () => {
   const config = JSON.parse(FROM_PHONE);
-  assert.deepEqual(config.friends.map((f) => f.type), ['private', 'simple']);
+  assert.deepEqual(config.friends.map((f) => f.type), ['private', 'simple', 'discord']);
   assert.equal(config.friends[0].followCode.endpoint, 'https://push.example/sam');
 });
