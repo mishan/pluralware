@@ -23,6 +23,27 @@ class SharingConfigTest {
     }
 
     @Test
+    fun `a friend of a type this version doesn't know is skipped, and the others kept`() {
+        val json = """{"friends":[
+            {"type":"simple","id":"1","label":"Kit","topic":"pw_abc"},
+            {"type":"pigeon","id":"2","label":"Coo","loft":"roof"},
+            {"type":"discord","id":"3","label":"Server","webhookId":"123456789012345678","webhookToken":"tok"}
+        ]}"""
+
+        assertEquals(
+            listOf(Friend.Simple("1", "Kit", "pw_abc"), Friend.Discord("3", "Server", "123456789012345678", "tok")),
+            SharingConfig.fromJson(json).friends,
+        )
+    }
+
+    @Test
+    fun `a friend of a known type that won't read fails the config, rather than being lost unnoticed`() {
+        val json = """{"friends":[{"type":"simple","id":"1","label":"Kit"}]}"""
+
+        assertTrue(runCatching { SharingConfig.fromJson(json) }.isFailure)
+    }
+
+    @Test
     fun `topics are pw_ plus twenty lowercase alphanumerics, and don't repeat`() {
         val topics = List(200) { NtfyTopics.generate() }
         topics.forEach { assertTrue(it, Regex("pw_[a-z0-9]{20}").matches(it)) }

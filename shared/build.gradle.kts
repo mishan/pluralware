@@ -64,3 +64,12 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
 }
+
+// The announcement fixtures live with the relay, whose tests read them too; a change to them
+// alone must rerun these tests.
+tasks.withType<Test>().configureEach {
+    val fixtures = rootProject.file("relay/test/fixtures/announcements.json")
+    // By content, not where the checkout is, so the build cache still serves other checkouts.
+    inputs.file(fixtures).withPathSensitivity(PathSensitivity.NONE).withPropertyName("announcementFixtures")
+    jvmArgumentProviders += CommandLineArgumentProvider { listOf("-Dpluralware.announcementFixtures=${fixtures.absolutePath}") }
+}

@@ -237,3 +237,42 @@ with `UPDATE_PERIOD_SECONDS = 0` (it never changes).
 
 Follow-ups worth noting: the "Change" chip uses the default Material chip color (not branded
 amber) to keep the first cut low-risk, and the tile preview is a placeholder.
+
+## Phone widget
+
+A home-screen widget on the phone: who's fronting and since when, kept current the way the
+complication and tile are.
+
+- **What it shows.** `FronterSource`'s answer (setup prompt, fresh cache, fetch, `Last known`,
+  `Sign in again`), so it agrees with the watch's surfaces. `FronterSource` and
+  `FronterComplicationFormatter`, with their tests, move from `:wear` to `:shared` and become
+  public; each surface supplies its own setup and sign-in wording (the watch's "isn't paired with
+  your phone yet" is wrong on the phone), and the display gains the switch's start time.
+- **"Since 2:04 PM"**, not "for 2h": a widget redraws only when updated, at worst every 30
+  minutes, and a time never goes stale where a duration would.
+- **Sizes.** Small: the fronter line and since when. Wider: the same and a **Switch** button
+  that opens the picker (a route into `pick`; signed out, it opens Connect). Tapping the rest
+  opens the home screen. Member colors aren't in the cache and stay out of v1.
+- **Freshness, pushed.** `PhoneApp`, under the session as the watch's `ConnectedApp` does, hands
+  each `loadedFronters` change to the widget's cache with its token; `memberEdits` expires it, so
+  a rename shows. A switch the watch reports (`SwitchSync` notices, which the phone's listener
+  service already receives) expires it, and so does a member edited on the watch (the listener's
+  filter gains `/pluralware/members`). Token changes are collected once, from the token store in
+  `AppGraph.scope`, comparing fingerprints so a process start doesn't count as a change. Each
+  asks the widgets to update.
+- **Polling is the backstop**: `updatePeriodMillis` of 30 minutes, the most often Android allows,
+  and best effort: Android can put it off while the phone dozes. Without a watch, a switch made
+  outside the app while it's closed usually shows within about half an hour, but nothing
+  promises it.
+- **One fetch for every widget.** Placed widgets all update together; `PhoneWidgetSurfaces`
+  computes the display once (single-flight) and every widget renders it, rather than each
+  fetching. An update asked for after an expiry starts a fresh fetch rather than joining one
+  begun before it, and a display fetched with a token that's no longer current is dropped and
+  fetched again, so a widget never shows a switch it was told is old, or a signed-out
+  system's names.
+- **Built with** Jetpack Glance (`glance-appwidget`); `PhoneWidgetSurfaces` wires the token
+  store, a client and `LastFronterStore`, as `FronterSurfaces` does on the watch.
+- **Tests.** The moved tests. The widget's content is a function of the display and the clock,
+  tested with Glance's unit-test support (`glance-appwidget-testing`), including its tap actions.
+  The wiring with a fake updater: publishing, a member edit expiring, the token collector, a
+  notice from another system ignored, and one fetch for several widgets.

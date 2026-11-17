@@ -1,0 +1,277 @@
+{
+  "comment": "What friends are told about a switch, read by the relay's tests and by :shared's. Change the wording here and both sides' tests check it together.",
+  "announcements": [
+    {
+      "case": "switch-out",
+      "title": "Sample",
+      "front": [],
+      "text": "Switched out",
+      "discord": {
+        "content": "Switched out",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "one named member",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex",
+          "shared": true
+        }
+      ],
+      "text": "Alex is fronting",
+      "discord": {
+        "content": "Alex is fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "three named members take a serial comma, in front order",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-bea",
+          "label": "Bea",
+          "shared": true
+        },
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex",
+          "shared": true
+        },
+        {
+          "uuid": "uuid-cy",
+          "label": "Cy",
+          "shared": true
+        }
+      ],
+      "text": "Bea, Alex, and Cy are fronting",
+      "discord": {
+        "content": "Bea, Alex, and Cy are fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "unshared members read as someone else, however many",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex",
+          "shared": true
+        },
+        {
+          "uuid": "uuid-x",
+          "label": "Hidden",
+          "shared": false
+        },
+        {
+          "uuid": "uuid-y",
+          "label": "Hidden too",
+          "shared": false
+        }
+      ],
+      "text": "Alex and someone else are fronting",
+      "discord": {
+        "content": "Alex and someone else are fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "nobody named",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-x",
+          "label": "Hidden",
+          "shared": false
+        }
+      ],
+      "text": "Someone is fronting",
+      "discord": {
+        "content": "Someone is fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "Discord markdown in a name is shown as typed",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "*Lex_ [#1](x)",
+          "shared": true
+        }
+      ],
+      "text": "*Lex_ [#1](x) is fronting",
+      "discord": {
+        "content": "\\*Lex\\_ \\[\\#1\\]\\(x\\) is fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    },
+    {
+      "case": "every character Discord formats is escaped, a backslash too",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "a\\b`c|d~e>f<g-h",
+          "shared": true
+        }
+      ],
+      "text": "a\\b`c|d~e>f<g-h is fronting",
+      "discord": {
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4,
+        "username": "Sample",
+        "content": "a\\\\b\\`c\\|d\\~e\\>f\\<g\\-h is fronting"
+      }
+    },
+    {
+      "case": "a name that starts like a numbered list stays a name",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "1. Alex",
+          "shared": true
+        }
+      ],
+      "text": "1. Alex is fronting",
+      "discord": {
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4,
+        "username": "Sample",
+        "content": "1\\. Alex is fronting"
+      }
+    },
+    {
+      "case": "a numbered list starting on any line, indented or not, stays a name",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex\n 2. Bee",
+          "shared": true
+        }
+      ],
+      "text": "Alex\n 2. Bee is fronting",
+      "discord": {
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4,
+        "username": "Sample",
+        "content": "Alex\n 2\\. Bee is fronting"
+      }
+    },
+    {
+      "case": "a title Discord won't take as the poster's name is left out",
+      "title": "Discord Crew",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex",
+          "shared": true
+        }
+      ],
+      "text": "Alex is fronting",
+      "discord": {
+        "content": "Alex is fronting",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    }
+  ],
+  "corrections": [
+    {
+      "case": "the apps send corrections; the relay doesn't",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-bea",
+          "label": "Bea",
+          "shared": true
+        }
+      ],
+      "text": "Correction: Bea is fronting",
+      "discord": {
+        "content": "Correction: Bea is fronting",
+        "username": "Sample",
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4
+      }
+    }
+  ],
+  "webhooks": {
+    "accepted": [
+      {
+        "url": "https://discord.com/api/webhooks/123456789012345678/Ab_c-9",
+        "id": "123456789012345678",
+        "token": "Ab_c-9"
+      },
+      {
+        "url": " https://discordapp.com/api/webhooks/12345678901234567/tok ",
+        "id": "12345678901234567",
+        "token": "tok"
+      },
+      {
+        "url": "https://canary.discord.com/api/webhooks/12345678901234567890/tok",
+        "id": "12345678901234567890",
+        "token": "tok"
+      },
+      {
+        "url": "https://ptb.discord.com/api/webhooks/123456789012345678/tok",
+        "id": "123456789012345678",
+        "token": "tok"
+      }
+    ],
+    "refused": [
+      "http://discord.com/api/webhooks/123456789012345678/tok",
+      "https://discord.com.evil.example/api/webhooks/123456789012345678/tok",
+      "https://evil.example/api/webhooks/123456789012345678/tok",
+      "https://user@discord.com/api/webhooks/123456789012345678/tok",
+      "https://discord.com/api/webhooks/123456789012345678/tok?thread_id=1",
+      "https://discord.com/api/webhooks/123456789012345678/tok/extra",
+      "https://discord.com/api/webhooks/123456789012345678/../tok",
+      "https://discord.com/api/webhooks/1234/tok",
+      "https://discord.com/api/webhooks/123456789012345678/",
+      "https://discord.com:8443/api/webhooks/123456789012345678/tok",
+      "not a url"
+    ]
+  }
+}

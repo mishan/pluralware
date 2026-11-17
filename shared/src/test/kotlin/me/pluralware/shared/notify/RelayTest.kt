@@ -49,6 +49,13 @@ class RelayTest {
     }
 
     @Test
+    fun `Discord channels stay out of the upload until the relay can post to them`() {
+        val withDiscord = sharing.copy(friends = sharing.friends + Friend.Discord("d1", "Server", "123456789012345678", "tok"))
+
+        assertEquals(RelayConfig.from(sharing, listOf(alex)), RelayConfig.from(withDiscord, listOf(alex)))
+    }
+
+    @Test
     fun `nothing to upload until PluralKit has given a signing token`() {
         assertNull(RelayConfig.from(sharing.copy(relay = sharing.relay!!.copy(signingToken = null)), listOf(alex)))
         assertNull(RelayConfig.from(sharing.copy(relay = null), listOf(alex)))
