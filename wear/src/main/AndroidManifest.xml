@@ -9,7 +9,8 @@
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="PluralWare"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault"

@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status-bar icon for friends' switch notifications: two overlapping figures. -->
+<!-- Status-bar icon for friends' switch notifications: the app's mark. Drawn by tools/icon.py; change it there. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M9,11a3.5,3.5 0,1 0,0 -7a3.5,3.5 0,1 0,0 7zM9,13c-3.3,0 -7,1.6 -7,4v2h14v-2c0,-2.4 -3.7,-4 -7,-4zM16.5,11a3,3 0,1 0,0 -6a3,3 0,1 0,0 6zM17.5,13.1c1.9,0.6 3.5,1.8 3.5,3.9v2h-3v-2c0,-1.6 -0.2,-2.8 -0.5,-3.9z" />
+    android:viewportWidth="62"
+    android:viewportHeight="62">
+    <group
+        android:translateX="-23"
+        android:translateY="-21.25">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M69.78,74.74A24.5,24.5 0 0,1 38.22,74.74A8.4,8.4 0 0,0 42.08,71.43A19.5,19.5 0 0,0 65.92,71.43A8.4,8.4 0 0,0 69.78,74.74zM29.88,60.3A24.5,24.5 0 0,1 41.17,35.12A13,13 0 0,0 42.99,39.91A19.5,19.5 0 0,0 34.67,58.6A8.4,8.4 0 0,0 29.88,60.3zM66.83,35.13A24.5,24.5 0 0,1 78.12,60.3A8.4,8.4 0 0,0 73.33,58.6A19.5,19.5 0 0,0 65.01,39.91A13,13 0 0,0 66.83,35.13z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M45,33a9,9 0 1,0 18,0a9,9 0 1,0 -18,0z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M29.5,67a5.45,5.45 0 1,0 10.9,0a5.45,5.45 0 1,0 -10.9,0z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M67.6,67a5.45,5.45 0 1,0 10.9,0a5.45,5.45 0 1,0 -10.9,0z" />
+    </group>
 </vector>

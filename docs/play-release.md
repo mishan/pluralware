@@ -40,7 +40,8 @@ app.
    - App access: the app needs a PluralKit token. Explain that one comes from `pk;token` in a
      DM with PluralKit, or provide a test system's token.
 6. **Store listing**: short and full description, the README's screenshots
-   (`docs/screenshots`), a 512 × 512 icon and a 1024 × 500 feature graphic.
+   (`docs/screenshots`), the 512 × 512 icon (`docs/icon/icon-512.png`) and a 1024 × 500 feature
+   graphic.
 
 New personal developer accounts must run a closed test before releasing to everyone: at least 12
 testers, opted in continuously for the 14 days before applying for production access. Internal
