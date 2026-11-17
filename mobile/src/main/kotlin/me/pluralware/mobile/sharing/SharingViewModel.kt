@@ -18,14 +18,19 @@ import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SharingHandoff
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.SystemInfo
+import java.io.IOException
+import me.pluralware.shared.notify.DiscordSender
+import me.pluralware.shared.notify.DiscordWebhook
 import me.pluralware.shared.notify.FollowCode
 import me.pluralware.shared.notify.Friend
 import me.pluralware.shared.notify.Invite
 import me.pluralware.shared.notify.NtfyServer
 import me.pluralware.shared.notify.NtfyTopics
+import me.pluralware.shared.notify.NotifyHttp
 import me.pluralware.shared.notify.RelayClient
 import me.pluralware.shared.notify.RelayConfig
 import me.pluralware.shared.notify.RelaySettings
+import me.pluralware.shared.notify.SendOutcome
 import me.pluralware.shared.notify.SharingConfig
 import me.pluralware.shared.notify.SharingStore
 import me.pluralware.shared.notify.Vapid
@@ -49,6 +54,9 @@ class SharingViewModel(
     private val readWatchStatus: suspend () -> Set<String> = { SharingHandoff.readStatus(appContext) },
     /** Held for every write to the relay, by everything that writes to it. */
     private val relayWrites: Mutex = Mutex(),
+    private val testDiscord: suspend (DiscordWebhook.Address, String) -> SendOutcome = { address, title ->
+        DiscordSender(NotifyHttp.create(BuildConfig.VERSION_NAME)).test(address, title)
+    },
 ) : ViewModel() {
 
     data class State(
@@ -68,12 +76,18 @@ class SharingViewModel(
         /** Removing the relay couldn't reach it; the screen offers "Remove anyway". */
         val relayRemoveFailed: Boolean = false,
         val ntfyError: String? = null,
+        val discordError: String? = null,
+        /** A Discord channel's test post is out; adding waits for Discord's answer. */
+        val discordTesting: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
     val config: StateFlow<SharingConfig> = sharingStore.configFlow
+
+    /** Each friend's last failed send from this phone, by friend id. */
+    val failures: StateFlow<Map<String, String>> = sharingStore.failuresFlow
 
     /** Relays let go of while unreachable; see [SharingStore.orphanedRelays]. */
     val orphanedRelays: StateFlow<List<RelaySettings>> = sharingStore.orphanedRelays
@@ -175,6 +189,61 @@ class SharingViewModel(
         val friend = Friend.Simple(id = Friend.newId(), label = label.trim().ifEmpty { "Friend" }, topic = topic)
         change { it.copy(friends = it.friends + friend) }
         _state.update { it.copy(newTopicUrl = NtfyTopics.url(server, topic)) }
+    }
+
+    /**
+     * Adds a Discord channel from its webhook link (§15), once a test post
+     * shows Discord takes it: a mistyped link, a deleted webhook or a forum
+     * channel fails now rather than on a switch. [onAdded] runs once it's saved.
+     */
+    fun addDiscordChannel(url: String, label: String, onAdded: () -> Unit) {
+        if (_state.value.discordTesting) return
+        val address = DiscordWebhook.parse(url)
+        val error = when {
+            address == null -> "That isn't a Discord webhook link. In Discord, open the channel's settings, " +
+                "then Integrations, Webhooks, and Copy Webhook URL."
+            config.value.friends.any { it is Friend.Discord && it.webhookId == address.id && it.webhookToken == address.token } ->
+                "That channel is already added. Remove it first to add it again."
+            else -> null
+        }
+        if (error != null || address == null) {
+            _state.update { it.copy(discordError = error) }
+            return
+        }
+        _state.update { it.copy(discordError = null, discordTesting = true) }
+        viewModelScope.launch {
+            val problem = try {
+                when (val outcome = testDiscord(address, config.value.title)) {
+                    SendOutcome.Delivered -> null
+                    // A 401 here is as likely a link cut short as a reset token.
+                    SendOutcome.Gone -> "Discord doesn't know this webhook. Check you copied the whole link, " +
+                        "or make a new one if it was deleted."
+                    is SendOutcome.Failed -> when (outcome.reason) {
+                        "HTTP 400" -> "Discord refused the test post. A forum channel's webhook can't be used; pick a text channel."
+                        "HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504" ->
+                            "Discord is busy (${outcome.reason}). Try again shortly."
+                        else -> "Discord refused the test post (${outcome.reason})."
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                // DiscordSender's own message, which never names the webhook.
+                "${e.message ?: "Couldn't reach Discord"}. Check your connection and try again."
+            } catch (e: Exception) {
+                "Couldn't post the test message (${e.javaClass.simpleName})."
+            }
+            _state.update { it.copy(discordError = problem, discordTesting = false) }
+            if (problem != null) return@launch
+            val friend = Friend.Discord(
+                id = Friend.newId(),
+                label = label.trim().ifEmpty { "Discord channel" },
+                webhookId = address.id,
+                webhookToken = address.token,
+            )
+            editLock.withLock { save(config.value.copy(friends = config.value.friends + friend)) }
+            onAdded()
+        }
     }
 
     fun dismissNewTopic() = _state.update { it.copy(newTopicUrl = null) }

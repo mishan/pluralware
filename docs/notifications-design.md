@@ -615,3 +615,7 @@ broader than Simple mode, and the add screen says so.
   the `SharingHandoff` round trip; removing one drops its gone mark.
 - Sharing screen: the test post gating the save, the URL's errors, the last failure, the gone
   wording.
+
+**As built.** All of the above, in three slices: the apps' sending, the relay's, and the sharing
+screen's "Add a Discord channel". The screen shows the phone's own last failure for each friend;
+the watch's and the relay's stay on them.
