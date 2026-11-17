@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
             when (val t = token) {
                 null -> {
                     SideEffect { sessions.end() }
+                    // The phone may have sent the token before this app was installed.
+                    LaunchedEffect(Unit) { if (!BuildConfig.BENCHMARK) runCatching { catchUpWithPhone(applicationContext) } }
                     WaitingForPairingScreen()
                 }
                 // Keyed on the raw token so a replacement starts from scratch:
