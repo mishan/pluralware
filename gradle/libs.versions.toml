@@ -38,6 +38,8 @@ zxing = "3.5.4"
 # The member editor's avatar preview. 3.1 is the newest on Compose 1.7 (as composeBom);
 # 3.2 and later pull in Compose 1.8+, which would quietly upgrade the whole app.
 coil = "3.1.0"
+# The phone's home-screen widget. 1.1 is the newest on Compose 1.7, as for coil.
+glance = "1.1.1"
 
 # PluralKit HTTP client stack — Retrofit over OkHttp with kotlinx-serialization for JSON.
 # converter-kotlinx-serialization ships in the retrofit BOM since 2.10; we just align versions.
@@ -66,6 +68,8 @@ androidxProfileinstaller = "1.4.1"
 androidxUiautomator = "2.3.0"
 
 [libraries]
+androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
+androidx-glance-appwidget-testing = { group = "androidx.glance", name = "glance-appwidget-testing", version.ref = "glance" }
 # AndroidX core.
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }

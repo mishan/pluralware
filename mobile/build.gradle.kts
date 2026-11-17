@@ -96,6 +96,7 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.glance.appwidget)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -108,6 +109,7 @@ dependencies {
     testDebugImplementation(platform(libs.androidx.compose.bom))
     testDebugImplementation(libs.robolectric)
     testDebugImplementation(libs.androidx.compose.ui.test.junit4)
+    testDebugImplementation(libs.androidx.glance.appwidget.testing)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // README screenshots (see tools/screenshots.sh).
     testDebugImplementation(libs.roborazzi)
