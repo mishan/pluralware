@@ -133,7 +133,7 @@ class SendersTest {
             ntfy = NtfyServer(server.url("/").toString()),
         )
 
-        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http))
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http), discord())
             .announce(config, switch, skipFriendIds = setOf("p3"))
 
         assertEquals(
@@ -150,7 +150,7 @@ class SendersTest {
         val kit = Friend.Simple("s1", "Kit", "pw_kit")
         val config = SharingConfig(title = "Sample", friends = listOf(kit), ntfy = NtfyServer(server.url("/").toString()))
 
-        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http)).announceCorrection(config, null)
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http), discord()).announceCorrection(config, null)
 
         assertEquals(mapOf(kit to SendOutcome.Delivered), outcomes)
         assertTrue("Correction: switched out" in server.takeRequest().body.readUtf8())
@@ -167,7 +167,7 @@ class SendersTest {
         val sam = privateFriend()
         val config = SharingConfig(friends = listOf(broken, sam), vapid = Vapid.generate())
 
-        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http)).announce(config, switch)
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http), discord()).announce(config, switch)
 
         assertTrue(outcomes[broken] is SendOutcome.Failed)
         assertEquals(SendOutcome.Delivered, outcomes[sam])
@@ -182,10 +182,103 @@ class SendersTest {
         val sam = privateFriend()
         val config = SharingConfig(friends = listOf(kit, sam), vapid = Vapid.generate())
 
-        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http)).announce(config, switch)
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http), discord()).announce(config, switch)
 
         assertEquals(SendOutcome.Failed("no ntfy server"), outcomes[kit])
         assertEquals(SendOutcome.Delivered, outcomes[sam])
     }
 
+    // --- Discord ------------------------------------------------------------------------------
+
+    private val discordFriend = Friend.Discord("d1", "Server", "123456789012345678", "tok_en")
+    private fun discord() = DiscordSender(http, base = server.url("/").toString().trimEnd('/'))
+    private fun okhttp3.mockwebserver.RecordedRequest.jsonBody() = Json.parseToJsonElement(body.readUtf8())
+
+    @Test
+    fun `a Discord post goes to the webhook as the system, and Discord's 204 is delivered`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val outcome = discord().send(discordFriend, "Sample", "Alex is fronting")
+
+        assertEquals(SendOutcome.Delivered, outcome)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/webhooks/123456789012345678/tok_en", request.path)
+        assertEquals(DiscordWebhook.payload("Sample", "Alex is fronting"), request.jsonBody())
+    }
+
+    @Test
+    fun `a webhook Discord deleted, or whose token was reset, is gone`() = runTest {
+        for (code in listOf(404, 401)) {
+            server.enqueue(MockResponse().setResponseCode(code))
+            assertEquals("HTTP $code", SendOutcome.Gone, discord().send(discordFriend, "Sample", "Alex is fronting"))
+        }
+    }
+
+    @Test
+    fun `a poster's name Discord refuses is left off, and the post sent once more`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(400)
+                .setBody("""{"code":50035,"errors":{"username":{"_errors":[{"code":"USERNAME_INVALID"}]}},"message":"Invalid Form Body"}"""),
+        )
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val outcome = discord().send(discordFriend, "Sample", "Alex is fronting")
+
+        assertEquals(SendOutcome.Delivered, outcome)
+        assertTrue(server.takeRequest().jsonBody().jsonObject.containsKey("username"))
+        assertTrue(!server.takeRequest().jsonBody().jsonObject.containsKey("username"))
+    }
+
+    @Test
+    fun `any other refusal is a failure, sent once, that never shows the webhook's token`() = runTest {
+        val cases = listOf(
+            MockResponse().setResponseCode(400)
+                .setBody("""{"code":220001,"message":"Webhooks posted to forum channels must have a thread_name or thread_id"}"""),
+            MockResponse().setResponseCode(429).setBody("""{"retry_after":1.5}"""),
+            MockResponse().setResponseCode(500),
+        )
+        for (response in cases) {
+            val before = server.requestCount
+            server.enqueue(response)
+            val outcome = discord().send(discordFriend, "Sample", "Alex is fronting")
+            assertTrue(outcome.toString(), outcome is SendOutcome.Failed)
+            assertTrue(outcome.toString(), "tok_en" !in (outcome as SendOutcome.Failed).reason)
+            assertEquals("not retried", before + 1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `a connection Discord drops says so without the webhook's address`() = runTest {
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AT_START))
+
+        val error = runCatching { discord().send(discordFriend, "Sample", "Alex is fronting") }.exceptionOrNull()
+
+        assertTrue(error.toString(), error is IOException)
+        val chain = generateSequence(error) { it.cause }.toList()
+        assertTrue(chain.toString(), chain.none { "tok_en" in it.toString() })
+    }
+
+    @Test
+    fun `a test post waits for Discord to keep it`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val outcome = discord().test(DiscordWebhook.Address("123456789012345678", "tok_en"), "Sample")
+
+        assertEquals(SendOutcome.Delivered, outcome)
+        val request = server.takeRequest()
+        assertEquals("/api/webhooks/123456789012345678/tok_en?wait=true", request.path)
+        assertEquals(DiscordWebhook.payload("Sample", "PluralWare will post switches here."), request.jsonBody())
+    }
+
+    @Test
+    fun `the sharer posts to Discord channels too, a correction as well`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        val config = SharingConfig(title = "Sample", friends = listOf(discordFriend))
+
+        val outcomes = SwitchSharer(WebPushSender(http), NtfySender(http), discord()).announceCorrection(config, null)
+
+        assertEquals(mapOf<Friend, SendOutcome>(discordFriend to SendOutcome.Delivered), outcomes)
+        assertEquals("Correction: switched out", server.takeRequest().jsonBody().jsonObject.getValue("content").jsonPrimitive.content)
+    }
 }

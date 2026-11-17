@@ -16,6 +16,7 @@ import me.pluralware.shared.model.Switch
 class SwitchSharer(
     private val webPush: WebPushSender,
     private val ntfy: NtfySender,
+    private val discord: DiscordSender,
 ) {
     suspend fun announce(
         config: SharingConfig,
@@ -56,8 +57,7 @@ class SwitchSharer(
                     val server = config.ntfy ?: return SendOutcome.Failed("no ntfy server")
                     withOneRetry { ntfy.send(server, friend.topic, payload.system, payload.text) }
                 }
-                // Posting comes with the sender; until then a Discord friend can't be added.
-                is Friend.Discord -> SendOutcome.Failed("Discord isn't sent to yet")
+                is Friend.Discord -> withOneRetry { discord.send(friend, payload.system, payload.text) }
             }
         } catch (e: CancellationException) {
             throw e
@@ -74,7 +74,7 @@ class SwitchSharer(
         /** A sharer over one HTTP client carrying the app's User-Agent. */
         fun create(appVersion: String): SwitchSharer {
             val http = NotifyHttp.create(appVersion)
-            return SwitchSharer(WebPushSender(http), NtfySender(http))
+            return SwitchSharer(WebPushSender(http), NtfySender(http), DiscordSender(http))
         }
     }
 }

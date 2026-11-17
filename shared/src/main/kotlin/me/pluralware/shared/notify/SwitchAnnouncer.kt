@@ -97,10 +97,12 @@ class SwitchAnnouncer(
         ): Boolean = sending.withLock {
             val config = store.configFlow.value
             val before = store.goneFlow.value
-            val skip = GoneFriends.toSkip(GoneFriends.merged(before, store.peerGoneFlow.value), now)
+            val marked = GoneFriends.merged(before, store.peerGoneFlow.value)
+            // A Discord webhook that's gone isn't tried again: Discord asks so.
+            val skip = GoneFriends.toSkip(marked, now) + config.friends.filter { it is Friend.Discord && it.id in marked }.map { it.id }
             val outcomes = send(config, skip)
             outcomes.forEach { (_, outcome) ->
-                if (outcome is SendOutcome.Failed) Log.w(TAG, "Couldn't notify a friend: ${outcome.reason}")
+                if (outcome is SendOutcome.Failed) runCatching { Log.w(TAG, "Couldn't notify a friend: ${outcome.reason}") }
             }
             val gone = outcomes.filterValues { it == SendOutcome.Gone }.keys.mapTo(HashSet()) { it.id }
             // A retried friend who received it is back.
@@ -108,6 +110,10 @@ class SwitchAnnouncer(
                 .mapTo(HashSet()) { it.id }.filterTo(HashSet()) { it in before }
             if (gone.isNotEmpty()) store.markGone(gone, now)
             if (back.isNotEmpty()) store.clearGone(back)
+            val failed = outcomes.entries.filter { it.value is SendOutcome.Failed }
+                .associate { (friend, outcome) -> friend.id to (outcome as SendOutcome.Failed).reason }
+            val settled = outcomes.filterValues { it !is SendOutcome.Failed }.keys.mapTo(HashSet()) { it.id }
+            if (failed.isNotEmpty() || settled.any { it in store.failuresFlow.value }) store.recordFailures(failed, settled)
             store.goneFlow.value != before
         }
     }

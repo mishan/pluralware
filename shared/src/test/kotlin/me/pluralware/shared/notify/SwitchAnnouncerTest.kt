@@ -48,6 +48,48 @@ class SwitchAnnouncerTest {
     }
 
     @Test
+    fun `a Discord channel found gone stays skipped, past the day other friends get`() = runTest {
+        val server = Friend.Discord("d1", "Server", "123456789012345678", "tok")
+        val withDiscord = config.copy(friends = config.friends + server)
+        coEvery { sharer.announce(any(), any(), any()) } returns emptyMap()
+        val longAgo = now - 2 * GoneFriends.RETRY_AFTER_MILLIS
+        for (foundBy in listOf("this device", "the other device")) {
+            val store = InMemorySharingStore(withDiscord)
+            if (foundBy == "this device") store.markGone(setOf("d1", "s2"), longAgo) else store.setPeerGone(mapOf("d1" to longAgo, "s2" to longAgo))
+
+            SwitchAnnouncer.announce(store, sharer, switch, now)
+
+            coVerify { sharer.announce(withDiscord, switch, setOf("d1")) }
+        }
+    }
+
+    @Test
+    fun `each friend's last failure is kept until they're delivered to`() = runTest {
+        val store = InMemorySharingStore(config)
+        coEvery { sharer.announce(any(), any(), any()) } returns
+            mapOf(kit to SendOutcome.Failed("HTTP 500"), rue to SendOutcome.Delivered)
+
+        SwitchAnnouncer.announce(store, sharer, switch, now)
+        assertEquals(mapOf("s1" to "HTTP 500"), store.failuresFlow.value)
+
+        coEvery { sharer.announce(any(), any(), any()) } returns mapOf(kit to SendOutcome.Delivered)
+        SwitchAnnouncer.announce(store, sharer, switch, now)
+        assertEquals(emptyMap<String, String>(), store.failuresFlow.value)
+    }
+
+    @Test
+    fun `a removed friend's last failure goes with them, even from a send that finished after`() = runTest {
+        val store = InMemorySharingStore(config)
+        coEvery { sharer.announce(any(), any(), any()) } returns mapOf(kit to SendOutcome.Failed("HTTP 500"))
+        SwitchAnnouncer.announce(store, sharer, switch, now)
+
+        store.set(config.copy(friends = listOf(rue)))
+        assertEquals(emptyMap<String, String>(), store.failuresFlow.value)
+        store.recordFailures(mapOf("s1" to "HTTP 500"), emptySet())
+        assertEquals(emptyMap<String, String>(), store.failuresFlow.value)
+    }
+
+    @Test
     fun `skips friends gone within the last day`() = runTest {
         val store = InMemorySharingStore(config)
         store.markGone(setOf("s2"), now - 1)
