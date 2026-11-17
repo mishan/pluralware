@@ -54,7 +54,7 @@ jobs:
         env:
           PLURALWARE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           PLURALWARE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-        run: ./gradlew test :mobile:assembleRelease :wear:assembleRelease --console=plain
+        run: ./gradlew test :mobile:assembleRelease :wear:assembleRelease :mobile:bundleRelease :wear:bundleRelease --console=plain
 
       # Both APKs must carry the same certificate, or the Data Layer won't
       # connect them. The fingerprint goes in the release notes so users can
@@ -74,7 +74,10 @@ jobs:
           fi
           fingerprint=$(cat "dist/pluralware-mobile-$VERSION.apk.cert")
           rm dist/*.cert
-          (cd dist && sha256sum *.apk > SHA256SUMS)
+          # For uploading to Google Play (docs/play-release.md); Obtainium ignores them.
+          cp mobile/build/outputs/bundle/release/mobile-release.aab "dist/play-mobile-$VERSION.aab"
+          cp wear/build/outputs/bundle/release/wear-release.aab "dist/play-wear-$VERSION.aab"
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS)
           {
             echo "Install \`pluralware-mobile-$VERSION.apk\` on your phone and \`pluralware-wear-$VERSION.apk\` on your watch."
             echo
