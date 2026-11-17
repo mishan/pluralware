@@ -24,8 +24,11 @@ Gradle wrapper is committed; use `./gradlew`.
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
 - The app icon (launcher, themed, notification and complication) is drawn by `tools/icon.py`
-  from a few numbers; change it there and rerun it, rather than editing the XML it writes.
-  `docs/icon/icon-512.png`, the Play icon, is `docs/icon/icon.svg` rendered at 512 px.
+  from a few numbers; change it there and rerun it, rather than editing what it writes (the
+  icon resources, and `docs/icon`'s SVG, Play icon and README icon; it needs Pillow).
+  `docs/icon/social.png`, the repository's social preview, is `docs/icon/social.html` rendered
+  at 1280 × 640 in a browser; render it again after an icon change, and upload it in the
+  repository's settings.
 - Mutation-test member editing (or other `:shared` classes) with PIT: `tools/mutation.sh`. Needs Java 17+;
   not in CI.
 - README screenshots: `tools/screenshots.sh` renders them into `docs/screenshots`;

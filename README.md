@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon/icon-round.png" width="128" alt="The PluralWare icon: one member at the top of a ring, two more on it"></p>
+
 # PluralWare
 
 See and set who's fronting from your phone or your wrist. PluralWare is an
