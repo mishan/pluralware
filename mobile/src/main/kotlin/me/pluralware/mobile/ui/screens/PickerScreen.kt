@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -66,7 +67,8 @@ fun PickerScreen(
     onSignOut: () -> Unit,
     editing: PickerViewModel.Editing? = null,
 ) {
-    val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository, editing))
+    // Longer than the watch's: a phone's eyes are often elsewhere by the time it lands.
+    val vm: PickerViewModel = viewModel(factory = PickerViewModel.Factory(repository, editing, confirmationLingerMillis = 1_500L))
     val state by vm.state.collectAsState()
     LaunchedEffect(Unit) { vm.doneEvents.collect { onDone() } }
     PickerContent(
@@ -252,6 +254,15 @@ private fun ConfirmBar(state: PickerState, editing: Boolean, onConfirm: () -> Un
         Button(
             onClick = onConfirm,
             enabled = !state.submitting && !state.confirmed,
+            // Done, not unavailable: the confirmation keeps the button's color rather than graying out.
+            colors = if (state.confirmed) {
+                ButtonDefaults.buttonColors(
+                    disabledContainerColor = MaterialTheme.colorScheme.primary,
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()

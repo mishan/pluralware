@@ -1,10 +1,13 @@
 package me.pluralware.wear
 
+import android.content.Context
+import android.net.Uri
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.handoff.SettingsHandoff
@@ -34,8 +37,8 @@ import me.pluralware.wear.complication.FronterSurfaces
  *  - a member edited on the phone ([MemberSync.PATH]) — the same: the open
  *    app drops its member caches, and the complication and tile refresh.
  *
- * Wear OS binds to this service whenever a relevant DataItem changes. The
- * callback runs on a worker thread, so blocking I/O via [runBlocking] is fine.
+ * Wear OS binds to this service whenever a relevant DataItem changes;
+ * [catchUpWithPhone] covers items written before the app was installed.
  */
 class WatchDataListenerService : WearableListenerService() {
 
@@ -46,76 +49,105 @@ class WatchDataListenerService : WearableListenerService() {
             .filter { it.type == DataEvent.TYPE_CHANGED }
             .map { it.dataItem.uri to DataMapItem.fromDataItem(it.dataItem) }
 
-        val tokenItems = changed.filter { (uri, _) -> uri.path == TokenHandoff.PATH }
-        val settingsItems = changed.filter { (uri, _) -> uri.path == SettingsHandoff.PATH }
-        val sharingItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.PATH }
-        val statusItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.STATUS_PATH }
-        val switchItems = changed.filter { (uri, _) -> uri.path == SwitchSync.PATH }
-        val memberItems = changed.filter { (uri, _) -> uri.path == MemberSync.PATH }
-        if (listOf(tokenItems, settingsItems, sharingItems, statusItems, switchItems, memberItems).all { it.isEmpty() }) return
+        // The callback runs on a worker thread, so blocking is fine.
+        runBlocking { receiveFromPhone(applicationContext, changed) }
+    }
+}
 
-        runBlocking {
-            if (tokenItems.isNotEmpty()) {
-                val store = EncryptedTokenStore.get(applicationContext)
-                val dataClient = Wearable.getDataClient(applicationContext)
-                tokenItems.forEach { (uri, item) ->
-                    when (val message = TokenHandoff.read(item)) {
-                        is TokenHandoff.Message.Connect -> store.setToken(message.token)
-                        TokenHandoff.Message.SignOut -> {
-                            store.clear()
-                            // Sharing belongs to the system that just signed out.
-                            EncryptedSharingStore.get(applicationContext).clear()
-                        }
-                        null -> Unit
-                    }
-                    // Delete even an unreadable item, so nothing token-shaped is
-                    // left behind. Best-effort; if it fails the next push replaces it.
-                    runCatching { dataClient.deleteDataItems(uri).await() }
+/** Acts on what the phone wrote: see [WatchDataListenerService]. */
+internal suspend fun receiveFromPhone(context: Context, changed: List<Pair<Uri, DataMapItem>>) {
+    val tokenItems = changed.filter { (uri, _) -> uri.path == TokenHandoff.PATH }
+    val settingsItems = changed.filter { (uri, _) -> uri.path == SettingsHandoff.PATH }
+    val sharingItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.PATH }
+    val statusItems = changed.filter { (uri, _) -> uri.path == SharingHandoff.STATUS_PATH }
+    val switchItems = changed.filter { (uri, _) -> uri.path == SwitchSync.PATH }
+    val memberItems = changed.filter { (uri, _) -> uri.path == MemberSync.PATH }
+    if (listOf(tokenItems, settingsItems, sharingItems, statusItems, switchItems, memberItems).all { it.isEmpty() }) return
+
+    if (tokenItems.isNotEmpty()) {
+        val store = EncryptedTokenStore.get(context)
+        val dataClient = Wearable.getDataClient(context)
+        tokenItems.forEach { (uri, item) ->
+            when (val message = TokenHandoff.read(item)) {
+                is TokenHandoff.Message.Connect -> store.setToken(message.token)
+                TokenHandoff.Message.SignOut -> {
+                    store.clear()
+                    // Sharing belongs to the system that just signed out.
+                    EncryptedSharingStore.get(context).clear()
                 }
-                // Paired, re-paired or signed out: the complication and tile
-                // must drop the old system's line and ask again.
-                FronterSurfaces.onTokenChanged(applicationContext)
+                null -> Unit
             }
-            if (sharingItems.isNotEmpty()) {
-                // Holds secrets (VAPID key, follow codes): store encrypted, then
-                // delete, as for the token. Latest wins.
-                val dataClient = Wearable.getDataClient(applicationContext)
-                SharingHandoff.read(sharingItems.last().second)?.let {
-                    EncryptedSharingStore.get(applicationContext).set(it)
-                }
-                sharingItems.forEach { (uri, _) -> runCatching { dataClient.deleteDataItems(uri).await() } }
-            }
-            if (statusItems.isNotEmpty()) {
-                // After the config above, so marks for friends it removes are dropped.
-                SharingHandoff.receiveStatus(applicationContext, statusItems.map { (uri, item) -> uri.host to item.dataMap })
-            }
-            if (settingsItems.isNotEmpty()) {
-                // Latest-wins: apply the most recent settings item; keep the DataItem.
-                val (_, item) = settingsItems.last()
-                LocalSettingsStore.get(applicationContext)
-                    .setRefreshInterval(SettingsHandoff.read(item).refreshInterval)
-            }
-            // Last, each on its own: they read encrypted stores, and a throw in
-            // one mustn't cost the items before it or the other, which the
-            // Data Layer won't deliver again.
-            if (switchItems.isNotEmpty()) {
-                val items = switchItems.map { (uri, item) -> uri.host to item.dataMap }
-                runCatching {
-                    SwitchSync.fromOtherDevice(applicationContext, items).forEach { notice ->
-                        SwitchSync.deliver(notice)
-                        FronterSurfaces.onRemoteSwitch(applicationContext, notice)
-                    }
-                }
-            }
-            if (memberItems.isNotEmpty()) {
-                val items = memberItems.map { (uri, item) -> uri.host to item.dataMap }
-                runCatching {
-                    MemberSync.fromOtherDevice(applicationContext, items).forEach { notice ->
-                        MemberSync.deliver(notice)
-                        FronterSurfaces.onRemoteMemberEdit(applicationContext, notice)
-                    }
-                }
+            // Delete even an unreadable item, so nothing token-shaped is
+            // left behind. Best-effort; if it fails the next push replaces it.
+            runCatching { dataClient.deleteDataItems(uri).await() }
+        }
+        // Paired, re-paired or signed out: the complication and tile
+        // must drop the old system's line and ask again.
+        FronterSurfaces.onTokenChanged(context)
+    }
+    if (sharingItems.isNotEmpty()) {
+        // Holds secrets (VAPID key, follow codes): store encrypted, then
+        // delete, as for the token. Latest wins.
+        val dataClient = Wearable.getDataClient(context)
+        SharingHandoff.read(sharingItems.last().second)?.let {
+            EncryptedSharingStore.get(context).set(it)
+        }
+        sharingItems.forEach { (uri, _) -> runCatching { dataClient.deleteDataItems(uri).await() } }
+    }
+    if (statusItems.isNotEmpty()) {
+        // After the config above, so marks for friends it removes are dropped.
+        SharingHandoff.receiveStatus(context, statusItems.map { (uri, item) -> uri.host to item.dataMap })
+    }
+    if (settingsItems.isNotEmpty()) {
+        // Latest-wins: apply the most recent settings item; keep the DataItem.
+        val (_, item) = settingsItems.last()
+        LocalSettingsStore.get(context)
+            .setRefreshInterval(SettingsHandoff.read(item).refreshInterval)
+    }
+    // Last, each on its own: they read encrypted stores, and a throw in
+    // one mustn't cost the items before it or the other, which the
+    // Data Layer won't deliver again.
+    if (switchItems.isNotEmpty()) {
+        val items = switchItems.map { (uri, item) -> uri.host to item.dataMap }
+        runCatching {
+            SwitchSync.fromOtherDevice(context, items).forEach { notice ->
+                SwitchSync.deliver(notice)
+                FronterSurfaces.onRemoteSwitch(context, notice)
             }
         }
     }
+    if (memberItems.isNotEmpty()) {
+        val items = memberItems.map { (uri, item) -> uri.host to item.dataMap }
+        runCatching {
+            MemberSync.fromOtherDevice(context, items).forEach { notice ->
+                MemberSync.deliver(notice)
+                FronterSurfaces.onRemoteMemberEdit(context, notice)
+            }
+        }
+    }
+}
+
+/**
+ * Acts on a token, sharing or settings the phone wrote before this app could
+ * hear of it: a watch app installed after the phone connected sees no change
+ * for an item already on the watch.
+ */
+suspend fun catchUpWithPhone(context: Context) {
+    val dataClient = Wearable.getDataClient(context)
+    val items = listOf(TokenHandoff.PATH, SharingHandoff.PATH, SettingsHandoff.PATH).flatMap { path ->
+        // Each on its own, so one failed query doesn't cost the others; the next launch asks again.
+        try {
+            val buffer = dataClient.getDataItems(Uri.Builder().scheme("wear").path(path).build()).await()
+            try {
+                buffer.map { it.uri to DataMapItem.fromDataItem(it) }
+            } finally {
+                buffer.release()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    if (items.isNotEmpty()) receiveFromPhone(context, items)
 }

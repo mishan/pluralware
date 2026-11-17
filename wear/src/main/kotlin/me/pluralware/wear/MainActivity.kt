@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -63,6 +64,13 @@ class MainActivity : ComponentActivity() {
             EncryptedTokenStore.get(applicationContext)
         }
         val settingsStore = LocalSettingsStore.get(applicationContext)
+        // The phone may have sent the token before this app was installed. Not in the
+        // composition: storing the token leaves the unpaired screen, which would cancel it.
+        if (!BuildConfig.BENCHMARK) {
+            lifecycleScope.launch {
+                if (tokenStore.getToken() == null) runCatching { catchUpWithPhone(applicationContext) }
+            }
+        }
         setContent {
             val token by tokenStore.tokenFlow.collectAsState()
             val scope = rememberCoroutineScope()
