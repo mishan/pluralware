@@ -19,26 +19,27 @@ class DiscordSender(
     private val base: String = "https://discord.com",
 ) {
     suspend fun send(friend: Friend.Discord, title: String, text: String): SendOutcome =
-        post(DiscordWebhook.Address(friend.webhookId, friend.webhookToken), DiscordWebhook.payload(title, text), wait = false)
+        post(DiscordWebhook.Address(friend.webhookId, friend.webhookToken), DiscordWebhook.payload(title, text))
 
-    /** A first post, kept only once Discord has (`wait`): it catches a wrong or deleted webhook before saving. */
+    /** A first post: it catches a wrong or deleted webhook before saving. */
     suspend fun test(address: DiscordWebhook.Address, title: String): SendOutcome =
-        post(address, DiscordWebhook.payload(title, TEST_MESSAGE), wait = true)
+        post(address, DiscordWebhook.payload(title, TEST_MESSAGE))
 
-    private suspend fun post(address: DiscordWebhook.Address, payload: JsonObject, wait: Boolean): SendOutcome =
+    private suspend fun post(address: DiscordWebhook.Address, payload: JsonObject): SendOutcome =
         withContext(Dispatchers.IO) {
-            val (code, body) = call(address, payload, wait)
+            val (code, body) = call(address, payload)
             // Discord bars more poster names than it documents: post as the webhook's own name instead.
             if (code == 400 && "\"username\"" in body && "username" in payload) {
-                outcome(call(address, JsonObject(payload - "username"), wait).first)
+                outcome(call(address, JsonObject(payload - "username")).first)
             } else {
                 outcome(code)
             }
         }
 
-    private fun call(address: DiscordWebhook.Address, payload: JsonObject, wait: Boolean): Pair<Int, String> {
+    private fun call(address: DiscordWebhook.Address, payload: JsonObject): Pair<Int, String> {
         val request = Request.Builder()
-            .url("$base/api/webhooks/${address.id}/${address.token}" + if (wait) "?wait=true" else "")
+            // Without wait, Discord can answer success for a message it didn't save.
+            .url("$base/api/webhooks/${address.id}/${address.token}?wait=true")
             .post(payload.toString().toRequestBody(JSON))
             .build()
         return try {

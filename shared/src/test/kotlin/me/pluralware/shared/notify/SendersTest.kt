@@ -195,15 +195,16 @@ class SendersTest {
     private fun okhttp3.mockwebserver.RecordedRequest.jsonBody() = Json.parseToJsonElement(body.readUtf8())
 
     @Test
-    fun `a Discord post goes to the webhook as the system, and Discord's 204 is delivered`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(204))
+    fun `a Discord post goes to the webhook as the system, delivered once Discord has kept it`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
         val outcome = discord().send(discordFriend, "Sample", "Alex is fronting")
 
         assertEquals(SendOutcome.Delivered, outcome)
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/webhooks/123456789012345678/tok_en", request.path)
+        // Without wait, Discord can answer success for a message it didn't save.
+        assertEquals("/api/webhooks/123456789012345678/tok_en?wait=true", request.path)
         assertEquals(DiscordWebhook.payload("Sample", "Alex is fronting"), request.jsonBody())
     }
 

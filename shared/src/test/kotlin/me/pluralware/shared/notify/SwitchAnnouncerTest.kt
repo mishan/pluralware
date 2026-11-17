@@ -54,6 +54,7 @@ class SwitchAnnouncerTest {
         coEvery { sharer.announce(any(), any(), any()) } returns emptyMap()
         val longAgo = now - 2 * GoneFriends.RETRY_AFTER_MILLIS
         for (foundBy in listOf("this device", "the other device")) {
+            io.mockk.clearMocks(sharer, answers = false)
             val store = InMemorySharingStore(withDiscord)
             if (foundBy == "this device") store.markGone(setOf("d1", "s2"), longAgo) else store.setPeerGone(mapOf("d1" to longAgo, "s2" to longAgo))
 
