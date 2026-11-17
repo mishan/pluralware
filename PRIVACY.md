@@ -1,7 +1,7 @@
 # PluralWare privacy policy
 
 PluralWare is a phone and Wear OS app for [PluralKit](https://pluralkit.me) systems, made by
-Misha Nasledov ([foggyden.org](https://foggyden.org)). It has no accounts, ads or analytics, and
+Misha Nasledov. It has no accounts, ads or analytics, and
 sends nothing to its developer.
 
 ## What it handles, and where it goes
