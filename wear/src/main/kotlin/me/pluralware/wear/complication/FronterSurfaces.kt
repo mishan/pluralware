@@ -5,6 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.fronter.FronterDisplay
+import me.pluralware.shared.fronter.FronterFormatter
+import me.pluralware.shared.fronter.FronterSource
+import me.pluralware.shared.fronter.FronterWording
 import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
@@ -39,6 +43,7 @@ object FronterSurfaces {
             token = { withContext(Dispatchers.IO) { EncryptedTokenStore.get(appContext) }.getToken() },
             repositoryFor = ::repositoryFor,
             cache = LastFronterStore.get(appContext),
+            wording = WATCH_WORDING,
         )
     }
 
@@ -84,3 +89,16 @@ object FronterSurfaces {
         ).also { client = token.raw to it }
     }
 }
+
+private val WATCH_WORDING = FronterWording(
+    setup = FronterDisplay(
+        title = FronterFormatter.TITLE,
+        text = "Tap to set up",
+        description = "PluralWare isn't paired with your phone yet. Tap to set up.",
+    ),
+    signInAgain = FronterDisplay(
+        title = FronterFormatter.TITLE,
+        text = "Sign in again",
+        description = "PluralKit no longer accepts this token. Tap to open PluralWare.",
+    ),
+)

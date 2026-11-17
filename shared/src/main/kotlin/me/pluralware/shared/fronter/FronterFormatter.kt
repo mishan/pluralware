@@ -1,4 +1,4 @@
-package me.pluralware.wear.complication
+package me.pluralware.shared.fronter
 
 import me.pluralware.shared.model.Member
 import me.pluralware.shared.model.Switch
@@ -15,7 +15,7 @@ import me.pluralware.shared.model.Switch
  *  - fronting   → one or more members; order is meaningful (index 0 is
  *                 PluralKit's proxy fronter), so we never sort.
  */
-internal object FronterComplicationFormatter {
+object FronterFormatter {
 
     /** Static title shown alongside the body on faces that render long-text titles. */
     const val TITLE = "Fronter"

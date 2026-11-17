@@ -18,14 +18,15 @@ import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
+import me.pluralware.shared.fronter.FronterSource
 import me.pluralware.wear.MainActivity
-import me.pluralware.wear.complication.FronterDisplay
+import me.pluralware.shared.fronter.FronterDisplay
 import me.pluralware.wear.complication.FronterSurfaces
 
 /**
  * A tile showing the current fronter(s) with a "Change" chip that opens the app.
  *
- * What it shows is decided by the same [me.pluralware.wear.complication.FronterSource]
+ * What it shows is decided by the same [me.pluralware.shared.fronter.FronterSource]
  * as the complication, so the two never disagree.
  *
  * Freshness is twofold: a coarse [FRESHNESS_INTERVAL_MS] catches switches made

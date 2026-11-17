@@ -1,4 +1,4 @@
-package me.pluralware.wear.complication
+package me.pluralware.shared.fronter
 
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -28,10 +28,16 @@ class FronterSourceTest {
     private var token: PluralKitToken? = PluralKitToken("token")
     private var now = 10_000_000L
 
+    private val wording = FronterWording(
+        setup = FronterDisplay("Fronter", "Set up", "Not set up yet."),
+        signInAgain = FronterDisplay("Fronter", "Sign in", "Sign in again."),
+    )
+
     private val source = FronterSource(
         token = { token },
         repositoryFor = { PluralKitRepository(client) },
         cache = cache,
+        wording = wording,
         clock = { now },
     )
 
@@ -47,7 +53,21 @@ class FronterSourceTest {
         token = null
         cache.set(cachedAlex)
 
-        assertEquals(FronterSource.SETUP, source.current())
+        assertEquals(wording.setup, source.current())
+    }
+
+    @Test
+    fun `the display says when the switch started, fetched, cached or last known`() = runTest {
+        val started = PreviewData.switchOut.timestamp
+        coEvery { client.getCurrentFronters() } returns PreviewData.switchOut
+        val fetched = source.current()
+        val cached = source.current()
+        now += FronterSource.FRESH_FOR_MILLIS
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+        val lastKnown = source.current()
+
+        assertEquals(listOf(started, started, started), listOf(fetched.since, cached.since, lastKnown.since))
+        assertEquals("Last known", lastKnown.title)
     }
 
     @Test
@@ -58,7 +78,7 @@ class FronterSourceTest {
         val display = source.current()
 
         assertEquals("Fronting: Alex", display.text)
-        assertEquals(FronterComplicationFormatter.TITLE, display.title)
+        assertEquals(FronterFormatter.TITLE, display.title)
         coVerify(exactly = 0) { client.getCurrentFronters() }
     }
 
@@ -99,7 +119,7 @@ class FronterSourceTest {
         cache.set(cachedAlex.copy(fetchedAtEpochMillis = 0))
         coEvery { client.getCurrentFronters() } throws PluralKitHttpException(401, "Unauthorized")
 
-        assertEquals(FronterSource.SIGN_IN_AGAIN, source.current())
+        assertEquals(wording.signInAgain, source.current())
         assertNull(cache.get())
     }
 
