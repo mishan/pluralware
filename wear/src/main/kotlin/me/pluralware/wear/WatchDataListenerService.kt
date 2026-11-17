@@ -7,6 +7,7 @@ import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import me.pluralware.shared.handoff.SettingsHandoff
@@ -134,11 +135,18 @@ internal suspend fun receiveFromPhone(context: Context, changed: List<Pair<Uri, 
 suspend fun catchUpWithPhone(context: Context) {
     val dataClient = Wearable.getDataClient(context)
     val items = listOf(TokenHandoff.PATH, SharingHandoff.PATH, SettingsHandoff.PATH).flatMap { path ->
-        val buffer = dataClient.getDataItems(Uri.Builder().scheme("wear").path(path).build()).await()
+        // Each on its own, so one failed query doesn't cost the others; the next launch asks again.
         try {
-            buffer.map { it.uri to DataMapItem.fromDataItem(it) }
-        } finally {
-            buffer.release()
+            val buffer = dataClient.getDataItems(Uri.Builder().scheme("wear").path(path).build()).await()
+            try {
+                buffer.map { it.uri to DataMapItem.fromDataItem(it) }
+            } finally {
+                buffer.release()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
         }
     }
     if (items.isNotEmpty()) receiveFromPhone(context, items)
