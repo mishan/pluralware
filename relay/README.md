@@ -27,6 +27,8 @@ to; update the relay to send to it.
 
 ## Deploy
 
+Not an engineer? [SETUP.md](SETUP.md) walks through Cloudflare step by step, phone included.
+
 You need a public **https** address, because PluralKit and your phone both have to reach it. You
 also need a long random **admin secret**, which your phone uses to upload settings, e.g.
 `openssl rand -base64 32`.
