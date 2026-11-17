@@ -161,6 +161,10 @@ object NtfyTopics {
  * Friends as stored, skipping any of a type this version doesn't know (one a
  * newer phone added), so the rest of the config still reads. A friend of a
  * known type that won't read still fails it, rather than being lost unnoticed.
+ *
+ * A skipped friend isn't written back: a config saved by this version leaves
+ * it out. Only the phone saves its own config, so that loses it only on a
+ * phone downgraded below the version that added the type, which is accepted.
  */
 internal object KnownFriends : KSerializer<List<Friend>> {
     private val list = ListSerializer(Friend.serializer())

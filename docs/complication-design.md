@@ -260,11 +260,16 @@ complication and tile are.
   filter gains `/pluralware/members`). Token changes are collected once, from the token store in
   `AppGraph.scope`, comparing fingerprints so a process start doesn't count as a change. Each
   asks the widgets to update.
-- **Polling is the backstop**: `updatePeriodMillis` of 30 minutes, the most often Android allows.
-  Without a watch, a switch made outside the app while it's closed shows within 30 minutes.
+- **Polling is the backstop**: `updatePeriodMillis` of 30 minutes, the most often Android allows,
+  and best effort: Android can put it off while the phone dozes. Without a watch, a switch made
+  outside the app while it's closed usually shows within about half an hour, but nothing
+  promises it.
 - **One fetch for every widget.** Placed widgets all update together; `PhoneWidgetSurfaces`
   computes the display once (single-flight) and every widget renders it, rather than each
-  fetching.
+  fetching. An update asked for after an expiry starts a fresh fetch rather than joining one
+  begun before it, and a display fetched with a token that's no longer current is dropped and
+  fetched again, so a widget never shows a switch it was told is old, or a signed-out
+  system's names.
 - **Built with** Jetpack Glance (`glance-appwidget`); `PhoneWidgetSurfaces` wires the token
   store, a client and `LastFronterStore`, as `FronterSurfaces` does on the watch.
 - **Tests.** The moved tests. The widget's content is a function of the display and the clock,

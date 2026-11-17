@@ -176,6 +176,26 @@
       }
     },
     {
+      "case": "a numbered list starting on any line, indented or not, stays a name",
+      "title": "Sample",
+      "front": [
+        {
+          "uuid": "uuid-alex",
+          "label": "Alex\n 2. Bee",
+          "shared": true
+        }
+      ],
+      "text": "Alex\n 2. Bee is fronting",
+      "discord": {
+        "allowed_mentions": {
+          "parse": []
+        },
+        "flags": 4,
+        "username": "Sample",
+        "content": "Alex\n 2\\. Bee is fronting"
+      }
+    },
+    {
       "case": "a title Discord won't take as the poster's name is left out",
       "title": "Discord Crew",
       "front": [

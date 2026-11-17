@@ -35,7 +35,7 @@ object DiscordWebhook {
         put("flags", SUPPRESS_EMBEDS)
     }
 
-    // A leading "1." would make a numbered list.
+    // "1." starting a line would make a numbered list.
     private fun escape(text: String) = text.replace(MARKDOWN) { "\\" + it.value }.replace(LIST_NUMBER, "$1\\\\.")
 
     private fun fit(text: String): String {
@@ -51,7 +51,7 @@ object DiscordWebhook {
     }
 
     private val MARKDOWN = Regex("""[\\*_~`|>#\[\]()<-]""")
-    private val LIST_NUMBER = Regex("""^(\d+)\.""")
+    private val LIST_NUMBER = Regex("""(?m)^([ \t]*\d+)\.""")
     private const val MAX_CONTENT = 2000
     private const val SUPPRESS_EMBEDS = 4
 }
