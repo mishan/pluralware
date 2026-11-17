@@ -28,6 +28,7 @@ class RelayTest {
         friends = listOf(
             Friend.Private("p1", "Sam", FollowCode("Sam", "https://push.example/sam", "PUB", "AUTH")),
             Friend.Simple("s1", "Kit", "pw_kit"),
+            Friend.Discord("d1", "Server", "123456789012345678", "tok"),
         ),
         vapid = VapidKeys("VPUB", "VPRIV"),
         ntfy = NtfyServer("https://ntfy.example.org", "tk_x"),
@@ -46,13 +47,6 @@ class RelayTest {
         assertEquals(mapOf("uuid-alex" to "Alex"), config.names)
         // Shared with relay/test/config-interop.test.mjs.
         assertEquals(INTEROP_JSON, RelayJson.encode(config))
-    }
-
-    @Test
-    fun `Discord channels stay out of the upload until the relay can post to them`() {
-        val withDiscord = sharing.copy(friends = sharing.friends + Friend.Discord("d1", "Server", "123456789012345678", "tok"))
-
-        assertEquals(RelayConfig.from(sharing, listOf(alex)), RelayConfig.from(withDiscord, listOf(alex)))
     }
 
     @Test
@@ -142,6 +136,6 @@ class RelayTest {
     }
 
     companion object {
-        const val INTEROP_JSON = """{"enabled":true,"webhookPath":"hook_abcdefghijklmnop","signingToken":"pk-signing-token","title":"Sample","names":{"uuid-alex":"Alex"},"friends":[{"type":"private","id":"p1","label":"Sam","followCode":{"name":"Sam","endpoint":"https://push.example/sam","p256dh":"PUB","auth":"AUTH"}},{"type":"simple","id":"s1","label":"Kit","topic":"pw_kit"}],"vapid":{"publicKey":"VPUB","privateKey":"VPRIV"},"ntfy":{"baseUrl":"https://ntfy.example.org","accessToken":"tk_x"}}"""
+        const val INTEROP_JSON = """{"enabled":true,"webhookPath":"hook_abcdefghijklmnop","signingToken":"pk-signing-token","title":"Sample","names":{"uuid-alex":"Alex"},"friends":[{"type":"private","id":"p1","label":"Sam","followCode":{"name":"Sam","endpoint":"https://push.example/sam","p256dh":"PUB","auth":"AUTH"}},{"type":"simple","id":"s1","label":"Kit","topic":"pw_kit"},{"type":"discord","id":"d1","label":"Server","webhookId":"123456789012345678","webhookToken":"tok"}],"vapid":{"publicKey":"VPUB","privateKey":"VPRIV"},"ntfy":{"baseUrl":"https://ntfy.example.org","accessToken":"tk_x"}}"""
     }
 }
