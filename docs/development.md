@@ -51,7 +51,7 @@ root has more on the architecture and conventions.
 
 ## API client
 
-`me.pluralware.shared.api.PluralKitClient` is the only thing the app code
+`org.foggyden.pluralware.shared.api.PluralKitClient` is the only thing the app code
 should depend on. Implementations:
 
 - **`RetrofitPluralKitClient`** — production. Construct via
@@ -92,7 +92,7 @@ Notable client behaviors:
 
 ## Notes
 
-- `applicationId = "me.pluralware"` is set on `:wear` — that's the Play
+- `applicationId = "org.foggyden.pluralware"` is set on `:wear` — that's the Play
   Store identity. Don't change post-publish.
 - Run `./gradlew :shared:test` after touching the client to keep the
   DTO mapping honest.

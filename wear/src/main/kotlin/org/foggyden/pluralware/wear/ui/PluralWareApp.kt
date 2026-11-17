@@ -1,0 +1,56 @@
+package org.foggyden.pluralware.wear.ui
+
+import androidx.compose.runtime.Composable
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import org.foggyden.pluralware.shared.repository.PluralKitRepository
+import org.foggyden.pluralware.shared.settings.SettingsStore
+import org.foggyden.pluralware.wear.ui.screens.FrontersScreen
+import org.foggyden.pluralware.wear.ui.screens.HistoryScreen
+import org.foggyden.pluralware.wear.ui.screens.MemberPickerScreen
+import org.foggyden.pluralware.wear.ui.theme.PluralWareTheme
+
+object Routes {
+    const val FRONTERS = "fronters"
+    const val PICK_MEMBERS = "pick"
+    const val HISTORY = "history"
+}
+
+@Composable
+fun PluralWareApp(
+    repository: PluralKitRepository,
+    settingsStore: SettingsStore,
+    onSignOut: () -> Unit,
+) {
+    PluralWareTheme {
+        val navController = rememberSwipeDismissableNavController()
+        SwipeDismissableNavHost(
+            navController = navController,
+            startDestination = Routes.FRONTERS,
+        ) {
+            composable(Routes.FRONTERS) {
+                FrontersScreen(
+                    repository = repository,
+                    settingsStore = settingsStore,
+                    onChangeFronter = { navController.navigate(Routes.PICK_MEMBERS) },
+                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                    onSignOut = onSignOut,
+                )
+            }
+            composable(Routes.PICK_MEMBERS) {
+                MemberPickerScreen(
+                    repository = repository,
+                    onDone = { navController.popBackStack() },
+                    onSignOut = onSignOut,
+                )
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(
+                    repository = repository,
+                    onSignOut = onSignOut,
+                )
+            }
+        }
+    }
+}

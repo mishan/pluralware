@@ -20,7 +20,7 @@ Gradle wrapper is committed; use `./gradlew`.
 - Assemble a debug APK: `./gradlew :wear:assembleDebug` / `./gradlew :mobile:assembleDebug`
 - Run all unit tests: `./gradlew test`
 - Run one module's unit tests: `./gradlew :shared:testDebugUnitTest`
-- Run a single test class: `./gradlew :shared:testDebugUnitTest --tests "me.pluralware.shared.PluralKitRepositoryTest"`
+- Run a single test class: `./gradlew :shared:testDebugUnitTest --tests "org.foggyden.pluralware.shared.PluralKitRepositoryTest"`
 - Run a single test method (backtick-named): `./gradlew :shared:testDebugUnitTest --tests "*registerSwitch with empty list*"`
 - Install on a connected device/emulator: `./gradlew :wear:installDebug`
 - Mutation-test member editing (or other `:shared` classes) with PIT: `tools/mutation.sh`. Needs Java 17+;
@@ -63,26 +63,26 @@ running the script). The watch pictures are masked to a circle in the scene itse
 
 Three Gradle modules; dependency versions are centralized in `gradle/libs.versions.toml`.
 
-- **`:shared`** (`com.android.library`, namespace `me.pluralware.shared`, `minSdk 26`) — all
+- **`:shared`** (`com.android.library`, namespace `org.foggyden.pluralware.shared`, `minSdk 26`) — all
   domain logic, the PluralKit client, the repository, token storage, phone↔watch handoff, and
   the screens' ViewModels and UI state (`ui/`), which each app renders in its own Compose.
   Consumed by both apps. `minSdk` is the lowest of the consumers (mobile); wear pins its own 30.
-- **`:wear`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 30` for Wear OS 3) —
+- **`:wear`** (`com.android.application`, `applicationId "org.foggyden.pluralware"`, `minSdk 30` for Wear OS 3) —
   the watch app: Compose-for-Wear UI, the token listener service.
-- **`:mobile`** (`com.android.application`, `applicationId "me.pluralware"`, `minSdk 26`) — the
+- **`:mobile`** (`com.android.application`, `applicationId "org.foggyden.pluralware"`, `minSdk 26`) — the
   phone app: the same fronters/picker/history screens in Material 3, plus connecting, settings,
   sharing and following, and the push to a watch if there is one.
 
-**Both apps share `applicationId = "me.pluralware"` and this is load-bearing, not an accident.**
+**Both apps share `applicationId = "org.foggyden.pluralware"` and this is load-bearing, not an accident.**
 The Wearable Data Layer scopes `DataItem`s by package name — if the two diverge, the watch never
 sees the token the phone writes. Both apply `applicationIdSuffix = ".debug"` on debug builds.
-`me.pluralware` is the Play Store identity; don't change it post-publish.
+`org.foggyden.pluralware` is the Play Store identity; don't change it post-publish.
 
 ## Architecture
 
 ### The client seam
 
-`me.pluralware.shared.api.PluralKitClient` is the single interface the rest of the app depends on.
+`org.foggyden.pluralware.shared.api.PluralKitClient` is the single interface the rest of the app depends on.
 Two implementations:
 
 - `RetrofitPluralKitClient` — production. Hand-rolled wrapper over PluralKit API v2 (Retrofit +

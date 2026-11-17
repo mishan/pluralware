@@ -13,8 +13,8 @@
 # time, to fetch PIT; the jars are checked against the checksums below.
 cd "$(git rev-parse --show-toplevel)"
 
-classes=${1:-'me.pluralware.shared.model.MemberEdit,me.pluralware.shared.model.MemberDraft,me.pluralware.shared.model.MemberField'}
-tests=${2:-'me.pluralware.shared.model.MemberEditTest'}
+classes=${1:-'org.foggyden.pluralware.shared.model.MemberEdit,org.foggyden.pluralware.shared.model.MemberDraft,org.foggyden.pluralware.shared.model.MemberField'}
+tests=${2:-'org.foggyden.pluralware.shared.model.MemberEditTest'}
 
 # The test classes are compiled for Java 17, which an older default java can't load.
 java=${JAVA_HOME:+$JAVA_HOME/bin/}java

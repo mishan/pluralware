@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralware.baselineprofile"
+    namespace = "org.foggyden.pluralware.baselineprofile"
     compileSdk = 36
 
     defaultConfig {

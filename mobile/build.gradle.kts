@@ -5,14 +5,14 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralware.mobile"
+    namespace = "org.foggyden.pluralware.mobile"
     compileSdk = 36
 
     defaultConfig {
         // MUST match the watch app's applicationId. The Wearable Data Layer
         // scopes DataItems by package name — if these diverge, the watch never
         // sees what the phone writes.
-        applicationId = "me.pluralware"
+        applicationId = "org.foggyden.pluralware"
         minSdk = 26
         targetSdk = 36
         versionCode = rootProject.extra["mobileVersionCode"] as Int
