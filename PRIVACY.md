@@ -21,12 +21,16 @@ sends nothing to its developer.
     there. The webhook link is stored encrypted on your devices.
 - **A relay**, if you host one, holds your friends' follow codes, any Discord webhooks you added,
   and the names of the members you chose to share. It never holds your PluralKit token. It runs
-  on a server you control.
+  on a server you control, and it writes the notifications it sends, so whoever runs it can read
+  them, Private ones included.
 - **Following friends** uses UnifiedPush and the distributor app you choose (such as ntfy).
 
 Nothing is backed up or transferred to a new device: the encryption key never leaves the device.
-Disconnecting in the app's settings deletes your token and sharing settings; uninstalling deletes
-everything it stored.
+Disconnecting in the app's settings deletes your token and sharing settings from the phone. The
+watch deletes its copies when it next syncs with the phone. The relay is told to delete its copy;
+if it can't be reached, the app keeps its address and admin secret, and tries again each time you
+open sharing settings, until it succeeds or you tell it to forget the relay. Uninstalling deletes
+everything the app stored on the device.
 
 ## Contact
 

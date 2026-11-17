@@ -8,9 +8,16 @@ the other.
 ## Each release
 
 The release workflow attaches `play-mobile-X.Y.Z.aab` and `play-wear-X.Y.Z.aab` to the GitHub
-release. In the Play Console, under **Test and release → Testing → Internal testing**, create a
-release and upload both. The watch's version code is always one past the phone's, as Play
-requires for two bundles in one app.
+release, betas included: each beta has a version code of its own, below its release's, so testers
+can be given betas and the release still updates them. In the Play Console:
+
+- the phone bundle goes in a new release on **Test and release → Testing → Internal testing**;
+- the watch bundle goes on the Wear OS internal testing track: on the same page, switch the form
+  factor at the top to **Wear OS**, and create a release there. Play keeps Wear OS releases apart
+  from the phone's.
+
+The watch's version code is always one past the phone's, as Play requires for two bundles in one
+app.
 
 ## Once, to set up
 
@@ -34,5 +41,6 @@ requires for two bundles in one app.
 6. **Store listing**: short and full description, the README's screenshots
    (`docs/screenshots`), a 512 × 512 icon and a 1024 × 500 feature graphic.
 
-New personal developer accounts must run a closed test with 12 testers for 14 days before
-releasing to everyone. Internal testing has no such requirement.
+New personal developer accounts must run a closed test before releasing to everyone: at least 12
+testers, opted in continuously for the 14 days before applying for production access. Internal
+testing has no such requirement.

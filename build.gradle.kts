@@ -13,14 +13,15 @@ plugins {
 // One version for both apps, set by `pluralware.version` in gradle.properties and
 // matched by the `vX.Y.Z` release tag. The watch's versionCode is one past the
 // phone's: they share an applicationId, and Play rejects a code reused within an app.
-// A beta (X.Y.Z-beta.N) shares its release's code, so the release installs over it;
-// betas aren't published to Play.
+// Each beta (X.Y.Z-beta.N) has a code of its own, below its release's, so Play's
+// testers can be given betas and the release still installs over them.
 val appVersion = providers.gradleProperty("pluralware.version").get()
-val appVersionBase = Regex("""(\d+)\.(\d+)\.(\d+)(-beta\.\d+)?""").matchEntire(appVersion)
+val appVersionBase = Regex("""(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?""").matchEntire(appVersion)
     ?.destructured
-    ?.let { (major, minor, patch, _) ->
+    ?.let { (major, minor, patch, beta) ->
         require(minor.toInt() < 100 && patch.toInt() < 100) { "minor and patch must be under 100" }
-        (major.toInt() * 10_000 + minor.toInt() * 100 + patch.toInt()) * 10
+        val stage = beta.toIntOrNull()?.also { require(it in 1..498) { "beta must be 1 to 498" } } ?: 499
+        (major.toInt() * 10_000 + minor.toInt() * 100 + patch.toInt()) * 1_000 + stage * 2
     }
     ?: error("pluralware.version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-beta.N, got $appVersion")
 extra["appVersionName"] = appVersion
