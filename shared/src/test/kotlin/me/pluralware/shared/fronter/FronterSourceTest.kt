@@ -255,6 +255,19 @@ class FronterSourceTest {
     }
 
     @Test
+    fun `a fetch that started before the app published a switch doesn't overwrite it`() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { client.getCurrentFronters() } coAnswers { held.await(); PreviewData.switchOut }
+        val fetching = launch { source.current() }
+
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        held.complete(Unit)
+        fetching.join()
+
+        assertEquals(PreviewData.currentSwitch.uuid, cache.get()?.switchUuid)
+    }
+
+    @Test
     fun `with nothing cached, a switch from the phone asks the surfaces to update`() = runTest {
         assertTrue(source.expire(SwitchSync.noticeOf(PreviewData.switchOut, PluralKitToken("token"))))
     }

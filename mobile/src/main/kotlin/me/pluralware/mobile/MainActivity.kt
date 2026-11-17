@@ -41,12 +41,14 @@ class MainActivity : ComponentActivity() {
 
     private fun Intent.route(): String? = when (getStringExtra(EXTRA_SCREEN)) {
         SCREEN_FOLLOWING -> Routes.FOLLOWING
+        SCREEN_PICK -> Routes.PICK
         else -> null
     }
 
     companion object {
-        /** Which screen to open; a friend's notification opens Following. */
+        /** Which screen to open: a friend's notification opens Following, the widget's Switch button the picker. */
         const val EXTRA_SCREEN = "me.pluralware.mobile.SCREEN"
         const val SCREEN_FOLLOWING = "following"
+        const val SCREEN_PICK = "pick"
     }
 }

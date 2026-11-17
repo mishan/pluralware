@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import me.pluralware.mobile.watch.WatchLink
+import me.pluralware.mobile.widget.PhoneWidgetSurfaces
 import me.pluralware.shared.api.PluralKitClientFactory
 import me.pluralware.shared.api.PluralKitToken
 import me.pluralware.shared.handoff.SharingHandoff
@@ -89,6 +90,7 @@ class AppGraph private constructor(context: Context) {
     )
 
     init {
+        scope.launch { PhoneWidgetSurfaces.get(appContext).followToken(tokenStore.tokenFlow) }
         scope.launch {
             account.claimUnowned { token ->
                 PluralKitClientFactory.create(

@@ -224,9 +224,13 @@ Three services in `:wear`: the LONG_TEXT `FronterComplicationService`, the stati
   either side's sign-out) go through `FronterSurfaces.onTokenChanged`, which clears the cache.
   Switches from the phone go through `FronterSurfaces.onRemoteSwitch`, which expires it.
   Anything that changes fronters or the token must keep reaching one of these.
+- **The phone's widget** (`:mobile`'s `widget/`, Jetpack Glance) does the same through
+  `WidgetSurfaces`: `PhoneApp` publishes `loadedFronters` and member edits, the listener service
+  the watch's switches and member edits, and `AppGraph` follows the token. Every placed widget
+  draws one shared display, fetched once (single-flight).
 - **Polling is only the backstop** for switches made outside PluralWare (Discord, the dashboard)
-  while neither app is open: the complication's 30-minute `UPDATE_PERIOD_SECONDS` and the tile's
-  10-minute freshness interval.
+  while neither app is open: the complication's 30-minute `UPDATE_PERIOD_SECONDS`, the tile's
+  10-minute freshness interval, and the widget's 30-minute `updatePeriodMillis`.
 
 ### Friend notifications
 

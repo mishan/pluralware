@@ -26,8 +26,8 @@
 
         <!--
             Receives the watch's current switch over the Wearable Data Layer, so
-            an open app follows switches made on the watch, and the friends the
-            watch found no longer receiving. Filtered by path;
+            an open app and the widget follow switches and member edits made on
+            the watch, and the friends the watch found no longer receiving. Filtered by path;
             `exported="true"` is required for the Wear framework to bind to it.
             Never bound on a phone without Wear OS.
         -->
@@ -44,8 +44,24 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/pluralware/sharing-status" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pluralware/members" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".widget.FronterWidgetReceiver"
+            android:exported="true"
+            android:label="Fronter">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/fronter_widget_info" />
+        </receiver>
 
         <!--
             Receives pushes for systems this person follows, via whichever

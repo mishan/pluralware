@@ -1,0 +1,165 @@
+package me.pluralware.mobile.widget
+
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import me.pluralware.shared.api.PluralKitClient
+import me.pluralware.shared.api.PluralKitToken
+import me.pluralware.shared.fronter.FronterDisplay
+import me.pluralware.shared.fronter.FronterSource
+import me.pluralware.shared.fronter.FronterWording
+import me.pluralware.shared.handoff.MemberSync
+import me.pluralware.shared.handoff.SwitchSync
+import me.pluralware.shared.model.Member
+import me.pluralware.shared.model.Switch
+import me.pluralware.shared.preview.PreviewData
+import me.pluralware.shared.repository.PluralKitRepository
+import me.pluralware.shared.settings.InMemoryLastFronterCache
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class WidgetSurfacesTest {
+
+    private val client = mockk<PluralKitClient>()
+    private val cache = InMemoryLastFronterCache()
+    private val tokens = MutableStateFlow<PluralKitToken?>(PluralKitToken("token"))
+    private var widgets = 2
+    private var updates = 0
+
+    private fun switchOf(uuid: String, name: String) =
+        Switch(uuid, PreviewData.anchor, listOf(Member(id = name, uuid = "m-$name", name = name, displayName = null, pronouns = null, color = null, avatarUrl = null)))
+
+    private val alex = switchOf("s1", "Alex")
+    private val sam = switchOf("s2", "Sam")
+
+    private fun TestScope.surfaces() = WidgetSurfaces(
+        source = FronterSource(
+            token = { tokens.value },
+            repositoryFor = { PluralKitRepository(client) },
+            cache = cache,
+            wording = FronterWording(FronterDisplay("Fronter", "Set up", "-"), FronterDisplay("Fronter", "Sign in", "-")),
+        ),
+        token = { tokens.value },
+        cache = cache,
+        hasWidgets = { widgets > 0 },
+        updateWidgets = { updates++ },
+        scope = backgroundScope,
+    )
+
+    private fun shown(surfaces: WidgetSurfaces) = surfaces.display.value?.text
+
+    @Test
+    fun `a switch the app publishes is shown without a fetch`() = runTest {
+        val surfaces = surfaces()
+
+        surfaces.publish(alex, PluralKitToken("token"))
+
+        assertEquals("Fronting: Alex", shown(surfaces))
+        assertEquals(1, updates)
+        coVerify(exactly = 0) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `widgets drawing together share one fetch`() = runTest {
+        val surfaces = surfaces()
+        val reply = CompletableDeferred<Switch>()
+        coEvery { client.getCurrentFronters() } coAnswers { reply.await() }
+
+        repeat(3) { launch { surfaces.prepare() } }
+        runCurrent()
+        reply.complete(alex)
+        runCurrent()
+
+        assertEquals("Fronting: Alex", shown(surfaces))
+        coVerify(exactly = 1) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `a fetch begun before the watch reports a new switch isn't shown`() = runTest {
+        val surfaces = surfaces()
+        surfaces.publish(alex, PluralKitToken("token"))
+        surfaces.invalidate()
+        cache.set(cache.get()!!.copy(fetchedAtEpochMillis = 0L))
+        val first = CompletableDeferred<Switch>()
+        coEvery { client.getCurrentFronters() } coAnswers { first.await() } andThen sam
+
+        launch { surfaces.prepare() }
+        runCurrent()
+        surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("token")))
+        first.complete(alex)
+        runCurrent()
+
+        assertEquals("Fronting: Sam", shown(surfaces))
+    }
+
+    @Test
+    fun `a display fetched for a token that's since gone is fetched again`() = runTest {
+        val surfaces = surfaces()
+        val first = CompletableDeferred<Switch>()
+        coEvery { client.getCurrentFronters() } coAnswers { first.await() } andThen sam
+
+        launch { surfaces.prepare() }
+        runCurrent()
+        tokens.value = PluralKitToken("another")
+        first.complete(alex)
+        runCurrent()
+
+        assertEquals("Fronting: Sam", shown(surfaces))
+    }
+
+    @Test
+    fun `a member edit for this system fetches again, so a rename shows`() = runTest {
+        val surfaces = surfaces()
+        surfaces.publish(alex, PluralKitToken("token"))
+        coEvery { client.getCurrentFronters() } returns switchOf("s1", "Alexis")
+
+        surfaces.onMemberEdit(MemberSync.noticeOf(PluralKitToken("token"), 1L))
+
+        assertEquals("Fronting: Alexis", shown(surfaces))
+        assertEquals(2, updates)
+    }
+
+    @Test
+    fun `news about another system, or with no widgets placed, fetches nothing`() = runTest {
+        val surfaces = surfaces()
+        surfaces.publish(alex, PluralKitToken("token"))
+
+        surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("another")))
+        surfaces.onMemberEdit(MemberSync.noticeOf(PluralKitToken("another"), 1L))
+        widgets = 0
+        surfaces.onRemoteSwitch(SwitchSync.noticeOf(sam, PluralKitToken("token")))
+
+        assertEquals("Fronting: Alex", shown(surfaces))
+        assertEquals(1, updates)
+        coVerify(exactly = 0) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `a new token or signing out forgets the old system's line, but the token it starts with doesn't`() = runTest {
+        val surfaces = surfaces()
+        surfaces.publish(alex, PluralKitToken("token"))
+        backgroundScope.launch { surfaces.followToken(tokens) }
+        runCurrent()
+        assertEquals("Fronting: Alex", cache.get()?.text)
+
+        coEvery { client.getCurrentFronters() } returns sam
+        tokens.value = PluralKitToken("another")
+        runCurrent()
+
+        assertEquals("Fronting: Sam", shown(surfaces))
+        assertEquals(PluralKitToken("another").fingerprint, cache.get()?.tokenId)
+
+        tokens.value = null
+        runCurrent()
+
+        assertEquals("Set up", shown(surfaces))
+        assertNull(cache.get())
+    }
+}

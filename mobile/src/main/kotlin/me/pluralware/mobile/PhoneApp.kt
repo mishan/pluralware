@@ -22,6 +22,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import me.pluralware.mobile.following.FollowingScreen
 import me.pluralware.mobile.following.FollowingViewModel
@@ -36,6 +38,7 @@ import me.pluralware.mobile.ui.members.MembersScreen
 import me.pluralware.mobile.ui.screens.FrontersScreen
 import me.pluralware.mobile.ui.screens.HistoryScreen
 import me.pluralware.mobile.ui.screens.PickerScreen
+import me.pluralware.mobile.widget.PhoneWidgetSurfaces
 import me.pluralware.shared.handoff.MemberSync
 import me.pluralware.shared.handoff.SwitchSync
 import me.pluralware.shared.model.Switch
@@ -97,6 +100,17 @@ fun PhoneApp(graph: AppGraph, requestedRoute: String?, onRequestHandled: () -> U
             owner = session
         }
         if (session != null) {
+            // Every switch the app sees, and every member edit, reaches the widgets.
+            val widgetContext = LocalContext.current.applicationContext
+            LaunchedEffect(session) {
+                val widgets = PhoneWidgetSurfaces.get(widgetContext)
+                launch {
+                    session.repository.loadedFronters.filterNotNull().collect { widgets.publish(it.switch, session.token) }
+                }
+                session.repository.memberEdits.drop(1).collect {
+                    widgets.onMemberEdit(MemberSync.noticeOf(session.token, System.currentTimeMillis()))
+                }
+            }
             // While the app is showing, keep a watch on the same switch, both ways,
             // and tell it when a member is edited here.
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -127,10 +141,13 @@ fun PhoneApp(graph: AppGraph, requestedRoute: String?, onRequestHandled: () -> U
                 }
             }
             LaunchedEffect(requestedRoute) {
-                if (requestedRoute == Routes.FOLLOWING) {
-                    nav.navigate(Routes.FOLLOWING) { launchSingleTop = true }
-                    onRequestHandled()
+                when (requestedRoute) {
+                    Routes.FOLLOWING -> nav.navigate(Routes.FOLLOWING) { launchSingleTop = true }
+                    // Signed out, Connect is showing, which is where that leads.
+                    Routes.PICK -> if (session != null) nav.navigate(Routes.PICK) { launchSingleTop = true }
+                    else -> return@LaunchedEffect
                 }
+                onRequestHandled()
             }
         }
     }

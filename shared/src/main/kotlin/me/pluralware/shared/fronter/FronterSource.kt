@@ -86,7 +86,11 @@ class FronterSource(
      */
     suspend fun remember(switch: Switch?, fetchedWith: PluralKitToken) {
         if (token() != fetchedWith) return
-        cacheLock.withLock { cache.set(lineFor(switch, fetchedWith)) }
+        cacheLock.withLock {
+            // A fetch already out may have read what this replaces; it mustn't cache that over it.
+            expiries.incrementAndGet()
+            cache.set(lineFor(switch, fetchedWith))
+        }
     }
 
     /**
