@@ -1,0 +1,324 @@
+package org.foggyden.pluralware.shared.api
+
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import org.foggyden.pluralware.shared.api.dto.CreateSwitchRequest
+import org.foggyden.pluralware.shared.api.dto.MemberDto
+import org.foggyden.pluralware.shared.api.dto.MoveSwitchRequest
+import org.foggyden.pluralware.shared.api.dto.SwitchFullDto
+import org.foggyden.pluralware.shared.api.dto.SwitchRefsDto
+import org.foggyden.pluralware.shared.api.dto.SystemDto
+import org.foggyden.pluralware.shared.model.Member
+import org.foggyden.pluralware.shared.model.MemberField
+import org.foggyden.pluralware.shared.model.MemberPrivacy
+import org.foggyden.pluralware.shared.model.ProxyTag
+import org.foggyden.pluralware.shared.model.Switch
+import org.foggyden.pluralware.shared.model.SystemInfo
+import retrofit2.HttpException
+import retrofit2.Response
+import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
+/**
+ * [PluralKitClient] backed by Retrofit + OkHttp + kotlinx-serialization.
+ *
+ * Construction goes through [PluralKitClientFactory.create] so that the OkHttp
+ * stack (auth interceptor, JSON converter, base URL) is wired consistently.
+ * Tests can instantiate this directly with a fake [PluralKitApi].
+ *
+ * ## History-resolver cache
+ *
+ * `GET /systems/@me/switches` returns members as UUID strings rather than full
+ * Member objects. The domain [Switch] expects expanded [Member]s, so we maintain
+ * a short-lived lookup cache here. The repository has its own member cache for
+ * the UI; this one exists purely to translate switch-history payloads without
+ * coupling to the repository.
+ *
+ * The cache is populated lazily, then refreshed whenever we encounter an
+ * unknown member ID (e.g. a new member added since the cache was warmed). If
+ * the refresh still doesn't find them — which can happen if the member was
+ * deleted — we drop that ID from the resulting [Switch.members] list rather
+ * than surface a half-broken history entry.
+ *
+ * ## Errors
+ *
+ * Every non-success response surfaces as a [PluralKitHttpException], whichever
+ * endpoint it came from, so callers can branch on [PluralKitHttpException.isUnauthorized]
+ * and [PluralKitHttpException.retryAfter] without knowing about Retrofit.
+ */
+class RetrofitPluralKitClient internal constructor(
+    private val api: PluralKitApi,
+) : PluralKitClient {
+
+    private val cacheMutex = Mutex()
+    private var memberCache: Map<String, Member>? = null
+
+    // Counts edits written into memberCache. A member list fetched while one
+    // landed may predate it, so it's fetched again rather than cached.
+    private var cacheEdits = 0
+
+    override suspend fun getOwnSystem(): SystemInfo = http { api.getOwnSystem() }.toDomain()
+
+    // Also warms the resolver cache: same network round-trip, and it saves a
+    // fetch when getRecentSwitches() needs the lookup.
+    override suspend fun getOwnMembers(): List<Member> = fetchMembers().first
+
+    private suspend fun fetchMembers(): Pair<List<Member>, Map<String, Member>> {
+        var attempt = 0
+        while (true) {
+            val editsBefore = cacheMutex.withLock { cacheEdits }
+            val members = http { api.getOwnMembers() }.map { it.toDomain() }
+            val lookup = buildMemberLookup(members)
+            cacheMutex.withLock {
+                // Edits that keep landing get the last fetch as an answer, and keep the cache.
+                if (cacheEdits == editsBefore) memberCache = lookup
+                if (cacheEdits == editsBefore || ++attempt == MEMBER_FETCH_ATTEMPTS) return members to lookup
+            }
+        }
+    }
+
+    override suspend fun getCurrentFronters(): Switch? {
+        val response = http { api.getCurrentFronters() }
+        // 204 = no switches ever registered for this system. Per the API docs
+        // this is a documented success state, not an error.
+        if (response.code() == 204) return null
+        if (!response.isSuccessful) {
+            throw response.toPluralKitException()
+        }
+        val body = response.body() ?: return null
+        return body.toDomain()
+    }
+
+    override suspend fun getRecentSwitches(limit: Int): List<Switch> {
+        // The API caps at 100; defend against callers that didn't read the doc.
+        val safeLimit = limit.coerceIn(1, 100)
+        val refs = http { api.getRecentSwitches(safeLimit) }
+        if (refs.isEmpty()) return emptyList()
+
+        // Build the lookup. If any switch references members we don't know about,
+        // refresh the member cache exactly once before giving up.
+        val lookup = ensureMemberLookup()
+        val unknownIds = refs.flatMap { it.members }.filter { it !in lookup }
+        val resolvedLookup = if (unknownIds.isEmpty()) lookup else refreshMemberLookup()
+
+        return refs.map { it.toDomain(resolvedLookup) }
+    }
+
+    override suspend fun registerSwitch(memberUuids: List<String>): Switch {
+        // PluralKit's POST accepts either short IDs or UUIDs. We send UUIDs
+        // because the pickers track members by UUID — the stable identifier.
+        val editsBefore = cacheMutex.withLock { cacheEdits }
+        val switch = http { api.createSwitch(CreateSwitchRequest(members = memberUuids)) }
+            .toDomain()
+        // Server returned full Member objects in the response; refresh the cache
+        // so any newly-added members from the response are visible to history.
+        remember(switch.members, editsBefore)
+        return switch
+    }
+
+    override suspend fun updateMember(
+        uuid: String,
+        changes: Map<MemberField, String?>,
+        proxyTags: List<ProxyTag>?,
+        privacy: Map<MemberPrivacy, Boolean>,
+        aliases: List<String>?,
+    ): Member {
+        require(changes.isNotEmpty() || proxyTags != null || privacy.isNotEmpty() || aliases != null) {
+            "An edit that changes nothing isn't sent"
+        }
+        val tags = proxyTags?.let { list ->
+            "proxy_tags" to JsonArray(list.map { JsonObject(mapOf("prefix" to JsonPrimitive(it.prefix), "suffix" to JsonPrimitive(it.suffix))) })
+        }
+        val parts = privacy.takeIf { it.isNotEmpty() }?.let { parts ->
+            "privacy" to JsonObject(parts.entries.associate { (part, private) -> part.apiKey to JsonPrimitive(if (private) "private" else "public") })
+        }
+        val body = JsonObject(changes.entries.associate { (field, value) -> field.apiKey to JsonPrimitive(value) } + listOfNotNull(tags, parts, aliases?.let { "aliases" to JsonArray(it.map(::JsonPrimitive)) }))
+        // History resolves members from the lookup cache; keep the edit visible there.
+        return http { api.updateMember(uuid, body) }.toDomain().also { remember(listOf(it)) }
+    }
+
+    override suspend fun moveSwitch(uuid: String, to: Instant): Switch {
+        // PluralKit parses times with .NET, which takes at most seven fractional digits.
+        val at = to.truncatedTo(ChronoUnit.MILLIS).toString()
+        return http { api.moveSwitch(uuid, MoveSwitchRequest(at)) }.toDomain()
+    }
+
+    override suspend fun setSwitchMembers(uuid: String, memberUuids: List<String>): Switch =
+        http { api.setSwitchMembers(uuid, memberUuids) }.toDomain()
+
+    override suspend fun deleteSwitch(uuid: String) {
+        // A Response<Unit> return reports errors in itself; Retrofit doesn't throw them.
+        val response = api.deleteSwitch(uuid)
+        if (!response.isSuccessful) throw response.toPluralKitException()
+    }
+
+    override suspend fun createMember(name: String): Member =
+        http { api.createMember(JsonObject(mapOf("name" to JsonPrimitive(name)))) }.toDomain().also { remember(listOf(it)) }
+
+    override suspend fun deleteMember(uuid: String) {
+        val response = api.deleteMember(uuid)
+        if (!response.isSuccessful) throw response.toPluralKitException()
+    }
+
+    override suspend fun forgetMembers() {
+        cacheMutex.withLock {
+            memberCache = null
+            cacheEdits++
+        }
+    }
+
+    /**
+     * Writes [members] into the lookup cache. Given [editsBefore], taken when
+     * their request went out, they're dropped if the cache was edited or
+     * forgotten since: they may predate that. History fetches any member it
+     * doesn't know.
+     */
+    private suspend fun remember(members: List<Member>, editsBefore: Int? = null) = cacheMutex.withLock {
+        if (editsBefore != null && editsBefore != cacheEdits) return@withLock
+        val merged = (memberCache ?: emptyMap()).toMutableMap()
+        members.forEach { m ->
+            merged[m.uuid] = m
+            merged[m.id] = m
+        }
+        memberCache = merged
+        cacheEdits++
+    }
+
+    /** Runs one API call, translating Retrofit's [HttpException] into [PluralKitHttpException]. */
+    private inline fun <T> http(block: () -> T): T = try {
+        block()
+    } catch (e: HttpException) {
+        throw e.response()?.toPluralKitException(cause = e)
+            ?: PluralKitHttpException(statusCode = e.code(), message = e.message(), cause = e)
+    }
+
+    // --- Member-cache helpers ---
+
+    private suspend fun ensureMemberLookup(): Map<String, Member> {
+        cacheMutex.withLock {
+            memberCache?.let { return it }
+        }
+        return refreshMemberLookup()
+    }
+
+    private suspend fun refreshMemberLookup(): Map<String, Member> = fetchMembers().second
+
+    /**
+     * The history endpoint returns member references by short ID (e.g. "abcde"),
+     * but other endpoints (and our own picker state) use UUIDs. We key the lookup
+     * by both so resolution works regardless of which form the API returned —
+     * short IDs and UUIDs don't collide on length, so the combined map is safe.
+     */
+    private fun buildMemberLookup(members: List<Member>): Map<String, Member> {
+        val lookup = HashMap<String, Member>(members.size * 2)
+        members.forEach { m ->
+            lookup[m.uuid] = m
+            lookup[m.id] = m
+        }
+        return lookup
+    }
+
+    // --- DTO → domain mappers ---
+
+    private fun SystemDto.toDomain() = SystemInfo(
+        id = id,
+        uuid = uuid,
+        name = name,
+        tag = tag,
+        frontIsPrivate = privacy?.frontPrivacy == "private",
+    )
+
+    private fun MemberDto.toDomain() = Member(
+        id = id,
+        uuid = uuid,
+        name = name,
+        displayName = displayName,
+        pronouns = pronouns,
+        color = color,
+        avatarUrl = avatarUrl,
+        description = description,
+        birthday = birthday,
+        proxyTags = proxyTags.map { ProxyTag(it.prefix, it.suffix) },
+        aliases = aliases.orEmpty(),
+        privateParts = MemberPrivacy.entries.filterTo(HashSet()) { privacy?.get(it.apiKey) == "private" },
+    )
+
+    private fun SwitchFullDto.toDomain() = Switch(
+        // API field `id` is the switch's UUID per the docs ("id: uuid"). Our
+        // domain field is named `uuid` to make that explicit.
+        uuid = id,
+        timestamp = Instant.parse(timestamp),
+        members = members.map { it.toDomain() },
+    )
+
+    private fun SwitchRefsDto.toDomain(lookup: Map<String, Member>) = Switch(
+        uuid = id,
+        timestamp = Instant.parse(timestamp),
+        // Drop unresolvable IDs rather than render a broken row. A subsequent
+        // member-list refresh from the UI will recover them.
+        members = members.mapNotNull { lookup[it] },
+    )
+}
+
+/** Thrown for non-success HTTP responses that aren't part of normal API contract (e.g. 204). */
+class PluralKitHttpException(
+    val statusCode: Int,
+    message: String,
+    /** How long the server asked us to wait, from `Retry-After`; null if it didn't say. */
+    val retryAfter: Duration? = null,
+    cause: Throwable? = null,
+    /** PluralKit's own error code (e.g. 40005, a switch already at that time); null if the body had none. */
+    val code: Int? = null,
+    /** For a rejected model (40001): field name to PluralKit's messages for it. */
+    val fieldErrors: Map<String, List<String>> = emptyMap(),
+) : RuntimeException("PluralKit API returned HTTP $statusCode: $message", cause) {
+    /** What PluralKit said, or the HTTP reason when it said nothing: fit to show a person. */
+    val reason: String = message
+
+    /** The token was rejected — revoked, regenerated with `pk;token refresh`, or mistyped. */
+    val isUnauthorized: Boolean get() = statusCode == 401
+
+    val isRateLimited: Boolean get() = statusCode == 429
+}
+
+private const val MEMBER_FETCH_ATTEMPTS = 3
+
+/** Every error from PluralKit, thrown by Retrofit or returned, becomes one of these the same way. */
+private fun Response<*>.toPluralKitException(cause: Throwable? = null): PluralKitHttpException {
+    val body = parseErrorBody(runCatching { errorBody()?.string() }.getOrNull())
+    return PluralKitHttpException(
+        statusCode = code(),
+        message = body.message ?: message(),
+        retryAfter = parseRetryAfter(headers()["Retry-After"]),
+        cause = cause,
+        code = body.code,
+        fieldErrors = body.fieldErrors,
+    )
+}
+
+internal data class ErrorBody(val code: Int?, val message: String?, val fieldErrors: Map<String, List<String>>)
+
+/** PluralKit's error body: `{"code": 40001, "message": ..., "errors": {"name": [{"message": ...}]}}`. */
+internal fun parseErrorBody(body: String?): ErrorBody {
+    val root = body?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() } as? JsonObject
+        ?: return ErrorBody(null, null, emptyMap())
+    val code = (root["code"] as? JsonPrimitive)?.intOrNull
+    val fieldErrors = (root["errors"] as? JsonObject).orEmpty().mapValues { (_, errors) ->
+        (errors as? JsonArray).orEmpty().mapNotNull { error ->
+            ((error as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+        }
+    }.filterValues { it.isNotEmpty() }
+    val message = (root["message"] as? JsonPrimitive)?.contentOrNull
+    return ErrorBody(code, message, fieldErrors)
+}
+
+/** `Retry-After` in its delta-seconds form; the HTTP-date form is rare enough to ignore. */
+internal fun parseRetryAfter(value: String?): Duration? =
+    value?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.let(Duration::ofSeconds)

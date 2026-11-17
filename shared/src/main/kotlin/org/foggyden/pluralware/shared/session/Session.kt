@@ -1,0 +1,55 @@
+package org.foggyden.pluralware.shared.session
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import org.foggyden.pluralware.shared.api.PluralKitToken
+import org.foggyden.pluralware.shared.handoff.MemberSync
+import org.foggyden.pluralware.shared.repository.PluralKitRepository
+
+/**
+ * The signed-in session: one [PluralKitRepository] per token, and the
+ * [ViewModelStore] the screens' ViewModels live in.
+ *
+ * It lives in the activity's own ViewModelStore, so the repository and the
+ * screens survive configuration changes (a font-scale or locale change on the
+ * watch) *together*. Anything the activity hangs off the repository keeps
+ * observing the one the screens use. A new token, or signing out, clears the
+ * old store, so the old screens' ViewModels are released with it rather than
+ * lingering until the activity finishes.
+ */
+class SessionHolder : ViewModel() {
+    private var current: Session? = null
+
+    fun sessionFor(token: PluralKitToken, newRepository: () -> PluralKitRepository): Session {
+        current?.takeIf { it.token == token }?.let { return it }
+        end()
+        return Session(token, newRepository()).also { current = it }
+    }
+
+    /** Signing out, or a new token: the old system's screens go, and so do its writes still under way. */
+    fun end() {
+        current?.repository?.close()
+        release()
+    }
+
+    // Leaving the app isn't signing out: a write under way may finish, and
+    // still tell friends of a corrected front.
+    override fun onCleared() = release()
+
+    private fun release() {
+        current?.viewModelStore?.clear()
+        current = null
+    }
+}
+
+class Session internal constructor(
+    /** The token [repository] talks to PluralKit with. */
+    val token: PluralKitToken,
+    val repository: PluralKitRepository,
+) : ViewModelStoreOwner {
+    override val viewModelStore = ViewModelStore()
+
+    /** How far member edits are synced with the other device, across the app going to the background. */
+    val memberSync = MemberSync.Progress()
+}

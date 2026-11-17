@@ -1,0 +1,43 @@
+package org.foggyden.pluralware.shared.ui
+
+import java.time.Duration
+import java.time.Instant
+
+/**
+ * PluralKit's switch timestamps, in a glanceable relative format.
+ *
+ * - <1 min  → "just now"
+ * - <1 hour → "12m ago"
+ * - <1 day  → "3h ago"
+ * - <1 week → "2d ago"
+ * - else    → "3w ago"
+ *
+ * Months and years aren't useful contexts for recent fronting history; if a
+ * user wants to look that far back they'll use the dashboard.
+ */
+fun Instant.relativeTo(now: Instant = Instant.now()): String {
+    val d = Duration.between(this, now)
+    return when {
+        d.isNegative -> "soon"
+        d.toMinutes() < 1 -> "just now"
+        d.toHours() < 1 -> "${d.toMinutes()}m ago"
+        d.toDays() < 1 -> "${d.toHours()}h ago"
+        d.toDays() < 7 -> "${d.toDays()}d ago"
+        else -> "${d.toDays() / 7}w ago"
+    }
+}
+
+/**
+ * Bare duration string (no "ago" suffix) — for sentences like "Fronting for 3h".
+ * Same buckets as [relativeTo] so units are familiar across screens.
+ */
+fun Instant.elapsedSince(now: Instant = Instant.now()): String {
+    val d = Duration.between(this, now)
+    return when {
+        d.isNegative || d.toMinutes() < 1 -> "<1m"
+        d.toHours() < 1 -> "${d.toMinutes()}m"
+        d.toDays() < 1 -> "${d.toHours()}h"
+        d.toDays() < 7 -> "${d.toDays()}d"
+        else -> "${d.toDays() / 7}w"
+    }
+}

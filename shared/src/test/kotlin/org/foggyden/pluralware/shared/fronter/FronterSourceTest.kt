@@ -1,0 +1,290 @@
+package org.foggyden.pluralware.shared.fronter
+
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import org.foggyden.pluralware.shared.api.PluralKitClient
+import org.foggyden.pluralware.shared.api.PluralKitHttpException
+import org.foggyden.pluralware.shared.api.PluralKitToken
+import org.foggyden.pluralware.shared.handoff.MemberSync
+import org.foggyden.pluralware.shared.handoff.SwitchSync
+import org.foggyden.pluralware.shared.preview.PreviewData
+import org.foggyden.pluralware.shared.repository.PluralKitRepository
+import org.foggyden.pluralware.shared.settings.InMemoryLastFronterCache
+import org.foggyden.pluralware.shared.settings.LastFronter
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.IOException
+
+class FronterSourceTest {
+
+    private val client = mockk<PluralKitClient>()
+    private val cache = InMemoryLastFronterCache()
+    private var token: PluralKitToken? = PluralKitToken("token")
+    private var now = 10_000_000L
+
+    private val wording = FronterWording(
+        setup = FronterDisplay("Fronter", "Set up", "Not set up yet."),
+        signInAgain = FronterDisplay("Fronter", "Sign in", "Sign in again."),
+    )
+
+    private val source = FronterSource(
+        token = { token },
+        repositoryFor = { PluralKitRepository(client) },
+        cache = cache,
+        wording = wording,
+        clock = { now },
+    )
+
+    private val cachedAlex = LastFronter(
+        "Fronting: Alex",
+        "Current fronter: Alex",
+        fetchedAtEpochMillis = now,
+        tokenId = PluralKitToken("token").fingerprint,
+    )
+
+    @Test
+    fun `no token asks for setup, even with a cached line`() = runTest {
+        token = null
+        cache.set(cachedAlex)
+
+        assertEquals(wording.setup, source.current())
+    }
+
+    @Test
+    fun `the display says when the switch started, fetched, cached or last known`() = runTest {
+        val started = PreviewData.switchOut.timestamp
+        coEvery { client.getCurrentFronters() } returns PreviewData.switchOut
+        val fetched = source.current()
+        val cached = source.current()
+        now += FronterSource.FRESH_FOR_MILLIS
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+        val lastKnown = source.current()
+
+        assertEquals(listOf(started, started, started), listOf(fetched.since, cached.since, lastKnown.since))
+        assertEquals("Last known", lastKnown.title)
+    }
+
+    @Test
+    fun `a fresh cached line is answered without fetching`() = runTest {
+        cache.set(cachedAlex)
+        now += FronterSource.FRESH_FOR_MILLIS - 1
+
+        val display = source.current()
+
+        assertEquals("Fronting: Alex", display.text)
+        assertEquals(FronterFormatter.TITLE, display.title)
+        coVerify(exactly = 0) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `a stale cached line is refetched and replaced`() = runTest {
+        cache.set(cachedAlex)
+        now += FronterSource.FRESH_FOR_MILLIS
+        coEvery { client.getCurrentFronters() } returns PreviewData.switchOut
+
+        val display = source.current()
+
+        assertEquals("Switched out", display.text)
+        assertEquals("Switched out", cache.get()?.text)
+        assertEquals(now, cache.get()?.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun `a failed fetch falls back to the cached line, marked last known`() = runTest {
+        cache.set(cachedAlex.copy(fetchedAtEpochMillis = 0))
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+
+        val display = source.current()
+
+        assertEquals("Last known", display.title)
+        assertEquals("Fronting: Alex", display.text)
+        assertEquals("Last known. Current fronter: Alex", display.description)
+    }
+
+    @Test
+    fun `a failed fetch with nothing cached is unavailable`() = runTest {
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+
+        assertEquals(FronterSource.UNAVAILABLE, source.current())
+    }
+
+    @Test
+    fun `a rejected token clears the cache and asks to sign in again`() = runTest {
+        cache.set(cachedAlex.copy(fetchedAtEpochMillis = 0))
+        coEvery { client.getCurrentFronters() } throws PluralKitHttpException(401, "Unauthorized")
+
+        assertEquals(wording.signInAgain, source.current())
+        assertNull(cache.get())
+    }
+
+    @Test
+    fun `a system with no switches reads as such`() = runTest {
+        coEvery { client.getCurrentFronters() } returns null
+
+        assertEquals("No switches yet", source.current().text)
+    }
+
+    @Test
+    fun `remember caches a switch the app already has, stamped now`() = runTest {
+        source.remember(PreviewData.switchOut, PluralKitToken("token"))
+
+        assertEquals(
+            LastFronter(
+                "Switched out",
+                "Switched out — nobody fronting",
+                now,
+                PluralKitToken("token").fingerprint,
+                switchUuid = PreviewData.switchOut.uuid,
+                switchAtEpochMillis = PreviewData.switchOut.timestamp.toEpochMilli(),
+                switchMembersHash = SwitchSync.membersHash(PreviewData.switchOut),
+            ),
+            cache.get(),
+        )
+    }
+
+    @Test
+    fun `a line cached for another token is never shown`() = runTest {
+        cache.set(cachedAlex.copy(tokenId = PluralKitToken("other system").fingerprint))
+        coEvery { client.getCurrentFronters() } throws IOException("offline")
+
+        // Fresh, and the fetch fails, yet it isn't even used as "last known".
+        assertEquals(FronterSource.UNAVAILABLE, source.current())
+    }
+
+    @Test
+    fun `a fetch that finishes after a re-pair isn't cached`() = runTest {
+        coEvery { client.getCurrentFronters() } coAnswers {
+            token = PluralKitToken("new system") // re-paired while in flight
+            PreviewData.currentSwitch
+        }
+
+        source.current()
+
+        assertNull(cache.get())
+    }
+
+    @Test
+    fun `the app can't publish a switch fetched with an old token`() = runTest {
+        source.remember(PreviewData.currentSwitch, fetchedWith = PluralKitToken("old system"))
+
+        assertNull(cache.get())
+    }
+
+    @Test
+    fun `the cache key never contains the token`() {
+        val id = PluralKitToken("secret-token-value").fingerprint
+        assertEquals(32, id.length)
+        assertTrue("secret" !in id)
+    }
+
+    @Test
+    fun `a different switch from the phone makes the next request fetch`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        coEvery { client.getCurrentFronters() } returns PreviewData.switchOut
+
+        assertTrue(source.expire(SwitchSync.noticeOf(PreviewData.switchOut, PluralKitToken("token"))))
+
+        assertEquals("Switched out", source.current().text)
+        coVerify(exactly = 1) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `the phone's echo of the cached switch changes nothing`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val before = cache.get()
+
+        assertFalse(source.expire(SwitchSync.noticeOf(PreviewData.currentSwitch, PluralKitToken("token"))))
+
+        assertEquals(before, cache.get())
+        source.current()
+        coVerify(exactly = 0) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `a moved switch is news, though its uuid is the same`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val moved = PreviewData.currentSwitch.copy(timestamp = PreviewData.currentSwitch.timestamp.minusSeconds(600))
+
+        assertTrue(source.expire(SwitchSync.noticeOf(moved, PluralKitToken("token"))))
+        assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun `a members fix to the cached switch is news, though its uuid and time are the same`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val fixed = PreviewData.currentSwitch.copy(members = PreviewData.members.takeLast(1))
+
+        assertTrue(source.expire(SwitchSync.noticeOf(fixed, PluralKitToken("token"))))
+        assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun `a member edited on the phone makes the next request fetch, for this system only`() = runTest {
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        val before = cache.get()
+
+        assertFalse(source.expireMembers(MemberSync.noticeOf(PluralKitToken("other system"), 1L)))
+        assertEquals(before, cache.get())
+
+        assertTrue(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 1L)))
+        assertEquals(0L, cache.get()?.fetchedAtEpochMillis)
+
+        token = null
+        assertFalse(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 2L)))
+    }
+
+    @Test
+    fun `a fetch that started before a member edit isn't cached as fresh`() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { client.getCurrentFronters() } coAnswers { held.await(); PreviewData.currentSwitch }
+        val fetching = launch { source.current() }
+
+        assertTrue(source.expireMembers(MemberSync.noticeOf(PluralKitToken("token"), 1L)))
+        held.complete(Unit)
+        fetching.join()
+
+        coEvery { client.getCurrentFronters() } returns PreviewData.currentSwitch
+        source.current()
+        coVerify(exactly = 2) { client.getCurrentFronters() }
+    }
+
+    @Test
+    fun `a fetch that started before the app published a switch doesn't overwrite it`() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { client.getCurrentFronters() } coAnswers { held.await(); PreviewData.switchOut }
+        val fetching = launch { source.current() }
+
+        source.remember(PreviewData.currentSwitch, PluralKitToken("token"))
+        held.complete(Unit)
+        fetching.join()
+
+        assertEquals(PreviewData.currentSwitch.uuid, cache.get()?.switchUuid)
+    }
+
+    @Test
+    fun `with nothing cached, a switch from the phone asks the surfaces to update`() = runTest {
+        assertTrue(source.expire(SwitchSync.noticeOf(PreviewData.switchOut, PluralKitToken("token"))))
+    }
+
+    @Test
+    fun `a switch for another system leaves the cache alone`() = runTest {
+        cache.set(cachedAlex)
+
+        assertFalse(source.expire(SwitchSync.noticeOf(PreviewData.switchOut, PluralKitToken("other system"))))
+
+        assertEquals(cachedAlex, cache.get())
+    }
+
+    @Test
+    fun `signed out, a switch from the phone is ignored`() = runTest {
+        token = null
+
+        assertFalse(source.expire(SwitchSync.noticeOf(PreviewData.switchOut, PluralKitToken("token"))))
+    }
+}

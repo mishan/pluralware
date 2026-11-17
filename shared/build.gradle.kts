@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralware.shared"
+    namespace = "org.foggyden.pluralware.shared"
     compileSdk = 36
 
     defaultConfig {

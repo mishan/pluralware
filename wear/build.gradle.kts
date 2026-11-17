@@ -13,11 +13,11 @@ plugins {
 }
 
 android {
-    namespace = "me.pluralware.wear"
+    namespace = "org.foggyden.pluralware.wear"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "me.pluralware"
+        applicationId = "org.foggyden.pluralware"
         minSdk = 30 // Wear OS 3 (API 30) per project decision.
         targetSdk = 36
         versionCode = rootProject.extra["wearVersionCode"] as Int

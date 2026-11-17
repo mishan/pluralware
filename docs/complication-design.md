@@ -207,7 +207,7 @@ Built since:
 
 ## 12. Launcher complication (SHORT_TEXT)
 
-`me.pluralware.wear.complication.LauncherComplicationService`. A *shortcut*, not a data view:
+`org.foggyden.pluralware.wear.complication.LauncherComplicationService`. A *shortcut*, not a data view:
 ~7 chars can't show a fronter, so this is a static glyph/label that opens the app. Supports
 SHORT_TEXT (glyph + `PW`) and MONOCHROMATIC_IMAGE (glyph only). No token, no network — renders
 instantly in any slot regardless of pairing. Tap opens `MainActivity` (distinct PendingIntent
@@ -216,7 +216,7 @@ with `UPDATE_PERIOD_SECONDS = 0` (it never changes).
 
 ## 13. Fronter tile
 
-`me.pluralware.wear.tile.FronterTileService`, a `TileService`. Shows the fronter line with a
+`org.foggyden.pluralware.wear.tile.FronterTileService`, a `TileService`. Shows the fronter line with a
 "Change" `CompactChip` that launches the app.
 
 - **Shared source.** Asks the same `FronterSource` as the complication (section 6), so the two
