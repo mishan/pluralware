@@ -30,7 +30,8 @@ app.
    opt-in link it gives. A tester opens it once while signed in to the same Google account as
    their phone and watch.
 5. **App content** declarations:
-   - Privacy policy: `https://github.com/mishan/pluralware/blob/main/PRIVACY.md`.
+   - Privacy policy: `https://foggyden.org/pluralware/privacy.html` (the same text as
+     `PRIVACY.md`, from the foggyden.org repository).
    - Ads: none. Target audience: 18 and over is the simplest; PluralKit's own rules apply.
    - Data safety: no data goes to the developer. The PluralKit token and system data go to
      PluralKit, encrypted in transit, at the user's request, which is how a client of the user's
