@@ -9,8 +9,10 @@ this, then commit what it writes:
     monochrome layer for Android's themed icons;
   - the small single-color mark: the phone's notification icon and the watch's
     complication icon;
-  - docs/icon/icon.svg, the full-color icon, from which the 512 px Play Store
-    icon is rendered (docs/play-release.md).
+  - docs/icon: icon.svg, the full-color icon; icon-512.png, the Play Store icon
+    (docs/play-release.md); and icon-round.png, the circular one the README shows.
+
+Needs Pillow for the PNGs.
 """
 import math
 from pathlib import Path
@@ -164,3 +166,33 @@ write("docs/icon/icon.svg",
       # The 72-unit square a launcher shows of the 108-unit canvas, so it matches the launcher.
       f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="512" height="512">'
       f'<rect x="18" y="18" width="72" height="72" fill="{BACKGROUND}"/>{paths}</svg>\n')
+
+
+def png(size, round_=False):
+    """The launcher's view of the icon (its middle 72 units) as a picture, drawn the way the
+    design was: the ring with the gaps erased from it, then the members."""
+    from PIL import Image, ImageDraw
+
+    scale = 8  # drawn large, then shrunk, for smooth edges
+    px = size * scale / 72
+    at = lambda x, y: ((x - 18) * px, (y - 18) * px)
+    disc = lambda x, y, r: [*at(x - r, y - r), *at(x + r, y + r)]
+    ring_layer = Image.new("RGBA", (size * scale,) * 2, (0, 0, 0, 0))
+    d = ImageDraw.Draw(ring_layer)
+    d.ellipse(disc(CX, CY, R + RING / 2), outline=COLORS["ring"], width=round(RING * px))
+    for x, y, _, g in (FRONT, LEFT, RIGHT):
+        d.ellipse(disc(x, y, g), fill=(0, 0, 0, 0))
+    image = Image.new("RGBA", ring_layer.size, BACKGROUND)
+    image.alpha_composite(ring_layer)
+    d = ImageDraw.Draw(image)
+    for (x, y, r, _), name in ((FRONT, "front"), (LEFT, "left"), (RIGHT, "right")):
+        d.ellipse(disc(x, y, r), fill=COLORS[name])
+    if round_:
+        mask = Image.new("L", image.size, 0)
+        ImageDraw.Draw(mask).ellipse([0, 0, *image.size], fill=255)
+        image.putalpha(mask)
+    return image.resize((size, size), Image.LANCZOS)
+
+
+png(512).convert("RGB").save(ROOT / "docs/icon/icon-512.png", optimize=True)
+png(256, round_=True).save(ROOT / "docs/icon/icon-round.png", optimize=True)
