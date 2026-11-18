@@ -10,12 +10,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import org.foggyden.pluralware.wear.pairing.openOnPhone
+import androidx.wear.compose.material.CompactChip
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,7 +83,7 @@ class MainActivity : ComponentActivity() {
             when (val t = token) {
                 null -> {
                     SideEffect { sessions.end() }
-                    WaitingForPairingScreen()
+                    WaitingForPairingScreen(openOnPhone = { openOnPhone(applicationContext) })
                 }
                 // Keyed on the raw token so a replacement starts from scratch:
                 // a new session (repository and ViewModel store) and a new nav
@@ -167,7 +172,10 @@ private fun ConnectedApp(
 }
 
 @Composable
-private fun WaitingForPairingScreen() {
+internal fun WaitingForPairingScreen(openOnPhone: suspend () -> Boolean) {
+    // Null until tapped, then whether the phone was reached.
+    var opened by remember { mutableStateOf<Boolean?>(null) }
+    val scope = rememberCoroutineScope()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -185,11 +193,21 @@ private fun WaitingForPairingScreen() {
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "Open PluralWare on your phone and connect your PluralKit token.",
+                text = when (opened) {
+                    true -> "Check your phone, and connect your PluralKit token there."
+                    false -> "Couldn't reach your phone. Open PluralWare there and connect your PluralKit token."
+                    null -> "Open PluralWare on your phone and connect your PluralKit token."
+                },
                 style = MaterialTheme.typography.caption1,
                 color = MaterialTheme.colors.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
+            if (opened != true) {
+                CompactChip(
+                    onClick = { scope.launch { opened = openOnPhone() } },
+                    label = { Text("Open on phone") },
+                )
+            }
         }
     }
 }

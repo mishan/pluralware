@@ -22,6 +22,8 @@ wearProtolayout = "1.2.1"
 wearWatchface = "1.2.1"
 # Bridges suspend functions to the ListenableFutures that TileService returns.
 concurrentFutures = "1.2.0"
+# Opening the phone app from the watch.
+wearRemoteInteractions = "1.1.0"
 
 # Token storage on the watch.
 securityCrypto = "1.1.0-alpha06"
@@ -68,6 +70,7 @@ androidxProfileinstaller = "1.4.1"
 androidxUiautomator = "2.3.0"
 
 [libraries]
+androidx-wear-remote-interactions = { group = "androidx.wear", name = "wear-remote-interactions", version.ref = "wearRemoteInteractions" }
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-appwidget-testing = { group = "androidx.glance", name = "glance-appwidget-testing", version.ref = "glance" }
 # AndroidX core.
