@@ -128,6 +128,7 @@ dependencies {
     implementation(libs.androidx.wear.protolayout.material)
     // SuspendToFutureAdapter: lets the TileService answer requests from a coroutine.
     implementation(libs.androidx.concurrent.futures.ktx)
+    implementation(libs.androidx.wear.remote.interactions)
 
     // Encrypted token storage.
     implementation(libs.androidx.security.crypto)
