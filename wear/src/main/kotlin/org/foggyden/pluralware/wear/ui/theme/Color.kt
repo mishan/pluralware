@@ -16,11 +16,11 @@ internal object PluralWareTokens {
     val Amber = Color(0xFFE6A12B)        // Slightly brighter than PluralKit's brand for legibility on small screens.
     val AmberDim = Color(0xFFB07A1F)     // For pressed/secondary states.
     val DeepNight = Color(0xFF000000)    // True black for AMOLED.
-    val Slate = Color(0xFF1B1D24)        // Card / chip surfaces.
-    val SlateRaised = Color(0xFF272A33)
+    val Slate = Color(0xFF30333C)        // Card / chip surfaces: light enough to stand off true black on a dimmed screen.
+    val SlateRaised = Color(0xFF3C404B)
     val SoftCream = Color(0xFFF6E9D2)    // On-primary text.
     val Mist = Color(0xFFC9CBD3)         // Default on-surface body.
-    val MistDim = Color(0xFF7E818C)      // Secondary labels.
+    val MistDim = Color(0xFF9396A1)      // Secondary labels.
     val Coral = Color(0xFFE57676)        // Errors / destructive feedback.
 }
 
