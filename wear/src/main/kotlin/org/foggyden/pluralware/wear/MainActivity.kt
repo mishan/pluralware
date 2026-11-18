@@ -175,6 +175,8 @@ private fun ConnectedApp(
 internal fun WaitingForPairingScreen(openOnPhone: suspend () -> Boolean) {
     // Null until tapped, then whether the phone was reached.
     var opened by remember { mutableStateOf<Boolean?>(null) }
+    // One attempt at a time, so an older answer can't overwrite a newer one.
+    var opening by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Box(
         modifier = Modifier
@@ -204,7 +206,17 @@ internal fun WaitingForPairingScreen(openOnPhone: suspend () -> Boolean) {
             )
             if (opened != true) {
                 CompactChip(
-                    onClick = { scope.launch { opened = openOnPhone() } },
+                    onClick = {
+                        opening = true
+                        scope.launch {
+                            try {
+                                opened = openOnPhone()
+                            } finally {
+                                opening = false
+                            }
+                        }
+                    },
+                    enabled = !opening,
                     label = { Text("Open on phone") },
                 )
             }

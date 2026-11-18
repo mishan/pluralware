@@ -1,8 +1,10 @@
 package org.foggyden.pluralware.wear.ui
 
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import kotlinx.coroutines.CompletableDeferred
 import org.foggyden.pluralware.wear.WaitingForPairingScreen
 import org.foggyden.pluralware.wear.ui.theme.PluralWareTheme
 import org.junit.Assert.assertEquals
@@ -37,5 +39,18 @@ class PairingScreenTest {
 
         compose.onNodeWithText("Couldn't reach your phone", substring = true).assertExists()
         compose.onNodeWithText("Open on phone").assertExists()
+    }
+
+    @Test
+    fun `a second tap while the first is still trying does nothing`() {
+        val answer = CompletableDeferred<Boolean>()
+        compose.setContent { PluralWareTheme { WaitingForPairingScreen(openOnPhone = { opened++; answer.await() }) } }
+
+        compose.onNodeWithText("Open on phone").performClick()
+        compose.onNodeWithText("Open on phone").performClick()
+        answer.complete(false)
+
+        assertEquals(1, opened)
+        compose.onNodeWithText("Open on phone").assertIsEnabled()
     }
 }
