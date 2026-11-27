@@ -336,6 +336,8 @@ test('a push service\'s refusal keeps its reason, when it names one', async () =
   for (const [answer, outcome] of [
     [new Response('{"reason":"VapidPkHashMismatch"}', { status: 400 }), 'failed: HTTP 400 (VapidPkHashMismatch)'],
     [new Response('<html>no</html>', { status: 400 }), 'failed: HTTP 400'],
+    // An answer that never ends: only its start is read.
+    [new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(`{"reason":"BadJwtToken"}${' '.repeat(2048)}`)); } }), { status: 400 }), 'failed: HTTP 400 (BadJwtToken)'],
   ]) {
     const { handle, store } = await setup({ pushStatus: answer });
     await (await handle(event(switchEvent(['uuid-alex'])))).background;

@@ -46,7 +46,11 @@ class WebPushSender(
                 when {
                     response.isSuccessful -> SendOutcome.Delivered
                     response.code == 404 || response.code == 410 -> SendOutcome.Gone
-                    else -> SendOutcome.Failed("HTTP ${response.code}" + reason(response.peekBody(1024).string()))
+                    else -> {
+                        // The status is the answer; the body only adds its reason, if it can be read.
+                        val body = try { response.peekBody(1024).string() } catch (e: IOException) { "" }
+                        SendOutcome.Failed("HTTP ${response.code}" + reason(body))
+                    }
                 }
             }
         }

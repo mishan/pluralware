@@ -71,6 +71,9 @@ class SendersTest {
             MockResponse().setResponseCode(400).setBody("""{"reason":"VapidPkHashMismatch"}""") to "HTTP 400 (VapidPkHashMismatch)",
             MockResponse().setResponseCode(500) to "HTTP 500",
             MockResponse().setResponseCode(400).setBody("""{"reason":"<script>alert(1)</script>"}""") to "HTTP 400",
+            // A refusal whose body breaks off is still that refusal, not a dropped connection to retry.
+            MockResponse().setResponseCode(400).setBody("x".repeat(200))
+                .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY) to "HTTP 400",
         )) {
             server.enqueue(response)
             assertEquals(SendOutcome.Failed(outcome), WebPushSender(http).send(privateFriend(), Vapid.generate(), payload))
