@@ -59,6 +59,7 @@ class SendersTest {
         for ((endpoint, topic) in listOf(
             "https://web.push.apple.com/QMxyz" to null,
             "https://api.push.apple.com/abc" to null,
+            "https://WEB.PUSH.APPLE.COM/QMxyz" to null,
             "https://fcm.googleapis.com/fcm/send/abc" to "front",
             "https://updates.push.services.mozilla.com/wpush/v2/abc" to "front",
             "https://notapple.example/push.apple.com/abc" to "front",

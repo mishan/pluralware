@@ -61,7 +61,7 @@ class WebPushSender(
          * (BadWebPushTopic); an iPhone that was offline gets each switch in turn instead.
          */
         fun topicFor(endpoint: String): String? {
-            val host = runCatching { java.net.URI(endpoint).host }.getOrNull().orEmpty()
+            val host = runCatching { java.net.URI(endpoint).host?.lowercase() }.getOrNull().orEmpty()
             return if (host == "push.apple.com" || host.endsWith(".push.apple.com")) null else TOPIC
         }
 
