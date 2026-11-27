@@ -443,7 +443,8 @@ Where the code lives:
   process-wide scope. The phone also sends corrections when a fix in History changes who's
   fronting now (`onFrontCorrected`), even with the relay on (docs/system-management-design.md
   section 6). Web Push sends from the apps and the relay share `Topic: front`, so a push service
-  holding an undelivered switch replaces it with the next. The watch reports friends who stopped
+  holding an undelivered switch replaces it with the next. Apple's push service refuses any request
+  with a Topic (`BadWebPushTopic`), so pushes to it carry none. The watch reports friends who stopped
   receiving to the phone. `WatchDataListenerService` stores the config the phone pushes, then
   deletes the DataItem. Either side's sign-out clears it.
 - Phone: **Share with friends** (`sharing/`) and **Following** (`following/`, with

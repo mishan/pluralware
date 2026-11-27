@@ -37,6 +37,8 @@ export function sameSecret(a, b) {
  * are. Anything else (an IP literal, localhost, an internal name) would let a
  * follow code aim a self-hosted relay at its own network.
  */
+const isApplePush = (endpoint) => /(^|\.)push\.apple\.com$/.test(new URL(endpoint).hostname);
+
 /**
  * The first KB of a response's body, read for at most two seconds, then let go of: a refusal's
  * body only adds its reason, and mustn't hold up recording the outcome.
@@ -140,8 +142,9 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
             'content-type': 'application/octet-stream',
             ttl: String(TTL_SECONDS),
             urgency: 'normal',
-            // Shared with the app's pushes: a correction from the app replaces a mistake not yet delivered.
-            topic: 'front',
+            // Shared with the app's pushes: a correction from the app replaces a mistake not yet
+            // delivered. Not to Apple's push service, which refuses requests that carry one.
+            ...(isApplePush(endpoint) ? {} : { topic: 'front' }),
             authorization: await vapidAuthorization(endpoint, config.vapid, now()),
           },
           body: await encrypt(friend.followCode, payload),
