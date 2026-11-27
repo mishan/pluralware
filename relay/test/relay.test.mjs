@@ -344,3 +344,14 @@ test('a push service\'s refusal keeps its reason, when it names one', async () =
     assert.equal((await store.get('last')).outcomes.p1, outcome);
   }
 });
+
+test('a push to Apple carries no Topic header, which Apple refuses', async () => {
+  const apple = { type: 'private', id: 'a1', label: 'Ash', followCode: { name: 'Ash', endpoint: 'https://web.push.apple.com/QMxyz', ...(await receiverKeys()) } };
+  const { handle, sent } = await setup({ extraFriends: [apple] });
+  await (await handle(event(switchEvent(['uuid-alex'])))).background;
+
+  const toApple = sent.find((s) => s.url.startsWith('https://web.push.apple.com/'));
+  assert.ok(toApple, 'sent to Apple');
+  assert.equal('topic' in toApple.init.headers, false);
+  assert.equal(sent.find((s) => s.url === 'https://push.example/sam').init.headers.topic, 'front');
+});

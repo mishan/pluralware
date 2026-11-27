@@ -36,9 +36,7 @@ class WebPushSender(
                 .header("Content-Encoding", "aes128gcm")
                 .header("TTL", TTL_SECONDS.toString())
                 .header("Urgency", "normal")
-                // Shared with the relay's pushes: a push service holding an undelivered
-                // switch replaces it with the next, so a correction overtakes its mistake.
-                .header("Topic", TOPIC)
+                .apply { topicFor(code.endpoint)?.let { header("Topic", it) } }
                 .header("Authorization", Vapid.authorization(code.endpoint, vapid, clock()))
                 .post(WebPushCrypto.encrypt(code, payload.toBytes()).toRequestBody(OCTET_STREAM))
                 .build()
@@ -55,16 +53,27 @@ class WebPushSender(
             }
         }
 
-    private companion object {
-        // Apple's push service answers a refusal with {"reason":"<rule broken>"}; nothing else is kept.
-        val REASON = Regex(""""reason"\s*:\s*"([A-Za-z]{1,40})"""")
+    companion object {
+        /**
+         * The Topic to send to [endpoint], shared with the relay's pushes: a push service
+         * holding an undelivered switch replaces it with the next, so a correction overtakes
+         * its mistake. None for Apple's push service, which refuses requests that carry one
+         * (BadWebPushTopic); an iPhone that was offline gets each switch in turn instead.
+         */
+        fun topicFor(endpoint: String): String? {
+            val host = runCatching { java.net.URI(endpoint).host }.getOrNull().orEmpty()
+            return if (host == "push.apple.com" || host.endsWith(".push.apple.com")) null else TOPIC
+        }
 
-        fun reason(body: String): String = REASON.find(body)?.let { " (${it.groupValues[1]})" }.orEmpty()
+        // Apple's push service answers a refusal with {"reason":"<rule broken>"}; nothing else is kept.
+        private val REASON = Regex(""""reason"\s*:\s*"([A-Za-z]{1,40})"""")
+
+        private fun reason(body: String): String = REASON.find(body)?.let { " (${it.groupValues[1]})" }.orEmpty()
 
         /** Twelve hours: an offline friend still gets the latest switch (§4.2). */
-        const val TTL_SECONDS = 12 * 60 * 60
-        const val TOPIC = "front"
-        val OCTET_STREAM = "application/octet-stream".toMediaType()
+        private const val TTL_SECONDS = 12 * 60 * 60
+        private const val TOPIC = "front"
+        private val OCTET_STREAM = "application/octet-stream".toMediaType()
     }
 }
 

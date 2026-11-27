@@ -55,6 +55,19 @@ class SendersTest {
     }
 
     @Test
+    fun `Apple's push service gets no Topic header, which it refuses, and others share one`() {
+        for ((endpoint, topic) in listOf(
+            "https://web.push.apple.com/QMxyz" to null,
+            "https://api.push.apple.com/abc" to null,
+            "https://fcm.googleapis.com/fcm/send/abc" to "front",
+            "https://updates.push.services.mozilla.com/wpush/v2/abc" to "front",
+            "https://notapple.example/push.apple.com/abc" to "front",
+        )) {
+            assertEquals(endpoint, topic, WebPushSender.topicFor(endpoint))
+        }
+    }
+
+    @Test
     fun `404 and 410 mean the subscription is gone`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(410))
