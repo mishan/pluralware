@@ -117,6 +117,11 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
           body: await encrypt(friend.followCode, payload),
         });
         if (response.status === 404 || response.status === 410) return 'gone';
+        // Apple's push service answers a refusal with {"reason":"<rule broken>"}; nothing else is kept.
+        if (!response.ok) {
+          const reason = /"reason"\s*:\s*"([A-Za-z]{1,40})"/.exec((await response.text()).slice(0, 1024))?.[1];
+          return `failed: HTTP ${response.status}${reason ? ` (${reason})` : ''}`;
+        }
       } else {
         response = await fetch(`${config.ntfy.baseUrl.replace(/\/+$/, '')}/`, {
           method: 'POST',

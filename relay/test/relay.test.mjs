@@ -45,6 +45,7 @@ async function setup({ pushStatus = 201, enabled = true, extraFriends = [], disc
       if (answer instanceof Error) throw answer;
       return answer instanceof Response ? answer : new Response(null, { status: answer });
     }
+    if (pushStatus instanceof Response && String(url).startsWith('https://push.example/sam')) return pushStatus.clone();
     const status = String(url).startsWith('https://push.example/gone') ? 410 : String(url).startsWith('https://push.example') ? pushStatus : 200;
     return new Response(null, { status });
   };
@@ -328,5 +329,16 @@ test('each switch is worded, and posted to Discord, as the shared fixtures say',
     const text = announce(c.front.map((m) => m.uuid), names);
     assert.equal(text, c.text, c.case);
     assert.deepEqual(discordPayload(c.title, text), c.discord, c.case);
+  }
+});
+
+test('a push service\'s refusal keeps its reason, when it names one', async () => {
+  for (const [answer, outcome] of [
+    [new Response('{"reason":"VapidPkHashMismatch"}', { status: 400 }), 'failed: HTTP 400 (VapidPkHashMismatch)'],
+    [new Response('<html>no</html>', { status: 400 }), 'failed: HTTP 400'],
+  ]) {
+    const { handle, store } = await setup({ pushStatus: answer });
+    await (await handle(event(switchEvent(['uuid-alex'])))).background;
+    assert.equal((await store.get('last')).outcomes.p1, outcome);
   }
 });
