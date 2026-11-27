@@ -37,6 +37,36 @@ export function sameSecret(a, b) {
  * are. Anything else (an IP literal, localhost, an internal name) would let a
  * follow code aim a self-hosted relay at its own network.
  */
+/**
+ * The first KB of a response's body, read for at most two seconds, then let go of: a refusal's
+ * body only adds its reason, and mustn't hold up recording the outcome.
+ */
+async function answerStart(response) {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks = [];
+  let size = 0;
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, 2000, { done: true }); });
+  try {
+    while (size < 1024) {
+      const { done, value } = await Promise.race([reader.read(), deadline]);
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+    }
+  } catch {
+    // Unreadable: the status alone will do.
+  } finally {
+    clearTimeout(timer);
+    reader.cancel().catch(() => {});
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+  return new TextDecoder().decode(bytes.subarray(0, 1024));
+}
+
 export function isPublicHttpsUrl(text) {
   let url;
   try {
@@ -117,6 +147,11 @@ export function createRelay({ store, adminSecret, fetch = globalThis.fetch, now 
           body: await encrypt(friend.followCode, payload),
         });
         if (response.status === 404 || response.status === 410) return 'gone';
+        // Apple's push service answers a refusal with {"reason":"<rule broken>"}; nothing else is kept.
+        if (!response.ok) {
+          const reason = /"reason"\s*:\s*"([A-Za-z]{1,40})"/.exec(await answerStart(response))?.[1];
+          return `failed: HTTP ${response.status}${reason ? ` (${reason})` : ''}`;
+        }
       } else {
         response = await fetch(`${config.ntfy.baseUrl.replace(/\/+$/, '')}/`, {
           method: 'POST',

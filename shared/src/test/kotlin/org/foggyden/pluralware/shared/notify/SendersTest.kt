@@ -65,9 +65,19 @@ class SendersTest {
     }
 
     @Test
-    fun `other errors are failures, not gone`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(500))
-        assertEquals(SendOutcome.Failed("HTTP 500"), WebPushSender(http).send(privateFriend(), Vapid.generate(), payload))
+    fun `other errors are failures, not gone, with the push service's reason when it gives one`() = runTest {
+        // Apple's push service names the rule a request broke; others answer with a page or nothing.
+        for ((response, outcome) in listOf(
+            MockResponse().setResponseCode(400).setBody("""{"reason":"VapidPkHashMismatch"}""") to "HTTP 400 (VapidPkHashMismatch)",
+            MockResponse().setResponseCode(500) to "HTTP 500",
+            MockResponse().setResponseCode(400).setBody("""{"reason":"<script>alert(1)</script>"}""") to "HTTP 400",
+            // A refusal whose body breaks off is still that refusal, not a dropped connection to retry.
+            MockResponse().setResponseCode(400).setBody("x".repeat(200))
+                .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY) to "HTTP 400",
+        )) {
+            server.enqueue(response)
+            assertEquals(SendOutcome.Failed(outcome), WebPushSender(http).send(privateFriend(), Vapid.generate(), payload))
+        }
     }
 
     @Test

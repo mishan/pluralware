@@ -46,12 +46,21 @@ class WebPushSender(
                 when {
                     response.isSuccessful -> SendOutcome.Delivered
                     response.code == 404 || response.code == 410 -> SendOutcome.Gone
-                    else -> SendOutcome.Failed("HTTP ${response.code}")
+                    else -> {
+                        // The status is the answer; the body only adds its reason, if it can be read.
+                        val body = try { response.peekBody(1024).string() } catch (e: IOException) { "" }
+                        SendOutcome.Failed("HTTP ${response.code}" + reason(body))
+                    }
                 }
             }
         }
 
     private companion object {
+        // Apple's push service answers a refusal with {"reason":"<rule broken>"}; nothing else is kept.
+        val REASON = Regex(""""reason"\s*:\s*"([A-Za-z]{1,40})"""")
+
+        fun reason(body: String): String = REASON.find(body)?.let { " (${it.groupValues[1]})" }.orEmpty()
+
         /** Twelve hours: an offline friend still gets the latest switch (§4.2). */
         const val TTL_SECONDS = 12 * 60 * 60
         const val TOPIC = "front"
