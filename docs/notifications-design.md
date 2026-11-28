@@ -620,3 +620,138 @@ broader than Simple mode, and the add screen says so.
 **As built.** All of the above, in three slices: the apps' sending, the relay's, and the sharing
 screen's "Add a Discord channel". The screen shows the phone's own last failure for each friend;
 the watch's and the relay's stay on them.
+
+## 16. Per-friend sharing
+
+Each friend gets their own **Who may be named**, instead of one list for everyone. A friend whose
+list hides everyone in front hears nothing about that switch. The phone UI it lives in is in
+docs/phone-ui-design.md.
+
+The rule that keeps every old peer safe: whatever an old watch, relay or phone reads is narrowed
+to what *every* friend may see. Old code therefore names fewer members, never more. New code
+reads the per-friend lists.
+
+### 16.1 Model
+
+- **Named list:** every `Friend` gains `named: Set<String>?`, the member uuids this friend may see.
+  - `null` means saved before this release and not yet migrated.
+  - An empty set means this friend may see no one.
+- **Migration:** on load, a friend with `named == null` gets the old global list. It's written
+  back on the next save.
+- **The global list:** `SharingConfig.sharedMemberUuids` becomes derived. On every save it's set
+  to the intersection of all friends' lists, for old peers (16.4, 16.5). It's no longer edited
+  directly.
+- **Code that reads the global list today** must change:
+  - `SwitchSharer` and `SwitchAnnouncer` word each friend's announcement from that friend's list.
+  - `SwitchAnnouncer.correct` decides whether a correction is news per friend, by comparing that
+    friend's before and after texts.
+  - `RelayNameSync` re-uploads when a renamed or deleted member is in any friend's list. Otherwise
+    a member named only to some friends would keep their old name at the relay.
+- **Defaults:**
+  - A new friend's list starts with every member except those private in PluralKit, as §6 does
+    for the global list.
+  - Members created later aren't added to anyone's list. The friend screen shows them unchecked.
+
+### 16.2 What a friend is sent
+
+For each friend, the front is filtered to their `named` before wording:
+
+- **Some of the front named:** worded as today, the rest as "someone else".
+- **Members in front, none named:** nothing is sent to that friend.
+- **Switch-out:** "Switched out" is sent; it names no one.
+- **Corrections:** the same rule applies to the corrected front, and a correction that is the same
+  text for a friend isn't sent to them.
+
+Known costs of the decision to send nothing:
+- A follower's card keeps saying the last thing they were told ("Alex is fronting since 10:00")
+  while hidden members front.
+- A correction whose new front is all hidden from a friend leaves their earlier, wrong text
+  standing.
+
+The wording fixtures (§15) are unchanged; new cases cover the skip.
+
+### 16.3 Adding a friend, and follow codes
+
+`settings/friends/add`:
+1. A name, and **Who may be named**, defaulting as in 16.1.
+2. The method: private invite, ntfy, or Discord channel. ntfy and Discord friends are saved
+   straight away, with the list.
+3. **Private:** a new friend type, `pending`, is saved with the name, the list and a new invite
+   id. The invite (QR or link) carries that id as `i`.
+   - It's a type of its own, not a private friend without a code. Old watches and relays already
+     skip unknown types, and nothing sends to it, counts it as sharing, or uploads it.
+   - Pending friends show as "Waiting for a follow code", can show their invite again, and can be
+     removed.
+
+The follow code echoes `i`:
+- The receiving side keeps the invite's `i` with the follow, both PluralWare's `Follow` and the
+  browser page's stored record, and puts it in every code it makes, including one regenerated
+  after a push address changes.
+- Invite and follow code formats exist twice, in `Invites.kt` and `web-receiver/formats.js`, with
+  shared fixture strings, so both sides change together. Codes without `i` stay valid both ways.
+
+Pasting a follow code always ends on a confirmation screen: the code's own `name` and the member
+list that will apply.
+- **Its `i` matches a pending friend:** that friend's list.
+- **Its `i` matches an existing friend:** a re-sent code, after the friend's push address changed
+  or the same invite was opened twice. It replaces that friend's code and keeps their list.
+- **Its push address matches an existing friend:** the same as above, so a code pasted twice
+  never makes two friends.
+- **No match** (an older app or page, or an `i` whose pending friend was removed): you choose
+  which pending or existing friend it answers, or make it a new friend, with the list from 16.1.
+
+An invite can be forwarded, and whoever opens it can answer a pending slot. The confirmation shows
+the name they gave, so a stranger's code can be noticed and declined.
+
+### 16.4 The relay
+
+- **The upload** keeps the top-level `names`, now holding only the members every friend may see,
+  and adds:
+  - `labels`: the labels of every member any friend may see;
+  - per friend, `named`, a list of uuids.
+- **A relay from before this** reads only `names`. It accepts the upload, and names only members
+  every friend may see, as "someone else" at worst. It never names a member to a friend who
+  shouldn't see them, and a narrowed list reaches it straight away.
+- **The new relay:**
+  - Takes an upload with `labels` and applies 16.2 per friend.
+  - A friend with no `named` there names no one; it never falls back to the top level.
+  - An upload without `labels` comes from a phone not yet updated, and is read as before: one
+    list for everyone.
+  - The relay is told the upload's shape by `labels` being there, not by a version number, since
+    the phone's JSON leaves out fields left at their defaults.
+- **Status:** `/status` reports the relay's version. The relay screen says "Update your relay to
+  share different members with different friends" when it's older. Until then, sharing works as
+  the narrowed list allows.
+
+### 16.5 The watch
+
+- **Applying the lists:** the watch's copy carries each friend's list, and the watch applies 16.2
+  as the phone does. A watch from before this ignores the lists and uses the global list, which
+  is now the intersection. So it names no one a friend can't see, though it may send "someone
+  else is fronting" where a new watch sends nothing.
+- **Size:** per-friend uuid lists grow as members × friends, and a large system could pass the
+  Data Layer's 100 KB per item. So the watch's copy carries one member uuid list, and each friend
+  refers to it by position.
+- **Failed pushes:** a failed push to the watch, silent today, is shown on the sharing settings,
+  since a watch left with an old copy keeps sending by it.
+
+### 16.6 Tests
+
+- Both sides, from shared fixtures: 16.2's rules (named, partly named, all hidden, switch-out,
+  corrections).
+- **Migration:** a friend with `named == null` gets the global list, and the global list becomes
+  the intersection on save.
+- **Readers of the global list:**
+  - a rename of a member named to one friend reaches the relay;
+  - a correction is judged per friend.
+- **Follow codes:**
+  - `i` round-tripped through invite and follow code, in both formats, with the shared fixtures;
+  - a regenerated code keeps `i`;
+  - a code without `i` parses.
+- **Pasting:** matching to a pending friend, an existing friend by `i` and by push address, and the
+  choice when nothing matches.
+- **Pending friends:** never sent to, uploaded or counted as sharing.
+- **Old peers:**
+  - an old relay's view of an upload names only the intersection;
+  - an upload without `labels` is read as before.
+- **Size:** the watch copy stays within its budget for a large system.
